@@ -1,0 +1,53 @@
+# pip install loguru
+# psycopg2
+# abieos-python
+# dfuse
+
+
+admin_array: {} = {''}
+phone_number: str = ""
+
+# dfuse
+dfuse_api_key: str = ""
+dfuse_url: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end
+
+# eos node
+eos_node_url: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end
+
+# eden data
+eden_account: str = "genesis.eden"
+eden_season: int = 5
+
+# attomic assets data
+atomic_assets_account: str = "atomicassets"
+
+# send alert message to participants for new election (in minutes)
+# warning:next two tables needs to be synchronized by yourself
+alert_message_time_election_is_coming: [int] = [60,  # 1 hour before
+                                                60 * 24,  # 1 day before
+                                                60 * 24 * 7,  # 1 week before
+                                                ]
+
+alert_message_time_election_is_coming_text: [str] = ["in one hour",
+                                                     "tomorrow at this time",
+                                                     "next week at this time",
+                                                     ]
+
+# database
+database_name: str = ""
+database_user: str = ""
+database_password: str = "."
+database_host: str = ""
+database_port: int =
+
+# communication_bot
+communication_session_name_user: str = ""
+communication_session_name_bot: str = ""
+
+telegram_api_id: int =
+telegram_api_hash: str = ""
+telegram_bot_token: str = ""
+telegram_admins_id: list = [""]  # admins must start intecation with bot, unsless it wont work
+
+# Eden portal
+eden_portal_url: str = "https://genesis.eden.eoscommunity.org"

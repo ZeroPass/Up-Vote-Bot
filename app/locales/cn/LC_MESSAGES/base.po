@@ -1,0 +1,5 @@
+msgid "Hello world"
+msgstr "Hello world Chinese"
+
+msgid "This is a translatable string"
+msgstr "This is a translatable string Chinese"

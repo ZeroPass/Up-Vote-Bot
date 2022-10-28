@@ -1,0 +1,358 @@
+from __future__ import annotations
+import re
+from typing import List, Tuple, Union
+from enum import Enum
+import binascii
+from dataclasses import dataclass
+
+HEX_PATTERN = "^[\\0-9a-fA-F\\s]+$"
+
+FORMAT = [
+    {"name":"id", "value":"uint64"},
+    {"name":"name", "value":"string"},
+    {"name":"children", "value":"uint64[]"}
+]
+
+
+@dataclass(init=False)
+class ParsedResult:
+    field: int
+    wire_type: str
+    data: Union[str, int, List[ParsedResult]]
+
+    def __init__(self, field: int, wire_type: str, data: Union[str, int, ParsedResults]):
+        self.field = field
+        self.wire_type = wire_type
+        if isinstance(data, ParsedResults):
+            self.data = data.results
+        else:
+            self.data = data
+
+    def to_dict(self):
+        if isinstance(self.data, list):
+            data = [sub_result.to_dict() for sub_result in self.data]
+        else:
+            data = self.data
+
+        return dict(
+            field=self.field,
+            wire_type=self.wire_type,
+            data=data
+        )
+
+
+@dataclass
+class ParsedResults:
+    results: List[ParsedResult]
+
+    @property
+    def has_results(self):
+        return len(self.results) > 0
+
+
+class State(Enum):
+    FIND_FIELD = 1
+    PARSE_VARINT = 2
+    PARSE_LENGTH_DELIMITED = 3
+    PARSE_ARRAY_LENGTH_DELIMITED = 3
+    GET_DELIMITED_DATA = 4
+    TERMINATED = 5
+
+
+class WireType(Enum):
+    VARINT = 0
+    LENGTH_DELIMITED = 2
+
+    BIT64 = 1  # not supported
+    BIT32 = 5  # not supported
+
+    START_GROUP = 3  # deprecated
+    END_GROUP = 4  # deprecated
+
+
+class Utils:
+    @classmethod
+    def validate(cls, string: str) -> Tuple[bool, str]:
+        regex_validator = re.compile(HEX_PATTERN)
+        validate_result = regex_validator.match(string)
+        if validate_result is None:
+            return False, string
+
+        hex_string = validate_result.string
+        hex_string1 = hex_string.replace(" ", "")
+
+        if len(hex_string1) % 2 != 0:
+            return False, hex_string
+
+        return True, hex_string
+
+    @classmethod
+    def get_chunked_list(cls, string) -> List[str]:
+        return string.split()
+        #while string:
+        #    yield string[:2]
+        #    string = string[2:]
+
+    @classmethod
+    def hex_string_to_binary(cls, string) -> str:
+        return bin(int(string, 16))[2:].zfill(4)
+
+    @classmethod
+    def hex_string_to_decimal(cls, string) -> int:
+        #ret = int(string, 16);
+        #res = int(string, 10);
+
+        return int(string, 16)
+
+    @classmethod
+    def hex_string_to_utf8(cls, string) -> str:
+        string = string.replace(" ", "")
+        return binascii.unhexlify(string).decode("utf-8")
+
+
+class BytesBuffer:
+    def __init__(self):
+        self._buffer = []
+
+    def append(self, byte_string):
+        self._buffer.append(byte_string)
+
+    def flush(self):
+        self._buffer = []
+
+    def __iter__(self):
+        return iter(self._buffer)
+
+class ArrayMode:
+    def __init__(self, mode:bool):
+        self._mode = mode
+
+    def activate(self, size):
+        self._mode = True
+        self.size = size
+        self.counter = 0
+
+    def increase(self):
+        self.counter += 1
+        if self.counter == self.size - 1:
+            self._mode = False
+
+    def is_finished(self):
+        return self.counter == self.size - 1
+
+class Fetcher:
+    def __init__(self):
+        self.data_length = 0
+        self.fetch_index = 0
+
+    def set_data_length(self, data_length):
+        self.valid(data_length)
+        self.data_length = data_length
+
+    @staticmethod
+    def valid(data_length):
+        if not isinstance(data_length, int):
+            raise TypeError(f"a int object is required, not {repr(type(data_length))}")
+
+        if data_length < 0:
+            raise ValueError(f"data_length should be positive")
+
+    def fetch(self):
+        self.fetch_index += 1
+
+    @property
+    def has_next(self):
+        return self.fetch_index < self.data_length - 1
+
+    def seek(self, index=0):
+        self.fetch_index = index
+
+
+class Parser:
+    def __init__(self):
+        self.buffer = BytesBuffer()
+        self.fetcher = Fetcher()
+        self.target_field = None
+        self.parsed_data: List[ParsedResult] = []
+        self.state = State.FIND_FIELD
+        self.array_wire_type = None
+        self.array_size = 0
+
+    @staticmethod
+    def has_next(chunk_bytes) -> bool:
+        return bool(chunk_bytes & 0x80)
+
+    @staticmethod
+    def get_value(chunk_bytes) -> int:
+        return chunk_bytes & 0x7F
+
+    @staticmethod
+    def parse_wire_type(chunk_bytes) -> Tuple[str, int]:
+        wire_type_index = chunk_bytes & 0x7
+        wire_type = FORMAT[wire_type_index - 4]['value']
+
+        field = chunk_bytes >> 3
+        return wire_type, field
+
+    def get_buffered_value(self) -> int:
+        bit_value = 0
+        for idx, byte_string in enumerate(self.buffer):
+            bit_value += byte_string << (7 * idx)
+        return bit_value
+
+    def handler_find_field(self, chunk):
+        value = self.get_value(chunk)
+        if self.has_next(chunk):
+            self.buffer.append(value)
+        else:
+            self.buffer.append(value)
+            bit_value = self.get_buffered_value()
+            wire_type, field = self.parse_wire_type(bit_value)
+            self.target_field = field
+
+            if wire_type.find('[]') != -1:
+                self.state = State.PARSE_ARRAY_LENGTH_DELIMITED
+                self.array_wire_type = wire_type.replace('[]', '')
+            elif wire_type == "string":
+                self.state = State.PARSE_LENGTH_DELIMITED
+            elif wire_type == "uint64":
+                self.state = State.PARSE_VARINT
+
+            """else if wire_type == WireType.VARINT.value:
+                self.state = State.PARSE_VARINT
+            elif wire_type == WireType.LENGTH_DELIMITED.value:
+                self.state = State.PARSE_LENGTH_DELIMITED
+            elif wire_type == WireType.END_GROUP.value:
+                self.state = State.TERMINATED
+            elif wire_type in (WireType.BIT32.value, WireType.BIT64.value, WireType.START_GROUP.value):
+                raise ValueError(f"Unsupported wire type {wire_type}")
+            else:
+                self.state = State.TERMINATED
+                """
+            self.buffer.flush()
+
+    def parse_varint_handler(self, chunk):
+        value = self.get_value(chunk)
+        if self.has_next(chunk):
+            self.buffer.append(value)
+        else:
+            self.buffer.append(value)
+            bit_value = self.get_buffered_value()
+            self.parsed_data.append(
+                ParsedResult(
+                    field=self.target_field,
+                    wire_type="varint",
+                    data=bit_value
+                )
+            )
+
+            self.state = State.FIND_FIELD
+            self.buffer.flush()
+
+    def parse_length_delimited_handler(self, chunk):
+        value = self.get_value(chunk)
+        if self.has_next(chunk):
+            self.buffer.append(value)
+        else:
+            self.buffer.append(value)
+            data_length = self.get_buffered_value()
+            self.fetcher.set_data_length(data_length)
+
+            self.state = State.GET_DELIMITED_DATA
+
+            self.buffer.flush()
+
+    def parse_array_length_delimited_handler(self, chunk) -> int:
+        value = self.get_value(chunk)
+        if self.has_next(chunk):
+            self.buffer.append(value)
+        else:
+            self.buffer.append(value)
+            data_length = self.get_buffered_value()
+            self.array_size = data_length
+            self.fetcher.set_data_length(data_length)
+
+            self.state = State.GET_DELIMITED_DATA
+
+            self.buffer.flush()
+            return self.array_size
+
+    def get_delimited_data_handler(self, chunk):
+        value = chunk
+        if self.fetcher.has_next:
+            self.fetcher.fetch()
+            self.buffer.append(value)
+
+        else:
+            self.buffer.append(value)
+            data = list(map(lambda x: hex(x)[2:].zfill(2), self.buffer))
+            #sub_parsed_date = Parser().parse(" ".join(data))
+            #if sub_parsed_date.has_results:
+            #    data = sub_parsed_date
+            #    wire_type = "length_delimited"
+            #else:
+            data = Utils.hex_string_to_utf8("".join(data))
+            wire_type = "string"
+
+            self.parsed_data.append(
+                ParsedResult(
+                    field=self.target_field,
+                    wire_type=wire_type,
+                    data=data
+                )
+            )
+            self.buffer.flush()
+            self.fetcher.seek()
+            self.state = State.FIND_FIELD
+
+    def parse(self, test_target) -> ParsedResults:
+        is_valid, validate_string = Utils.validate(test_target)
+        if not is_valid:
+            raise ValueError("Invalid hex format")
+
+        wer = Utils.get_chunked_list(validate_string)
+        for chunk in Utils.get_chunked_list(validate_string):
+            chunk = Utils.hex_string_to_decimal(chunk)
+
+            if self.state == State.FIND_FIELD:
+                self.handler_find_field(chunk)
+
+            elif self.state == State.PARSE_VARINT:
+                self.parse_varint_handler(chunk)
+
+            elif self.state == State.PARSE_LENGTH_DELIMITED:
+                self.parse_length_delimited_handler(chunk)
+
+            elif self.state == State.PARSE_ARRAY_LENGTH_DELIMITED:
+                wire_type = self.array_wire_type
+                array_size = self.parse_array_length_delimited_handler(chunk)
+                for i in range(array_size):
+                    #parse as delimited data or varint
+                    pass
+
+            elif self.state == State.GET_DELIMITED_DATA:
+                self.get_delimited_data_handler(chunk)
+
+            elif self.state == State.TERMINATED:
+                return ParsedResults(self.parsed_data)
+            else:
+                raise ValueError(f"Unsupported State {self.state}")
+
+        return ParsedResults(self.parsed_data)
+
+
+def main():
+    print("Hello World!")
+    #kvaje1 = FORMAT[0].
+    kvaje = FORMAT[0]['name']
+    kvaj1e = FORMAT[0]['value']
+    test_target = "1a 03 08 96 01"
+    test_target1 = "0A 09 ED 85 8C EC 8A A4 ED 8A B8"
+    test_target2 = "05 04 50 61 75 6C 06 02 64 E8 07"
+    parsed_data = Parser().parse(test_target2)
+    i = 9
+
+
+if __name__ == "__main__":
+    main()
+
