@@ -118,9 +118,6 @@ class Group:
         self.roomIndex = roomIndex
         self.round = round
 
-    """def isRoomNameDefined(self) -> bool:
-        return True if self.roomName is not None else False"""
-
 
 class RoomArray:
     def __init__(self):

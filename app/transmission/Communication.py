@@ -1,5 +1,7 @@
+import asyncio
 from enum import Enum
 
+from pyrogram.errors import FloodWait
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges
 
@@ -45,6 +47,9 @@ class Communication:
         LOG.info("Init communication")
 
     def start(self, apiId: int, apiHash: str, botToken: str):
+        assert isinstance(apiId, int), "ApiId should be int"
+        assert isinstance(apiHash, str), "ApiHash should be str"
+        assert isinstance(botToken, str), "BotToken should be str"
         LOG.debug("Starting communication sessions..")
         try:
             LOG.debug("... user session")
@@ -105,6 +110,9 @@ class Communication:
                 response = self.sessionUser.send_message(chat_id=chatId, text=text, reply_markup=replyMarkup)
             LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
             return True if type(response) is types.Message else False
+        except FloodWait as e:
+            LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
+            await asyncio.sleep(e.value)
         except Exception as e:
             LOG.exception("Exception: " + str(e))
 

@@ -126,7 +126,7 @@ class DfuseConnection:
             })
             # if height is set (we are looking in the history)
             if height is not None:
-                parameters.update({"height": height})
+                parameters.update({"block_num": height})
 
             LOG.debug("Request.get on path:" + path)
             result = DfuseConnection.retry(lambda: requests.get(
@@ -206,7 +206,7 @@ class DfuseConnection:
             })
             #if height is set (we are looking in the history)
             if height is not None:
-                parameters.update({"height": height})
+                parameters.update({"block_num": height})
 
             LOG.debug("Request.get on path:" + path)
             result = DfuseConnection.retry(lambda: requests.get(
@@ -280,7 +280,7 @@ class DfuseConnection:
             })
             #if height is set (we are looking in the history)
             if height is not None:
-                parameters.update({"height": height})
+                parameters.update({"block_num": height})
 
             LOG.debug("Request.get on path:" + path)
             result = DfuseConnection.retry(lambda: requests.get(

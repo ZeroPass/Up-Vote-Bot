@@ -1,5 +1,6 @@
 from app.constants import dfuse_api_key
-from app.database import Database, Election, Room
+from app.database import Database, Election
+from app.database.room import Room
 from app.log import Log
 from app.chain.dfuse import Response, ResponseError, ResponseSuccessful
 from app.chain.eden import EdenData
@@ -18,23 +19,18 @@ class ParticipantsManagement:
         self.participants = []
         self.database = Database()
 
-    def getElection(self, height: int = None):
-        """Get election"""
-        try:
-            LOG.info("Get election")
-
-
-
-        except Exception as e:
-            LOG.exception(str(e))
-            raise ParticipantsManagementException("Exception thrown when called getElection; Description: " + str(e))
 
     def getParticipantsFromChainAndMatchWithDatabase(self, election: Election, height: int = None):
         """Get participants from chain and match with database. Undefined room at this step"""
         try:
             LOG.info("Get participants from chain and match with database")
             participant: list[Participant] = self.getMembersFromChain(height=height)
-            room = Room(electionID=election.electionID, roomName="Room pre-election", round=0)
+            room = Room(electionID=election.electionID,
+                        roomNameShort="Room p-e",
+                        roomNameLong="Room pre-election",
+                        round=0,
+                        roomIndex=-1,
+                        roomTelegramID=-1)
             #self.database.createParticipantsIfNotExists(participants=participant, election=election)
             LOG.debug("Participants created")
             for p in participant:
@@ -48,20 +44,18 @@ class ParticipantsManagement:
             LOG.exception(str(e))
             raise ParticipantsManagementException("Exception thrown when called getParticipantsFromChainAndMatchWithDatabase; Description: " + str(e))
 
-    """def setMemberifNotExists(self):
-        #Get participants from database
-        try:
-            LOG.info("Set member if not exists")
-
-
-
-        except Exception as e:
-            LOG.exception(str(e))
-            raise ParticipantsManagementException("Exception thrown when called getParticipantsFromDatabase; Description: " + str(e))"""
-
-    def getTelegramID(self, nftTemplateID: int, atomicAssetsData: AtomicAssetsData) -> str:
+    def getTelegramID(self, accountName: str, nftTemplateID: int, atomicAssetsData: AtomicAssetsData) -> str:
         """Get telegram ID from nft template ID"""
         try:
+            LOG.debug("Get telegram ID from nft template ID")
+            participant = self.database.getParticipant(accountName=accountName)
+            if isinstance(participant, Participant):
+                LOG.debug("Participant found in database")
+                if participant.telegramID != "":
+                    LOG.debug("Telegram ID (" + participant.telegramID + ") found in database, do not call API")
+                    return participant.telegramID
+
+
             LOG.info("Get telegram id with nft template id: " + str(nftTemplateID))
             response = atomicAssetsData.getTGfromTemplateID(templateID=nftTemplateID)
             if isinstance(response, ResponseSuccessful):
@@ -106,8 +100,9 @@ class ParticipantsManagement:
                                                                                 value.data[1]['name'] is not None
                                                                                 else "<unknownName>")
 
-                        #set telegram id, if there is known template id, otherwise set -1 -> optimisation
-                        member.telegramID = self.getTelegramID(nftTemplateID=member.nftTemplateID, atomicAssetsData=aad) \
+                        #set telegram id, if there is a known template id, otherwise set -1
+                        # get telegram id from API only if there is no telegramID entry in database -> optimisation
+                        member.telegramID = self.getTelegramID(accountName=member.accountName, nftTemplateID=member.nftTemplateID, atomicAssetsData=aad) \
                             if member.nftTemplateID != 0 \
                             else "-1"
 

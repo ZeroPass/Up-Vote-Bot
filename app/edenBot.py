@@ -10,39 +10,47 @@ from app.chain.dfuse import *
 from app.chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
-from app.constants import dfuse_api_key
+from app.constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token
 from app.database import Database
 from app.log import Log
 from datetime import datetime
 from app.debugMode.modeDemo import ModeDemo, Mode
 import gettext
 
+from app.transmission import Communication
+
 
 ######## Multilanguage support in the future -= not translated yet =-
-#cn = gettext.translation('base', localedir='locales', languages=['cn'])
-#cn.install()
-#_ = cn.gettext # Chinese
+# cn = gettext.translation('base', localedir='locales', languages=['cn'])
+# cn.install()
+# _ = cn.gettext # Chinese
 
 
 class EdenBotException(Exception):
     pass
 
-LOG = Log(className="EdenBot")
 
+LOG = Log(className="EdenBot")
 
 REPEAT_TIME = {
     EdenBotMode.ELECTION: 10,  # every 10 seconds
     EdenBotMode.NOT_ELECTION: 60 * 60  # every hour
 }
 
+
 class EdenBot:
     botMode: EdenBotMode
 
-    def __init__(self, dfuseApiKey: str, mode: Mode, modeDemo: ModeDemo = None):
+    def __init__(self, dfuseApiKey: str, telegramApiID: int, telegramApiHash: str, botToken: str,  mode: Mode, modeDemo: ModeDemo = None):
         LOG.info("Initialization of EdenBot")
-        assert dfuseApiKey is not None
+        assert isinstance(dfuseApiKey, str), "dfuseApiKey is not a string"
+        assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
+        assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
+        assert isinstance(botToken, str), "botToken is not a string"
 
-        #fill database with election status data if table is empty
+
+
+        # fill database with election status data if table is empty
         database: Database = Database()
         database.fillElectionStatuses()
 
@@ -63,51 +71,76 @@ class EdenBot:
         self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
                                                                             nodeTime=self.edenData.getChainDatetime())
 
+        # creat communication object
+        LOG.debug("Initialization of telegram bot...")
+        self.communication = Communication()
+        self.communication.start(apiId=telegramApiID,
+                                 apiHash=telegramApiHash,
+                                 botToken=botToken)
+
+        LOG.debug("... is finished")
+
         # set current election state
         self.currentElectionState: CurrentElectionStateHandler = None
-        self.setCurrentElectionState(height=self.getChainHeight())
+        self.setCurrentElectionStateAndCallCustomActions()
+
+
 
     def getChainHeight(self) -> int:
         if self.mode == Mode.DEMO:
             return self.modeDemo.getCurrentBlock()
         else:
-            return None  #live mode
+            return None  # live mode
 
     def botModeElection(self):
         implement = 1
 
     def botModeNotElection(self):
-        implement = 1
+        # setting up database (participants)
+        # sending alerts
+        assert (self.currentElectionState is not None), "Current election state is not set"
+        if self.currentElectionState == CurrentElectionStateHandlerRegistratrionV1:
+            todo = 7
 
-    def setCurrentElectionState(self, height: int = None):
+    def setCurrentElectionStateAndCallCustomActions(self):
         try:
             LOG.debug("Check current election state from blockchain on height: " + str(
-                height) if height is not None else "<current/live>")
-            edenData: Response = self.edenData.getCurrentElectionState(height=height)
+                self.modeDemo.getCurrentBlock()) if self.modeDemo is not None else "<current/live>")
+            edenData: Response = self.edenData.getCurrentElectionState(height=self.modeDemo.currentBlockHeight
+            if self.modeDemo is not None else None)
             if isinstance(edenData, ResponseError):
-                raise EdenBotException("Error when called getCurrentElectionState; Description: " + edenData.error)
+                raise EdenBotException(
+                    "Error when called setCurrentElectionStateAndCallCustomActions; Description: " + edenData.error)
             if isinstance(edenData.data, ResponseError):
-                raise EdenBotException("Error when called getCurrentElectionState; Description: " + edenData.data.error)
+                raise EdenBotException(
+                    "Error when called setCurrentElectionStateAndCallCustomActions; Description: " + edenData.data.error)
 
             receivedData = edenData.data.data
+
+            # initialize state and call custom action if exists, motherwise there is just a comment in log
             electionState = receivedData[0]
             if electionState == "current_election_state_registration_v1":
                 self.currentElectionState = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
+                self.currentElectionState.customActions(communication=self.communication,
+                                                        modeDemo=self.modeDemo)
             elif electionState == "current_election_state_seeding_v1":
                 self.currentElectionState = CurrentElectionStateHandlerSeedingV1(receivedData[1])
+                self.currentElectionState.customActions(communication=self.communication,
+                                                        modeDemo=self.modeDemo)
             elif electionState == "current_election_state_init_voters_v1":
                 self.currentElectionState = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
+                self.currentElectionState.customActions()
             elif electionState == "current_election_state_active":
                 self.currentElectionState = CurrentElectionStateHandlerActive(receivedData[1])
+                self.currentElectionState.customActions()
             elif electionState == "current_election_state_final":
                 self.currentElectionState = CurrentElectionStateHandlerFinal(receivedData[1])
+                self.currentElectionState.customActions()
             else:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
 
-            #call custom action if exists, otherwise there is just a comment in log
-            self.currentElectionState.customActions()
-
-            LOG.debug("Current election state: " + str(receivedData[0]) + " with data: ".join(['{0}={1}'.format(k, v) for k, v in receivedData[1].items()]))
+            LOG.debug("Current election state: " + str(receivedData[0]) + " with data: ".join(
+                ['{0}={1}'.format(k, v) for k, v in receivedData[1].items()]))
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             raise EdenBotException("Exception: " + str(e))
@@ -115,9 +148,9 @@ class EdenBot:
     def sendAlert(self):
         LOG.info("Send alert")
         try:
-            #TODO: implement
+            # TODO: implement
             r = 9
-            #self.edenData.sendAlert()
+            # self.edenData.sendAlert()
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             raise EdenBotException("Exception: " + str(e))
@@ -133,12 +166,13 @@ class EdenBot:
                 if self.mode == Mode.LIVE:
                     time.sleep(REPEAT_TIME[self.currentElectionState.edenBotMode].value)
                 else:
+                    # Mode.DEMO
                     time.sleep(0.1)  # in demo mode sleep 0.1s
 
                 # increase chain height if DEMO mode
                 if self.mode == Mode.DEMO:
                     if self.modeDemo.isNextBlock():
-                        blockHeihgt : int = self.modeDemo.getNextBlock()
+                        blockHeihgt: int = self.modeDemo.getNextBlock()
                         LOG.info("Next block height (DEMO mode): " + str(blockHeihgt))
                     else:
                         LOG.debug("No next block height (DEMO mode);")
@@ -146,7 +180,7 @@ class EdenBot:
                         break
 
                 # define current election state
-                self.setCurrentElectionState(height=self.getChainHeight())
+                self.setCurrentElectionStateAndCallCustomActions()
 
                 # check if there is a time for telegram alert message
 
@@ -167,10 +201,17 @@ def main():
     print("------>EdenBot<-------")
     import sys
     print(sys.version)
-    mode = Mode.DEMO
 
-    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 11), end=datetime(2022, 7, 9, 18), edenObj=EdenData(dfuseApiKey=dfuse_api_key))
-    EdenBot(dfuseApiKey=dfuse_api_key, mode=Mode.DEMO, modeDemo=modeDemo).start()
+    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 11, 59),
+                        end=datetime(2022, 7, 9, 13, 30),
+                        edenObj=EdenData(dfuseApiKey=dfuse_api_key),
+                        step=240  # 2min
+                        )
+    EdenBot(dfuseApiKey=dfuse_api_key,
+            telegramApiID=telegram_api_id,
+            telegramApiHash=telegram_api_hash,
+            botToken=telegram_bot_token,
+            mode=Mode.DEMO, modeDemo=modeDemo).start()
 
     breakpoint = True
 

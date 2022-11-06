@@ -1,10 +1,11 @@
+from enum import Enum
 from typing import Tuple
 
 import psycopg2
 import pymysql
 import sqlalchemy
 from Cython import struct
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, load_only
 
 from app.constants import CurrentElectionState
 from app.log import *
@@ -125,17 +126,36 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting election status: " + str(e))
             return None
 
-    def createReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus):
+    def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus):
         assert isinstance(reminder, Reminder)
         assert isinstance(accountName, str)
-        assert isinstance(sendStatus, ReminderSendStatus)
+        assert isinstance(sendStatus, Enum)
         try:
+            #####################
+
             session = self.session
-            reminderSent = ReminderSent(reminderID=reminder.reminderID,
-                                        accountName=accountName,
-                                        sendStatus=sendStatus.value)
-            session.add(reminderSent)
-            session.commit()
+            # get election
+            reminderSentRecordFromDB = (
+                session.query(ReminderSent).filter(ReminderSent.accountName == accountName and
+                                                   ReminderSent.reminderID == reminder.electionID).first()
+            )
+            if reminderSentRecordFromDB is None:
+                LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
+                          str(reminder.dateTimeBefore) + " not found, creating new")
+                reminderSentRecordFromDB = ReminderSent(reminderID=reminder.reminderID,
+                                                        accountName=accountName,
+                                                        sendStatus=sendStatus)
+                session.add(reminderSentRecordFromDB)
+                session.commit()  # commit and get id in the room object
+                LOG.info("ReminderSend entrance for account " + accountName + " saved")
+            else:
+                LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
+                          str(reminder.dateTimeBefore) + " found, updating")
+                session.query(ReminderSent).filter(ReminderSent.accountName == accountName and
+                                                   ReminderSent.reminderID == reminder.electionID). \
+                    update({ReminderSent.sendStatus: sendStatus.value})
+                session.commit()
+
         except Exception as e:
             LOG.exception(message="Problem occurred when creating reminder sent record: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating reminder sent record: " + str(e))
@@ -162,6 +182,11 @@ class Database(metaclass=Singleton):
     def createRemindersIfNotExists(self, election: Election):
         try:
             session = self.session
+
+            if self.getRemindersCount(election) == len(alert_message_time_election_is_coming):
+                LOG.debug(message="Reminders for election " + str(election.electionID) + " already exists")
+                return
+
             for reminder in alert_message_time_election_is_coming:
                 electionTime = election.date
                 reminderTime = electionTime - timedelta(minutes=reminder)
@@ -188,6 +213,20 @@ class Database(metaclass=Singleton):
             session = self.session
             cs = (
                 session.query(Reminder).filter(Reminder.electionID == election.electionID).all()
+            )
+            if cs is None:
+                return None
+            return cs
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting reminders: " + str(e))
+            return None
+
+    def getRemindersCount(self, election: Election) -> int:
+        assert isinstance(election, Election)
+        try:
+            session = self.session
+            cs = (
+                session.query(Reminder.reminderID).filter(Reminder.electionID == election.electionID).count()
             )
             if cs is None:
                 return None
@@ -300,7 +339,7 @@ class Database(metaclass=Singleton):
         except Exception as e:
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
 
-    def getElection(self, datetime: datetime):
+    """def getElection(self, datetime: datetime):
         try:
             LOG("Getting election for date " + str(datetime))
             session = self.session
@@ -324,6 +363,7 @@ class Database(metaclass=Singleton):
 
         except Exception as e:
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
+        """
 
     def getLastElection(self) -> Election:
         try:
@@ -376,23 +416,34 @@ class Database(metaclass=Singleton):
             # get or create room
             roomFromDB = (
                 session.query(Room)
-                .filter(Room.electionID == electionFromDB.electionID, Room.roomName == room.roomName,
-                        Room.round == room.round)
+                .filter(Room.electionID == electionFromDB.electionID,
+                        Room.roomNameShort == room.roomNameShort,
+                        Room.roomNameLong == room.roomNameLong,
+                        Room.round == room.round,
+                        Room.roomIndex == room.roomIndex,
+                        Room.roomTelegramID == room.roomTelegramID
+                        )
                 .first()
             )
             if roomFromDB is None:
-                LOG.debug("Room with room number " + str(room.roomName) + " not found, creating new")
+                LOG.debug("Room with room name long " + str(room.roomNameLong) + " not found, creating new")
                 roomFromDB = room
                 session.add(roomFromDB)
                 session.flush()  # commit and get id in the room object
                 LOG.debug("Room; ElectionID+ " + str(electionFromDB.electionID) +
-                          ", RoomName: " + str(roomFromDB.roomName) +
+                          ", RoomNameShort: " + str(roomFromDB.roomNameShort) +
+                          ", RoomNameLong: " + str(roomFromDB.roomNameLong) +
                           ", Round: " + str(roomFromDB.round) +
+                          ", RoomIndex: " + str(roomFromDB.roomIndex) +
+                          ", RoomTelegramID: " + str(roomFromDB.roomTelegramID) +
                           " created.")
             else:
                 LOG.debug("Room; ElectionID+ " + str(electionFromDB.electionID) +
-                          ", RoomName: " + str(roomFromDB.roomName) +
+                          ", RoomNameShort: " + str(roomFromDB.roomNameShort) +
+                          ", RoomNameLong: " + str(roomFromDB.roomNameLong) +
                           ", Round: " + str(roomFromDB.round) +
+                          ", RoomIndex: " + str(roomFromDB.roomIndex) +
+                          ", RoomTelegramID: " + str(roomFromDB.roomTelegramID) +
                           " found.")
 
             # get or create participant
@@ -453,17 +504,17 @@ class Database(metaclass=Singleton):
             raise DatabaseException("Problem occurred in function setMemberWithElectionIDAndWithRoomID: " + str(e))
 
     def getMembers(self, election: Election) -> list[Participant]:
-        # TODO: not tested yet
-        assert isinstance(election, Election)
+        assert isinstance(election, Election), "election is not of type Election"
         try:
             session = self.session
-            cs = (
-                session.query(Election, Room, Participant)
-                .join(Room, Election.id == Room.electionID)
-                .join(Participant, Room.id == Participant.roomID)
-                .filter(Election.electionID == election.id)
-                .all()
-            )
+
+            roomIDs = session.query(Room.roomID).filter(Room.electionID == election.electionID).all()
+            roomIDs = [i[0] for i in roomIDs]
+
+            cs = (session.query(Participant)
+                  .filter(Participant.roomID.in_(roomIDs)).all()
+                  )
+
             if cs is None:
                 return None
             return cs
@@ -471,17 +522,7 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting members: " + str(e))
             return None
 
-    """def createReminderSentRecord(self, reminder: Reminder, participant: Participant, sendStatus: int):
-        try:
-            session = self.session
-            reminderSent = ReminderSent(reminderSentID=reminder.id, participantID=participant.id, sendStatus=sendStatus)
-            session.add(reminderSent)
-            session.commit()
-            LOG.info("Reminder sent record for reminder " + str(reminder.reminderID) + " saved")
-        except Exception as e:
-            LOG.exception(message="Problem occurred when creating reminder sent record: " + str(e))"""
-
-    def getReminderSentRecord(self, reminder: Reminder, participant: Participant) -> ReminderSent:
+    def getOneReminderSentRecord(self, reminder: Reminder, participant: Participant) -> ReminderSent:
         assert isinstance(reminder, Reminder)
         assert isinstance(participant, Participant)
         try:
@@ -497,19 +538,34 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting reminder sent record: " + str(e))
             return None
 
-    def getUsersInRoom(self, roomTelegramID: int) -> list[Participant]:
-        assert isinstance(roomTelegramID, int), "roomTelegramID must be int"
+    def getAllParticipantsReminderSentRecord(self, reminder: Reminder) -> list[ReminderSent]:
+        assert isinstance(reminder, Reminder)
         try:
             session = self.session
             cs = (
-                session.query(Room, Participant)
-                .join(Participant, Room.roomID == Participant.roomID)
-                .filter(Room.roomTelegramID == roomTelegramID)
-                .all()
+                session.query(ReminderSent).filter(ReminderSent.reminderID == reminder.reminderID).all()
             )
             if cs is None:
                 return None
             return cs
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting reminder sent record: " + str(e))
+            return None
+
+    def getUsersInRoom(self, roomTelegramID: int) -> list[Participant]:
+        assert isinstance(roomTelegramID, int), "roomTelegramID must be int"
+        try:
+            session = self.session
+
+            roomIDs = session.query(Room.roomID).filter(Room.roomTelegramID == roomTelegramID).all()
+            roomIDs = [i[0] for i in roomIDs]
+
+            cs = (session.query(Participant)
+                  .filter(Participant.roomID.in_(roomIDs)).all()
+                  )
+
+            if cs is None:
+                return None
         except Exception as e:
             LOG.exception(message="Problem occurred when getting users in room: " + str(e))
             return None
@@ -585,8 +641,8 @@ class DatabaseAbiException(DatabaseException):
 def main():
     print("Hello World!")
     database = Database()
-    kaj = database.getUsersInRoom(1)
-    list : list[ExtendedParticipant] = []
+    #kaj = database.getUsersInRoom(1)
+    #list: list[ExtendedParticipant] = []
     """list.append(ExtendedParticipant(accountName="abc",
                                    roomID=1,
                                    participationStatus=True,
@@ -604,7 +660,7 @@ def main():
                                    index=4,
                                    voteFor="abcderf"))"""
 
-    #kvaje = database.delegateParticipantToTheRoom(extendedParticipantsList=list)
+    # kvaje = database.delegateParticipantToTheRoom(extendedParticipantsList=list)
     # reminder: Reminder = Reminder(reminderID=1, electionID=1, dateTimeBefore=datetime.now())
     """database.createReminderSentRecord(reminder= reminder,
                                      participant= Participant(accountName="2luminaries1",
@@ -615,6 +671,15 @@ def main():
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
 
+
+    election: Election = Election(electionID=1,
+                                  status=ElectionStatus(electionStatusID=7,
+                                           status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1),
+                                  date=datetime.now()
+                                  )
+
+    #database.getMembers(election=election)
+    database.getUsersInRoom(roomTelegramID=-1)
     # result = database.getParticipantsWithoutReminderSentRecord(reminder=reminder)
 
     # database.saveOrUpdateAbi("test", "test1")

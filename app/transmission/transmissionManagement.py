@@ -6,6 +6,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from twisted.web.http import responses
 
 from app.constants import CurrentElectionState
+from app.database.participant import Participant
 from app.debugMode.modeDemo import Mode
 from app.log import Log
 from app.database import Database, Election, ExtendedRoom, Reminder, ElectionStatus, ReminderSendStatus
@@ -98,7 +99,8 @@ class TransmissionManagement:
             raise TransmissionManagementException("Exception (in getTextForUpcomingElection): " + str(e))
 
     def sendAlertForUpcomingElectionInBotChat(self, election: Election, reminder: Reminder,
-                                              participants: list[tuple[str, bool]]):
+                                              participants: list[Participant]):
+        raise NotImplementedError("Not implemented")
         # participants are stored as list of tuples (username(str), isAttending(bool))
         try:
             assert election is not None, "Election should not be null"
@@ -109,21 +111,12 @@ class TransmissionManagement:
 
             for item in participants:
                 try:
-                    if type(item) is not tuple or len(item) != 3:
-                        raise TransmissionManagementException("Participant list should contains TUPLE "
-                                                              "of size 2 (username, isAttending)")
-                    if type(item[0]) is not str:
-                        raise TransmissionManagementException("Participant list should contains TUPLE "
-                                                              "with first element type is STRING")
-                    if type(item[1]) is not str:
-                        raise TransmissionManagementException("Participant list should contains TUPLE "
-                                                              "with second element type is STRING")
-                    if type(item[2]) is not bool:
-                        raise TransmissionManagementException("Participant list should contains TUPLE "
-                                                              "with second element type is BOOLEAN")
+                    if type(item) is not Participant:
+                        raise TransmissionManagementException("TransmissionManagement.sendAlertForUpcomingElectionInBotChat; "
+                                                              "participant should be of type Participant")
 
                     text: str = self.getTextForUpcomingElection(election.date, reminder.dateTimeBefore,
-                                                                item[1])
+                                                                item.participationStatus)
 
                     replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                         [
@@ -141,17 +134,17 @@ class TransmissionManagement:
                     # users
 
                     if self.mode == Mode.LIVE:
-                        LOG.trace("Live mode is enabled, sending message to: " + item[0])
+                        LOG.trace("Live mode is enabled, sending message to: " + item.telegramID)
                         sendResponse: bool = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                            chatId=item[1],
+                                                                            chatId=item.telegramID,
                                                                             text=text,
                                                                             replyMarkup=replyMarkup)
 
-                        LOG.info("LiveMode; Is message sent successfully to " + item[1] + ": " + sendResponse
+                        LOG.info("LiveMode; Is message sent successfully to " + item.telegramID + ": " + sendResponse
                                  + ". Saving to the database "
                                  + election.electionID)
                         _database = Database()
-                        _database.createReminderSentRecord(reminder=reminder, accountName=item[0],
+                        _database.createReminderSentRecord(reminder=reminder, accountName=item.telegramID,
                                                            sendStatus=ReminderSendStatus.SEND if sendResponse is True
                                                            else ReminderSendStatus.ERROR)
 
@@ -169,12 +162,12 @@ class TransmissionManagement:
                                      + election.electionID)
 
                             _database = Database()
-                            _database.createReminderSentRecord(reminder=reminder, accountName=item[0],
+                            _database.createReminderSentRecord(reminder=reminder, accountName=item.telegramID,
                                                                sendStatus=ReminderSendStatus.SEND
                                                                if sendResponse is True
                                                                else ReminderSendStatus.ERROR)
 
-                    LOG.debug("Sending to participant: " + item[1] + " text: " + text)
+                    LOG.debug("Sending to participant: " + item.telegramID + " text: " + text)
                 except Exception as eSend:
                     LOG.exception(
                         "Exception (in sendAlertForUpcomingElectionInBotChat.participant loop): " + str(eSend))

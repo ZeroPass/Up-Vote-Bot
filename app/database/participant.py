@@ -7,7 +7,7 @@ class Participant(Base):
     __tablename__ = 'participant'
     """Class for interaction between code structure and database"""
     accountName = Column(CHAR(32), primary_key=True)
-    roomID = Column(Integer, ForeignKey(Room.roomID), nullable=False)
+    roomID = Column(Integer, ForeignKey(Room.roomID), nullable=False, primary_key=True)
     participationStatus = Column(BOOLEAN)
     telegramID = Column(Text)
     nftTemplateID = Column(Integer)
@@ -39,6 +39,10 @@ class Participant(Base):
         self.telegramID = telegramID
         self.nftTemplateID = nftTemplateID
         self.participantName = participantName
+
+    def __str__(self):
+        return f"Participant: {self.accountName}, {self.roomID}, {self.participationStatus}, {self.telegramID}, " \
+               f"{self.nftTemplateID}, {self.participantName}"
 
     def __eq__(self, other):
         if not isinstance(other, Participant):

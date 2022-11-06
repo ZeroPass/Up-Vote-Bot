@@ -11,7 +11,7 @@ class ExtendedParticipant(Participant):
                              participant.telegramID, participant.nftTemplateID, participant.participantName)
         else:
             assert isinstance(accountName, str), "accountName must be str"
-            assert isinstance(roomID, (int, type(None))), "roomID must be int"
+            assert isinstance(roomID, (int, type(None))), "roomID must be int or None"
             assert isinstance(telegramID, str), "telegramID must be str"
             assert isinstance(nftTemplateID, int), "nftTemplateID must be int"
             assert isinstance(participantName, str), "participantName must be str"

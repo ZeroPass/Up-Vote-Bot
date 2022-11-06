@@ -46,7 +46,7 @@ class ReminderSent(Base):
         assert isinstance(reminderSentID, (int, type(None)))
         assert isinstance(reminderID, int)
         assert isinstance(accountName, str)
-        assert isinstance(sendStatus, ReminderSendStatus)
+        assert isinstance(sendStatus, Enum)
 
         self.reminderSentID = reminderSentID
         self.reminderID = reminderID

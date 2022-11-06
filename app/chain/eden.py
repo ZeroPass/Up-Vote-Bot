@@ -92,7 +92,6 @@ class EdenData:
     def getBlockNumOfTimestamp(self, timestamp: datetime) -> Response:
         try:
             LOG.info("Get block number on datetime: " + str(datetime))
-            assert (timestamp is not None)
             assert (isinstance(timestamp, datetime))
             return self.dfuseConnection.getBlockHeightFromTimestamp(timestamp=timestamp)
         except Exception as e:

@@ -2,6 +2,8 @@ from enum import Enum
 
 from app.chain import EdenData
 from app.constants import dfuse_api_key
+from app.dateTimeManagement import DateTimeManagement
+from app.debugMode.modeDemo import ModeDemo
 from app.log import Log
 from datetime import datetime
 from app.constants.electionState import CurrentElectionState
@@ -9,6 +11,8 @@ from app.constants.electionState import CurrentElectionState
 from app.database import Election, Database, ElectionStatus
 
 from app.participantsManagement import ParticipantsManagement
+from app.reminderManagement import ReminderManagement
+from app.transmission import Communication
 
 LOG = Log(className="CurrentElectionStateHandler")
 
@@ -55,7 +59,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def getelectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self):
+    def customActions(self, communication: Communication, modeDemo: ModeDemo = None):
         LOG.debug("Saving election datetime in database")
         database: Database = Database()
 
@@ -70,8 +74,17 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         election = database.setElection(election=election)
 
         #write participants/member in database
-        participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key))
-        participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election)
+        #participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key)) #temp comment
+        #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election) #temp comment
+
+        # send notification
+        reminderManagement: ReminderManagement = ReminderManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key),
+                                                                    communication=communication,
+                                                                    modeDemo=modeDemo)
+        reminderManagement.createRemindersIfNotExists(election=election)
+        reminderManagement.sendReminderIfNeeded(election=election,
+                                                modeDemo=modeDemo)
+
 
 
 # Data['current_election_state_seeding_v1', {'seed': {'current': '0000000000000000000045AB464F6643EC69CBC24B91257A1868DF1684C8DC5C', 'start_time': '2022-07-08T13:00:00.000',
@@ -95,7 +108,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self):
+    def customActions(self, communication: Communication, modeDemo: ModeDemo = None):
         LOG.debug("Saving election datetime in database")
         database: Database = Database()
 
@@ -104,16 +117,23 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
             LOG.exception("'Election status' not found in database")
             raise Exception("'Election status' not found in database")
 
-        election: Election = Election(date=datetime.fromisoformat(self.getSeedStartTime()), status=electionStatusIDfromDB)
+        election: Election = Election(date=datetime.fromisoformat(self.getSeedEndTime()), status=electionStatusIDfromDB)
 
         # setting new election + creating notification records
         election = database.setElection(election=election)
 
-
         # write participants/member in database
-        participantsManagement: ParticipantsManagement = ParticipantsManagement(
-            edenData=EdenData(dfuseApiKey=dfuse_api_key))
-        participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election)
+        #participantsManagement: ParticipantsManagement = ParticipantsManagement(
+        #    edenData=EdenData(dfuseApiKey=dfuse_api_key))
+        #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election)
+
+        #send notification
+        reminderManagement: ReminderManagement = ReminderManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key),
+                                                                    communication=communication,
+                                                                    modeDemo=modeDemo)
+        reminderManagement.createRemindersIfNotExists(election=election)
+        reminderManagement.sendReminderIfNeeded(election=election,
+                                                modeDemo=modeDemo)
 
 # Data['current_election_state_init_voters_v1', {'next_member_idx': 60, 'rng': {'buf': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 69, 171, 70, 79, 102, 67, 236, 105, 203, 194, 75, 145, 37, 122, 24, 104,
 # 223, 22, 132, 200, 220, 92, 11, 0, 0, 0, 0, 0, 0, 0, 9, 85, 162, 164, 162, 194, 3, 246, 27, 242, 40, 209, 36, 104, 250, 250, 114, 23, 166, 132, 170, 103, 243, 159, 202, 22, 143, 219, 18, 115, 133, 216], 'index': 20},
