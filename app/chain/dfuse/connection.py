@@ -64,12 +64,13 @@ class DfuseConnection:
 
     def __init__(self, dfuseApiKey: str):
         if len(dfuseApiKey) == 0:
-            LOG.exception("Database must be initialized, not null")
+            LOG.exception("API key is null")
             raise DfuseError("API key is null")
         self.apiKeyParam = dfuseApiKey
-        self.connect()
+        #self.connect()
 
-    def getTokenFromApiKey(self):
+    def getTokenFromApiKey(self) -> ():
+        # returns token and expiration date
         try:
             connection = http.client.HTTPSConnection("auth.eosnation.io")
             connection.request('POST',
@@ -81,11 +82,16 @@ class DfuseConnection:
             if response.status != 200:
                 raise Exception(f" Status: {response.status} reason: {response.reason}")
 
-            self.dfuseToken = json.loads(response.read().decode())['token']
+            decodedResponse: str = response.read().decode()
+            self.dfuseToken = json.loads(decodedResponse)['token']
+            expiresAt = json.loads(decodedResponse)['expires_at']
+            expiresAtDT = datetime.fromtimestamp(expiresAt)
+            LOG.debug("Token expires at: " + str(expiresAtDT))
             LOG.success("Dfuse token successfully saved")
             connection.close()
+            return (self.dfuseToken, expiresAtDT)
         except Exception as e:
-            LOG.exception(e)
+            LOG.exception("Exception thrown when called getTokenFromApiKey; Description: " + str(e))
 
     def headers(self) -> {}:
         return {'Authorization': 'Bearer ' + self.dfuseToken}
@@ -96,13 +102,13 @@ class DfuseConnection:
             raise ConnectionError("There is no valid 'dfuse_url' entry in constant")
         return dfuse_url #from constants
 
-    def link(self, path: str) ->str:
+    def link(self, path: str) -> str:
         if path is None:
             LOG.exception("There is no valid 'path'")
             raise ConnectionError("There is no valid 'path'")
         return "" + self.url() + path
 
-    def linkNode(self, path: str) ->str:
+    def linkNode(self, path: str) -> str:
         if eos_node_url is None:
             LOG.exception("There is no valid 'eos_node_url' entry in constant")
             raise ConnectionError("There is no valid 'eos_node_url' entry in constant")
@@ -111,9 +117,10 @@ class DfuseConnection:
             raise ConnectionError("There is no valid 'path'")
         return "" + eos_node_url + path
 
-    def connect(self):
+    def connect(self) -> ():
+        # returns token and expiration date
         LOG.info("Start establishing connection on dfuse")
-        DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3)
+        return DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3)
 
     def getAbiFromChain(self, account: str, height: int) ->Response:
         try:

@@ -8,6 +8,7 @@ from Cython import struct
 from sqlalchemy.orm import sessionmaker, declarative_base, load_only
 
 from app.constants import CurrentElectionState
+from app.database.token import Token
 from app.log import *
 from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
@@ -113,6 +114,58 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when filling election statuses: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when filling election statuses: " + str(e))
 
+    def writeToken(self, name: str, value: str, expireBy: datetime):
+        try:
+            session = self.session
+            token: Token = Token(name=name, value=value, expireBy=expireBy)
+            session.add(token)
+            session.commit()
+        except Exception as e:
+            LOG.exception(message="Problem occurred when writing token: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when writing token: " + str(e))
+
+    def getToken(self, name: str) -> str:
+        try:
+            session = self.session
+            token = session.query(Token) \
+                .filter(Token.name == name) \
+                .first()
+
+            LOG.info(message="Token: " + str(token))
+            return token.value if token is not None else None
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting token: " + str(e))
+            return None
+
+    def checkIfTokenExists(self, name: str) -> bool:
+        try:
+            session = self.session
+            token = session.query(Token) \
+                .filter(Token.name == name) \
+                .first()
+
+            return False if token is None else True
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting token: " + str(e))
+            return False
+    def checkIfTokenExpired(self, name: str, executionTime: datetime) -> bool:
+        try:
+            session = self.session
+            token = session.query(Token) \
+                .filter(Token.name == name) \
+                .first()
+
+            if token is None:
+                return True
+            elif token.expireBy < executionTime:
+                return True
+            else:
+                return False
+        except Exception as e:
+            LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
+            return True
+
+
     def getElectionStatus(self, currentElectionState: CurrentElectionState) -> ElectionStatus:
         try:
             session = self.session
@@ -183,17 +236,43 @@ class Database(metaclass=Singleton):
         try:
             session = self.session
 
+            # check variables
+            for item in alert_message_time_election_is_coming:
+                if len(item) != 3:
+                    raise DatabaseException("alert_message_time_election_is_coming is not in correct size")
+                if isinstance(item[0], int) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[0]: "
+                                  "element is not int")
+
+                    raise DatabaseException("alert_message_time_election_is_coming tuple[0]: "
+                                            "element is not int")
+                if isinstance(item[1], Enum) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[1]: "
+                                  "element is not ReminderGroup")
+
+                    raise DatabaseException("alert_message_time_election_is_coming tuple[1]: "
+                                            "element is not ReminderGroup")
+                if isinstance(item[2], str) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[2]: "
+                                  "element is not str")
+
+                    raise DatabaseException("alert_message_time_election_is_coming tuple[2]: "
+                                            "element is not str")
+
             if self.getRemindersCount(election) == len(alert_message_time_election_is_coming):
                 LOG.debug(message="Reminders for election " + str(election.electionID) + " already exists")
                 return
 
             for reminder in alert_message_time_election_is_coming:
                 electionTime = election.date
-                reminderTime = electionTime - timedelta(minutes=reminder)
-                reminderObj = Reminder(electionID=election.electionID, dateTimeBefore=reminderTime)
+                reminderTime = electionTime - timedelta(minutes=reminder[0])
+                reminderObj = Reminder(electionID=election.electionID,
+                                       dateTimeBefore=reminderTime,
+                                       reminderGroup=reminder[1])
                 existing_reminder = (
                     session.query(Reminder).filter(Reminder.electionID == reminderObj.electionID,
-                                                   Reminder.dateTimeBefore == reminderObj.dateTimeBefore).first()
+                                                   Reminder.dateTimeBefore == reminderObj.dateTimeBefore,
+                                                   Reminder.reminderGroup == reminderObj.reminderGroup).first()
                 )
                 if existing_reminder is None:
                     LOG.debug("Reminder (with execution time " + str(election.date) + ") for election "
@@ -641,8 +720,8 @@ class DatabaseAbiException(DatabaseException):
 def main():
     print("Hello World!")
     database = Database()
-    #kaj = database.getUsersInRoom(1)
-    #list: list[ExtendedParticipant] = []
+    # kaj = database.getUsersInRoom(1)
+    # list: list[ExtendedParticipant] = []
     """list.append(ExtendedParticipant(accountName="abc",
                                    roomID=1,
                                    participationStatus=True,
@@ -671,14 +750,13 @@ def main():
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
 
-
     election: Election = Election(electionID=1,
                                   status=ElectionStatus(electionStatusID=7,
-                                           status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1),
+                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1),
                                   date=datetime.now()
                                   )
 
-    #database.getMembers(election=election)
+    # database.getMembers(election=election)
     database.getUsersInRoom(roomTelegramID=-1)
     # result = database.getParticipantsWithoutReminderSentRecord(reminder=reminder)
 

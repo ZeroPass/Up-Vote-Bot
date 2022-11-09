@@ -3,6 +3,7 @@ from typing import Optional
 from datetime import datetime
 from sqlalchemy import DateTime, Column, Integer, ForeignKey, Text, CHAR
 
+from app.constants import ReminderGroup
 from app.database.participant import Participant
 from app.database.election import Election
 from app.database.base import Base
@@ -21,15 +22,18 @@ class Reminder(Base):
     reminderID = Column(Integer, primary_key=True, autoincrement=True)
     dateTimeBefore = Column(DateTime)
     electionID = Column(Integer, ForeignKey(Election.electionID))
+    reminderGroup = Column(Integer)
 
-    def __init__(self, dateTimeBefore: datetime, electionID: int, reminderID: int = None):
+    def __init__(self, dateTimeBefore: datetime, electionID: int, reminderGroup: ReminderGroup = ReminderGroup.BOTH, reminderID: int = None):
         """Initialization object"""
         assert isinstance(electionID, int)
         assert isinstance(dateTimeBefore, datetime)
+        assert isinstance(reminderGroup, ReminderGroup)
         assert isinstance(reminderID, (int, type(None)))
 
         self.reminderID = reminderID
         self.dateTimeBefore = dateTimeBefore
+        self.reminderGroup = reminderGroup.value
         self.electionID = electionID
 
 

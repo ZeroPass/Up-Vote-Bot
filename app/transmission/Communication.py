@@ -99,7 +99,7 @@ class Communication:
         else:
             self.sessionUser.start()
 
-    def sendMessage(self, sessionType: SessionType, chatId: int, text: str,
+    async def sendMessage(self, sessionType: SessionType, chatId: int, text: str,
                     replyMarkup: InlineKeyboardMarkup = None) -> bool:
         LOG.info("Send message to: " + str(chatId) + " with text: " + text)
         try:
@@ -113,6 +113,7 @@ class Communication:
         except FloodWait as e:
             LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
             await asyncio.sleep(e.value)
+            return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=replyMarkup)
         except Exception as e:
             LOG.exception("Exception: " + str(e))
 

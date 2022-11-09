@@ -59,7 +59,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def getelectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, communication: Communication, modeDemo: ModeDemo = None):
+    def customActions(self, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
         LOG.debug("Saving election datetime in database")
         database: Database = Database()
 
@@ -78,7 +78,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election) #temp comment
 
         # send notification
-        reminderManagement: ReminderManagement = ReminderManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key),
+        reminderManagement: ReminderManagement = ReminderManagement(edenData=edenData,
                                                                     communication=communication,
                                                                     modeDemo=modeDemo)
         reminderManagement.createRemindersIfNotExists(election=election)
@@ -108,7 +108,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, communication: Communication, modeDemo: ModeDemo = None):
+    def customActions(self, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
         LOG.debug("Saving election datetime in database")
         database: Database = Database()
 
@@ -128,7 +128,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
         #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election)
 
         #send notification
-        reminderManagement: ReminderManagement = ReminderManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key),
+        reminderManagement: ReminderManagement = ReminderManagement(edenData=edenData,
                                                                     communication=communication,
                                                                     modeDemo=modeDemo)
         reminderManagement.createRemindersIfNotExists(election=election)

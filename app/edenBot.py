@@ -41,9 +41,9 @@ REPEAT_TIME = {
 class EdenBot:
     botMode: EdenBotMode
 
-    def __init__(self, dfuseApiKey: str, telegramApiID: int, telegramApiHash: str, botToken: str,  mode: Mode, modeDemo: ModeDemo = None):
+    def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str,  mode: Mode, modeDemo: ModeDemo = None):
         LOG.info("Initialization of EdenBot")
-        assert isinstance(dfuseApiKey, str), "dfuseApiKey is not a string"
+        assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
         assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
         assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
         assert isinstance(botToken, str), "botToken is not a string"
@@ -59,13 +59,17 @@ class EdenBot:
         # if demo mode is set, then 'modeDemo' must be set
         if mode == Mode.DEMO:
             assert modeDemo is not None
-        self.edenData = EdenData(dfuseApiKey=dfuseApiKey)
+        self.edenData = edenData
 
         if mode == Mode.DEMO:
-            self.modeDemo.setStartBlockHeight(
-                self.edenData.getBlockNumOfTimestamp(modeDemo.getStart()).data)  # set start block height
-            self.modeDemo.setEndBlockHeight(
-                self.edenData.getBlockNumOfTimestamp(modeDemo.getEnd()).data)  # set end block height
+            responseStart: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getStart())
+            responseEnd: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getEnd())
+            if isinstance(responseStart, ResponseError) or isinstance(responseEnd, ResponseError):
+                LOG.exception("Error when called getBlockNumOfTimestamp; Description: " + responseStart.error)
+                raise EdenBotException("Error when called getBlockNumOfTimestamp. Raise exception")
+
+            self.modeDemo.setStartBlockHeight(responseStart.data)  # set start block height
+            self.modeDemo.setEndBlockHeight(responseEnd.data)  # set end block height
 
         # difference between server and node time
         self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
@@ -121,11 +125,13 @@ class EdenBot:
             electionState = receivedData[0]
             if electionState == "current_election_state_registration_v1":
                 self.currentElectionState = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
-                self.currentElectionState.customActions(communication=self.communication,
+                self.currentElectionState.customActions(edenData=self.edenData,
+                                                        communication=self.communication,
                                                         modeDemo=self.modeDemo)
             elif electionState == "current_election_state_seeding_v1":
                 self.currentElectionState = CurrentElectionStateHandlerSeedingV1(receivedData[1])
-                self.currentElectionState.customActions(communication=self.communication,
+                self.currentElectionState.customActions(edenData=self.edenData,
+                                                        communication=self.communication,
                                                         modeDemo=self.modeDemo)
             elif electionState == "current_election_state_init_voters_v1":
                 self.currentElectionState = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
@@ -202,12 +208,16 @@ def main():
     import sys
     print(sys.version)
 
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
+    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
+
     modeDemo = ModeDemo(start=datetime(2022, 7, 9, 11, 59),
                         end=datetime(2022, 7, 9, 13, 30),
-                        edenObj=EdenData(dfuseApiKey=dfuse_api_key),
+                        edenObj=edenData,
                         step=240  # 2min
                         )
-    EdenBot(dfuseApiKey=dfuse_api_key,
+
+    EdenBot(edenData=edenData,
             telegramApiID=telegram_api_id,
             telegramApiHash=telegram_api_hash,
             botToken=telegram_bot_token,

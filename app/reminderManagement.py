@@ -1,8 +1,10 @@
+from enum import Enum
+
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.chain.dfuse import DfuseConnection
-from app.constants import dfuse_api_key, time_span_for_notification, alert_message_time_election_is_coming_text, \
-    alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id
+from app.constants import dfuse_api_key, time_span_for_notification, \
+    alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id, ReminderGroup
 from app.database import Election, Database
 from app.log import Log
 from datetime import datetime, timedelta
@@ -116,13 +118,14 @@ class ReminderManagement:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue
 
-                                self.sendAndSyncWithDatabase(member=member,
-                                                             election=election,
-                                                             reminder=reminder,
-                                                             reminderSentList=reminderSentList,
-                                                             modeDemo=modeDemo)
-                                LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
-                                         + member.telegramID)
+                                isSent: bool = self.sendAndSyncWithDatabase(member=member,
+                                                                            election=election,
+                                                                            reminder=reminder,
+                                                                            reminderSentList=reminderSentList,
+                                                                            modeDemo=modeDemo)
+                                if isSent:
+                                    LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
+                                             + member.telegramID)
                                 break
 
             else:
@@ -162,52 +165,64 @@ class ReminderManagement:
             raise ReminderManagementException(
                 "Exception thrown when called getMembersFromDatabase; Description: " + str(e))
 
-    def theNearestDateTime(self, alerts: list[int], minutes: int):
+    def theNearestDateTime(self, alerts: list[[int, ReminderGroup, str]], minutes: int) -> tuple[
+        int, ReminderGroup, str]:
         """Get the nearest date time"""
         try:
             LOG.info("Get nearest date time")
-            nearest = min(alerts, key=lambda x: abs(x - minutes))
+            nearest = min(alerts, key=lambda x: abs(x[0] - minutes))
             return nearest
         except Exception as e:
             LOG.exception(str(e))
             raise ReminderManagementException(
                 "Exception thrown when called nearestDateTime; Description: " + str(e))
 
-    def getTextForUpcomingElection(self, member: Participant, electionDateTime: datetime, currentTime: datetime) -> str:
+    def getTextForUpcomingElection(self, member: Participant, electionDateTime: datetime, reminder: Reminder,
+                                   currentTime: datetime) -> str:
         try:
             LOG.info("Getting text for election: " + str(electionDateTime))
 
             assert isinstance(electionDateTime, datetime)
             assert isinstance(currentTime, datetime)
+            assert isinstance(reminder, Reminder)
             assert isinstance(member, Participant)
 
             # get timedifference in text format from constants
             minutesToElectionInMinutes = (electionDateTime - currentTime).total_seconds() / 60
-            nearestDatetimeToElectionInMinutes: int = self.theNearestDateTime(alert_message_time_election_is_coming,
-                                                                              minutesToElectionInMinutes)
-            nearestDateTimeText = alert_message_time_election_is_coming_text[
-                alert_message_time_election_is_coming.index(nearestDatetimeToElectionInMinutes)]
+            nearestDatetimeToElectionInMinutes: tuple[int, ReminderGroup, str] = self.theNearestDateTime(
+                alert_message_time_election_is_coming,
+                minutesToElectionInMinutes)
+            nearestDateTimeText = nearestDatetimeToElectionInMinutes[2]
             LOG.debug("Nearest datetime to election: " + str(
                 nearestDatetimeToElectionInMinutes) + " minutes with text '" + nearestDateTimeText + "'")
 
-            if member.participationStatus:
+            LOG.debug("Member: " + str(member))
+            if member.participationStatus and \
+                    (nearestDatetimeToElectionInMinutes[1] == ReminderGroup.BOTH or
+                     nearestDatetimeToElectionInMinutes[1] == ReminderGroup.ATTENDED):
+                LOG.debug("Member is going to participate and reminder is for 'attended members'")
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting in %s.") % \
+                         "I'am here to remind you that election is starting %s.") % \
                        (nearestDateTimeText)
 
-            else:
+            elif member.participationStatus is False and \
+                    (nearestDatetimeToElectionInMinutes[1] is ReminderGroup.BOTH or \
+                     nearestDatetimeToElectionInMinutes[1] is ReminderGroup.NOT_ATTENDED):
+                LOG.debug("Member is going to participate and reminder is for 'not attended members'")
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting in %s."
+                         "I'am here to remind you that election is starting %s."
                          " \n You are not attending this election, so you will not be able to participate.\n\n"
                          "You can change your attendance status by pressing the button below text:.") % \
                        (nearestDateTimeText)
+            else:
+                return ""
         except Exception as e:
             LOG.exception("Exception (in getTextForUpcomingElection): " + str(e))
             raise ReminderManagementException("Exception (in getTextForUpcomingElection): " + str(e))
 
     def sendAndSyncWithDatabase(self, member: Participant, election: Election, reminder: Reminder,
                                 reminderSentList: list[ReminderSent],
-                                modeDemo: ModeDemo = None):
+                                modeDemo: ModeDemo = None) -> bool:
         """Send reminder and write to database"""
         try:
             assert isinstance(member, Participant), "member is not instance of Participant"
@@ -229,7 +244,11 @@ class ReminderManagement:
 
             text: str = self.getTextForUpcomingElection(member=member,
                                                         electionDateTime=election.date,
+                                                        reminder=reminder,
                                                         currentTime=self.datetime)
+            if text is None or len(text) < 1:
+                LOG.info("Text is empty, skip sending")
+                return False
 
             replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                 [
@@ -245,13 +264,15 @@ class ReminderManagement:
             # be sure that next comparison is correct, because we really do not want to send fake messages to
             # users
 
+            sendResponse: bool
+
             if modeDemo is None:
                 # LIVE MODE
                 LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
-                sendResponse: bool = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                    chatId=member.telegramID,
-                                                                    text=text,
-                                                                    replyMarkup=replyMarkup)
+                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                              chatId=member.telegramID,
+                                                              text=text,
+                                                              replyMarkup=replyMarkup)
 
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
                          + ". Saving to the database under electionID: " + str(election.electionID))
@@ -266,11 +287,11 @@ class ReminderManagement:
                 LOG.trace("Demo mode is enabled, sending message to admins")
                 for admin in telegram_admins_id:
                     text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
-                            member.telegramID
-                    sendResponse: bool = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                        chatId=admin,
-                                                                        text=text,
-                                                                        replyMarkup=replyMarkup)
+                           member.telegramID
+                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                                  chatId=admin,
+                                                                  text=text,
+                                                                  replyMarkup=replyMarkup)
 
                     LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
                              + ". Saving to the database under electionID: " + str(election.electionID))
@@ -282,6 +303,7 @@ class ReminderManagement:
                                                                else ReminderSendStatus.ERROR)
 
             LOG.debug("Sending to participant: " + member.telegramID + " text: " + text)
+            return sendResponse
 
         except Exception as e:
             LOG.exception(str(e))
