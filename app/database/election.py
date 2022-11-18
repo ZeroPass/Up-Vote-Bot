@@ -1,7 +1,8 @@
-from sqlalchemy import DateTime, MetaData, Table, Column, Integer, ForeignKey
+from sqlalchemy import DateTime, MetaData, Table, Column, Integer, ForeignKey, BOOLEAN
 from app.database.electionStatus import ElectionStatus
 from app.database.base import Base
 from datetime import datetime
+
 
 class Election(Base):
     __tablename__ = 'election'
@@ -10,8 +11,7 @@ class Election(Base):
     date = Column(DateTime)
     status = Column(Integer, ForeignKey(ElectionStatus.electionStatusID))
 
-
-    def __init__(self, date: datetime, status: ElectionStatus, electionID: int = None):
+    def __init__(self, date: datetime, status: ElectionStatus,  electionID: int = None):
         """Initialization object"""
         assert isinstance(date, datetime)
         assert isinstance(status, ElectionStatus)

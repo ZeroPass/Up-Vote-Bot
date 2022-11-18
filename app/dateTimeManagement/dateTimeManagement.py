@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from app.chain.eden import EdenData
 from app.log import Log
+import time
 
 LOG = Log(className="DateTimeManagement")
 
@@ -21,3 +24,12 @@ class DateTimeManagement:
         except Exception as e:
             LOG.exception(str(e))
             raise DateTimeManagement("Exception thrown when called getTime; Description: " + str(e))
+
+    @staticmethod
+    def getUnixTimestampInDT() -> datetime:
+        try:
+            LOG.info("Get unix timestamp")
+            return datetime.fromtimestamp(time.time())
+        except Exception as e:
+            LOG.exception(str(e))
+            raise DateTimeManagement("Exception thrown when called getUnixTimestampDT; Description: " + str(e))

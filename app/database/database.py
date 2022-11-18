@@ -1,28 +1,22 @@
 from enum import Enum
-from typing import Tuple
 
-import psycopg2
-import pymysql
 import sqlalchemy
-from Cython import struct
-from sqlalchemy.orm import sessionmaker, declarative_base, load_only
+from sqlalchemy.orm import sessionmaker
 
 from app.constants import CurrentElectionState
-from app.database.token import Token
+from app.constants.electionState import ElectionStatusFromKey
+
 from app.log import *
 from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
-from sqlalchemy import Table, Column, Integer, String, MetaData, create_engine, DateTime
+from sqlalchemy import create_engine
 from sqlalchemy.engine.url import URL
 
-from datetime import datetime
-from datetime import timedelta
-
-LOG = Log(className="Database")
-
+from datetime import datetime, timedelta
 # must be before import statements
 import app.database.base
 from app.database.abi import Abi
+from app.database.tokenService import TokenService
 from app.database.election import Election
 from app.database.electionStatus import ElectionStatus
 from app.database.participant import Participant
@@ -30,6 +24,7 @@ from app.database.extendedParticipant import ExtendedParticipant
 from app.database.room import Room
 from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
 
+LOG = Log(className="Database")
 
 class Singleton(type):
     _instances = {}
@@ -63,7 +58,7 @@ class Database(metaclass=Singleton):
             driver = 'mysql+pymysql'
             url = URL.create(driver, database_user, database_password, database_host, database_port, database_name)
             # mysql connection
-            self._engine = create_engine(url)
+            self._engine = create_engine(url, pool_recycle=3600)
             connection = self._engine.connect()
             self.SessionMaker = sessionmaker(bind=connection)
             self.session = self.SessionMaker()
@@ -117,9 +112,14 @@ class Database(metaclass=Singleton):
     def writeToken(self, name: str, value: str, expireBy: datetime):
         try:
             session = self.session
-            token: Token = Token(name=name, value=value, expireBy=expireBy)
-            session.add(token)
-            session.commit()
+            tokenService: TokenService = TokenService(name=name, value=value, expireBy=expireBy)
+            if self.getToken(name) is None:
+                session.add(tokenService)
+                session.commit()
+            else:
+                session.query(TokenService) \
+                    .filter(TokenService.name == name) \
+                    .update({TokenService.value: value, TokenService.expireBy: expireBy})
         except Exception as e:
             LOG.exception(message="Problem occurred when writing token: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when writing token: " + str(e))
@@ -127,12 +127,12 @@ class Database(metaclass=Singleton):
     def getToken(self, name: str) -> str:
         try:
             session = self.session
-            token = session.query(Token) \
-                .filter(Token.name == name) \
+            tokenService = session.query(TokenService) \
+                .filter(TokenService.name == name) \
                 .first()
 
-            LOG.info(message="Token: " + str(token))
-            return token.value if token is not None else None
+            LOG.info(message="Token: " + str(tokenService))
+            return tokenService.value if tokenService is not None else None
         except Exception as e:
             LOG.exception(message="Problem occurred when getting token: " + str(e))
             return None
@@ -140,31 +140,31 @@ class Database(metaclass=Singleton):
     def checkIfTokenExists(self, name: str) -> bool:
         try:
             session = self.session
-            token = session.query(Token) \
-                .filter(Token.name == name) \
+            tokenService = session.query(TokenService) \
+                .filter(TokenService.name == name) \
                 .first()
 
-            return False if token is None else True
+            return False if tokenService is None else True
         except Exception as e:
             LOG.exception(message="Problem occurred when getting token: " + str(e))
             return False
+
     def checkIfTokenExpired(self, name: str, executionTime: datetime) -> bool:
         try:
             session = self.session
-            token = session.query(Token) \
-                .filter(Token.name == name) \
+            tokenService = session.query(TokenService) \
+                .filter(TokenService.name == name) \
                 .first()
 
-            if token is None:
+            if tokenService is None:
                 return True
-            elif token.expireBy < executionTime:
+            elif tokenService.expireBy < executionTime:
                 return True
             else:
                 return False
         except Exception as e:
             LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
             return True
-
 
     def getElectionStatus(self, currentElectionState: CurrentElectionState) -> ElectionStatus:
         try:
@@ -177,6 +177,44 @@ class Database(metaclass=Singleton):
             return electionStatus
         except Exception as e:
             LOG.exception(message="Problem occurred when getting election status: " + str(e))
+            return None
+
+    def updateElectionColumnElectionStateIfChanged(self,
+                                                   election: Election,
+                                                   currentElectionState: CurrentElectionState) -> CurrentElectionState:
+        assert isinstance(election, Election), "election is not of type Election"
+        assert isinstance(currentElectionState, CurrentElectionState), "currentElectionState is not of type CurrentElectionState"
+        try:
+            # function return PREVIOUS election state - not current. If election state was not changed, return None
+            session = self.session
+            election, electionStatus = session.query(Election, ElectionStatus) \
+                .join(ElectionStatus, Election.status == ElectionStatus.electionStatusID) \
+                .filter(Election.electionID == election.electionID) \
+                .first()
+
+            if electionStatus.status == currentElectionState:
+                return None
+            else:
+                LOG.info("Election state changed from " + str(election.status) + " to " +
+                         str(currentElectionState.value))
+                # getElectionStatus
+                newElectionStatus = session.query(ElectionStatus) \
+                    .filter(ElectionStatus.status == currentElectionState.value) \
+                    .first()
+
+                if newElectionStatus is None or newElectionStatus.electionStatusID is None:
+                    LOG.error("Election status is None ...")
+                    LOG.error("..value is " + str(currentElectionState.value))
+                    raise DatabaseExceptionConnection("Election status is None ...")
+
+                session.query(Election) \
+                    .filter(Election.electionID == election.electionID) \
+                    .update({Election.status: newElectionStatus.electionStatusID})
+                session.commit()
+                return ElectionStatusFromKey(value=electionStatus.status)
+
+        except Exception as e:
+            LOG.exception(message="Problem occurred when updating election status in election: " + str(e))
             return None
 
     def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus):
@@ -339,8 +377,22 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when creating rooms: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating rooms: " + str(e))
 
+    def updateRoomsTelegramID(self, listOfRooms: list[Room]) -> list[Room]:
+        assert isinstance(listOfRooms, list), "listOfRooms is not a list"
+        try:
+            LOG.debug("Updating rooms; it returns updated list filled with id entry")
+            session = self.session
+            for room in listOfRooms:
+                session.query(Room).filter(Room.roomID == room.roomID). \
+                    update({Room.roomTelegramID: room.roomTelegramID})
+            session.commit()
+            return listOfRooms
+        except Exception as e:
+            LOG.exception(message="Problem occurred when updating rooms(telegramID): " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when updating rooms (telegramID): " + str(e))
+
     # """, extendedParticipantsList: list(ExtendedParticipant)"""
-    def delegateParticipantToTheRoom(self, extendedParticipantsList: list[ExtendedParticipant]):
+    def delegateParticipantsToTheRoom(self, extendedParticipantsList: list[ExtendedParticipant]):
         try:
             assert isinstance(extendedParticipantsList, list), "extendedParticipantsList is not a list"
             LOG.debug("Delegate participant to the room = add RoomId to the participant")
@@ -417,6 +469,17 @@ class Database(metaclass=Singleton):
 
         except Exception as e:
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
+
+    def electionGroupsCreated(self, election: Election, round: int) -> bool:
+        #is group created for this election and round?
+        try:
+            session = self.session
+            numberOfRooms: int = session.query(Room).\
+                filter(Room.electionID == election.electionID and Room.round == round).count()
+            return True if numberOfRooms > 0 else False
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
+            return None
 
     """def getElection(self, datetime: datetime):
         try:
@@ -750,11 +813,15 @@ def main():
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
 
-    election: Election = Election(electionID=1,
+    election: Election = Election(electionID=3,
                                   status=ElectionStatus(electionStatusID=7,
-                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1),
+                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
                                   date=datetime.now()
                                   )
+
+    kvaje = database.updateElectionColumnElectionStateIfChanged(election=election,
+                                                        currentElectionState=CurrentElectionState.
+                                                        CURRENT_ELECTION_STATE_SEEDING_V1)
 
     # database.getMembers(election=election)
     database.getUsersInRoom(roomTelegramID=-1)

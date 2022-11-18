@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 from app.chain.dfuse import DfuseConnection
 from app.constants import dfuse_api_key, time_span_for_notification, \
@@ -31,10 +31,13 @@ LOG = Log(className="RemindersManagement")
 
 class ReminderManagement:
 
-    def __init__(self, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+    def __init__(self, database: Database, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+        assert isinstance(database, Database), "database is not instance of Database"
         assert isinstance(edenData, EdenData), "edenData is not instance of EdenData"
         assert isinstance(communication, Communication), "communication is not instance of Communication"
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo is not instance of ModeDemo or None"
+
+        self.database: Database = database
 
         self.edenData = edenData
         self.communication = communication
@@ -46,14 +49,14 @@ class ReminderManagement:
 
         # basic workflow
         self.election: Election = self.getLastElection()
-        self.createRemindersIfNotExists(election=self.election)
+        #if self.database.electionGroupsCreated(election= self.election, round= 999) #TODO: check in the future
+        #    self.createRemindersIfNotExists(election=self.election)
 
     def getLastElection(self) -> Election:
         """Get last election"""
         try:
             LOG.info("Get last election")
-            database: Database = Database()
-            election: Election = database.getLastElection()
+            election: Election = self.database.getLastElection()
             if election is not None:
                 LOG.debug("Last election: " + str(election))
                 return election
@@ -68,8 +71,7 @@ class ReminderManagement:
         """Create reminder if there is no reminder in database"""
         try:
             LOG.info("Create reminders")
-            database: Database = Database()
-            database.createRemindersIfNotExists(election=election)
+            self.database.createRemindersIfNotExists(election=election)
             LOG.debug("Reminders created")
 
         except Exception as e:
@@ -77,7 +79,7 @@ class ReminderManagement:
             raise ReminderManagementException(
                 "Exception thrown when called getParticipantsFromChainAndMatchWithDatabase; Description: " + str(e))
 
-    def setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:
+    def     setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:
         """Set execution time; if modeDemo is defined then use datetime from modeDemo.blockHeight
         otherwise
         use time of the node as main time of server"""
@@ -95,11 +97,10 @@ class ReminderManagement:
         try:
             LOG.info("Send reminders if needed")
 
-            database: Database = Database()
             executionTime = self.setExecutionTime(modeDemo=modeDemo)
             LOG.debug("Working time: " + str(executionTime))
 
-            reminders = database.getReminders(election=election)
+            reminders = self.database.getReminders(election=election)
             if reminders is not None:
                 for item in reminders:
                     if isinstance(item, Reminder):
@@ -111,7 +112,7 @@ class ReminderManagement:
                             LOG.info("Send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
                             members: list[Participant] = self.getMembersFromDatabase(election=election)
-                            reminderSentList: list[ReminderSent] = database.getAllParticipantsReminderSentRecord(
+                            reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
                                 reminder=reminder)
                             for member in members:
                                 if member.telegramID is None or len(member.telegramID) < 3:
@@ -153,8 +154,7 @@ class ReminderManagement:
         """Get participants from database"""
         try:
             LOG.info("Get members from database")
-            database: Database = Database()
-            participants = database.getMembers(election=election)
+            participants = self.database.getMembers(election=election)
             if participants is not None:
                 return participants
             else:
@@ -249,7 +249,6 @@ class ReminderManagement:
             if text is None or len(text) < 1:
                 LOG.info("Text is empty, skip sending")
                 return False
-
             replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                 [
                     [  # First row
@@ -272,13 +271,12 @@ class ReminderManagement:
                 sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
                                                               chatId=member.telegramID,
                                                               text=text,
-                                                              replyMarkup=replyMarkup)
+                                                              inlineReplyMarkup=replyMarkup)
 
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
                          + ". Saving to the database under electionID: " + str(election.electionID))
 
-                _database = Database()
-                _database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
+                self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
                                                            sendStatus=ReminderSendStatus.SEND if sendResponse is True
                                                            else ReminderSendStatus.ERROR)
 
@@ -291,13 +289,12 @@ class ReminderManagement:
                     sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
                                                                   chatId=admin,
                                                                   text=text,
-                                                                  replyMarkup=replyMarkup)
+                                                                  inlineReplyMarkup=replyMarkup)
 
                     LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
                              + ". Saving to the database under electionID: " + str(election.electionID))
 
-                    _database = Database()
-                    _database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
+                    self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
                                                                sendStatus=ReminderSendStatus.SEND
                                                                if sendResponse is True
                                                                else ReminderSendStatus.ERROR)

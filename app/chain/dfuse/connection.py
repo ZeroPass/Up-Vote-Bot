@@ -324,7 +324,6 @@ class DfuseConnection:
             LOG.info("Search transaction")
 
             LOG.debug("Request.get on path:" + path)
-            q = {}
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params={},

@@ -5,7 +5,6 @@
 
 
 admin_array: {} = {''}
-phone_number: str = ""
 
 # dfuse
 dfuse_api_key: str = ""
@@ -21,17 +20,21 @@ eden_season: int = 5
 # attomic assets data
 atomic_assets_account: str = "atomicassets"
 
+#blocks.io
+blocksIOlinkToTheContract: str = \
+    "https://bloks.io/account/genesis.eden?account=genesis.eden&tab=Actions&loadContract=true"
+
 # send alert message to participants for new election (in minutes)
 # warning:next two tables needs to be synchronized by yourself
-alert_message_time_election_is_coming: [int] = [60,  # 1 hour before
-                                                60 * 24,  # 1 day before
-                                                60 * 24 * 7,  # 1 week before
-                                                ]
-
-alert_message_time_election_is_coming_text: [str] = ["in one hour",
-                                                     "tomorrow at this time",
-                                                     "next week at this time",
-                                                     ]
+alert_message_time_election_is_coming: [(int, ReminderGroup, str)] = \
+    [(5, ReminderGroup.ATTENDED, "now"), #right now
+     (60, ReminderGroup.ATTENDED, "in one hour"),  # 1 hour before
+     (60 * 24, ReminderGroup.ATTENDED, "tomorrow at this time"),  # 1 day before
+     (60 * 25, ReminderGroup.NOT_ATTENDED, "in 25 hours from now"),  # 25 hours before
+     (60 * 24 * 7, ReminderGroup.BOTH , "next week at this time"),  # 1 week before
+     (60 * 24 * 14, ReminderGroup.BOTH, "in 2 weeks"), # 2 weeks before
+     (60 * 24 * 31, ReminderGroup.BOTH, "in 1 month") # 1 month before
+    ]
 
 # database
 database_name: str = ""
@@ -48,6 +51,10 @@ telegram_api_id: int =
 telegram_api_hash: str = ""
 telegram_bot_token: str = ""
 telegram_admins_id: list = [""]  # admins must start intecation with bot, unsless it wont work
+
+telegram_phone_number: str = ""
+telegram_user_bot_name = ""
+telegram_bot_name: str = ""  # created with https://t.me/BotFather
 
 # Eden portal
 eden_portal_url: str = "https://genesis.eden.eoscommunity.org"

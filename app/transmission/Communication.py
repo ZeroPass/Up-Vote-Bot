@@ -1,13 +1,15 @@
 import asyncio
+from datetime import datetime, timedelta
 from enum import Enum
 
 from pyrogram.errors import FloodWait
 from pyrogram.handlers import MessageHandler
-from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges
+from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton
 
 from app.constants.parameters import *
 from app.database import Database
 from app.database.participant import Participant
+from app.dateTimeManagement import DateTimeManagement
 from app.log.log import Log
 
 from multiprocessing import Process
@@ -15,6 +17,8 @@ from multiprocessing import Process
 from pyrogram import Client, emoji, filters, types, idle
 
 import time
+
+from app.text.textManagement import GroupCommunicationTextManagement, Button
 
 
 # api_id = 48490
@@ -99,21 +103,36 @@ class Communication:
         else:
             self.sessionUser.start()
 
-    async def sendMessage(self, sessionType: SessionType, chatId: int, text: str,
-                    replyMarkup: InlineKeyboardMarkup = None) -> bool:
-        LOG.info("Send message to: " + str(chatId) + " with text: " + text)
+    def sendMessage(self,
+                    sessionType: SessionType,
+                    chatId: int,
+                    text: str,
+                    scheduleDate: datetime = None,
+                    inlineReplyMarkup: InlineKeyboardMarkup = None) -> bool:
+        # warning:
+        # when sessionType is SessionType.USER you cannot send message with inline keyboard
+        LOG.info("Send message to: " + str(chatId) + " with text: " + text
+                 + " and scheduleDate: " + str(scheduleDate) if scheduleDate is not None else "<now>")
         try:
             assert sessionType is not None, "Session should not be null"
+            assert sessionType is SessionType.USER and inlineReplyMarkup is not None, \
+                "when SessionType is USER there is no option to send inlineReplyMarkup!"
             if sessionType == SessionType.BOT:
-                response = self.sessionBot.send_message(chat_id=chatId, text=text, reply_markup=replyMarkup)
+                response = self.sessionBot.send_message(chat_id=chatId,
+                                                        text=text,
+                                                        schedule_date=scheduleDate,
+                                                        reply_markup=inlineReplyMarkup)
             else:
-                response = self.sessionUser.send_message(chat_id=chatId, text=text, reply_markup=replyMarkup)
+                response = self.sessionUser.send_message(chat_id=chatId,
+                                                         text=text,
+                                                         schedule_date=scheduleDate,
+                                                         reply_markup=inlineReplyMarkup)
             LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
             return True if type(response) is types.Message else False
         except FloodWait as e:
             LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
-            await asyncio.sleep(e.value)
-            return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=replyMarkup)
+            time.sleep(e.value)
+            return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=inlineReplyMarkup)
         except Exception as e:
             LOG.exception("Exception: " + str(e))
 
@@ -148,6 +167,24 @@ class Communication:
             LOG.exception("Exception (in createSuperGroup): " + str(e))
             return None
 
+    def getInvitationLink(self, sessionType: SessionType, chatId: int) -> str:
+        assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
+        assert isinstance(chatId, int), "ChatId should be int"
+        LOG.debug("Getting invitation link for chat: " + str(chatId) + " Make sure that user/bot is admin and keep in"
+                                                                       "mind that link is valid until next call of this"
+                                                                       "method. Previous link will be revoked.")
+        LOG.info("Get invitation link for chat: " + str(chatId))
+        try:
+            inviteLink: str = self.sessionUser.export_chat_invite_link(chat_id=chatId) \
+                if sessionType == SessionType.USER \
+                else \
+                self.sessionBot.export_chat_invite_link(chat_id=chatId)
+            LOG.debug("Invite link: " + inviteLink)
+            return inviteLink
+        except Exception as e:
+            LOG.exception("Exception (in getInvitationLink): " + str(e))
+            return None
+
     def archiveGroup(self, chatId: int) -> bool:
         LOG.info("Archiving group: " + str(chatId))
         try:
@@ -157,6 +194,18 @@ class Communication:
         except Exception as e:
             LOG.exception("Exception (in archiveGroup): " + str(e))
             return False
+
+    def callbackQuery(self, callbackQuery: types.CallbackQuery):
+        LOG.info("Callback query: " + str(callbackQuery))
+        try:
+            # TODO: function in progress
+            assert callbackQuery is not None, "CallbackQuery should not be null"
+            # self.sessionBot.answer_callback_query(callback_query_id=callbackQuery.id)
+
+            # self.sessionBot.on_callback_query(filters=filters.)
+
+        except Exception as e:
+            LOG.exception("Exception (in callbackQuery): " + str(e))
 
     def deleteGroup(self, chatId: int) -> bool:
         LOG.info("Deleting group: " + str(chatId))
@@ -180,27 +229,46 @@ class Communication:
             LOG.exception("Exception (in addChatMembers): " + str(e))
             return False
 
-    def promoteMembers(self, chatId: int, participants: list) -> bool:
+    def promoteMembers(self, sessionType: SessionType, chatId: int, participants: list) -> bool:
         LOG.info("Promoting participants to group: " + str(chatId) + " with participants: " + str(participants))
         try:
-            assert chatId is not None, "ChatId should not be null"
-            assert participants is not None, "Participants should not be null"
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, int), "ChatId should be int"
+            assert isinstance(participants, list), "Participants should be list"
+
             for participant in participants:
                 try:
-                    self.sessionUser.promote_chat_member(chat_id=chatId,
-                                                         user_id=participant,
-                                                         privileges=ChatPrivileges(
-                                                             can_manage_chat=True,
-                                                             can_delete_messages=True,
-                                                             can_manage_video_chats=True,
-                                                             can_restrict_members=True,
-                                                             can_promote_members=True,
-                                                             can_change_info=True,
-                                                             can_invite_users=True,
-                                                             can_pin_messages=True,
-                                                             is_anonymous=False
-                                                         )
-                                            )
+                    if sessionType == SessionType.USER:
+                        self.sessionUser.promote_chat_member(chat_id=chatId,
+                                                             user_id=participant,
+                                                             privileges=ChatPrivileges(
+                                                                 can_manage_chat=True,
+                                                                 can_delete_messages=True,
+                                                                 can_manage_video_chats=True,
+                                                                 can_restrict_members=True,
+                                                                 can_promote_members=True,
+                                                                 can_change_info=True,
+                                                                 can_invite_users=True,
+                                                                 can_pin_messages=True,
+                                                                 is_anonymous=False
+                                                             )
+                                                             )
+
+                    else:
+                        self.sessionBot.promote_chat_member(chat_id=chatId,
+                                                            user_id=participant,
+                                                            privileges=ChatPrivileges(
+                                                                can_manage_chat=True,
+                                                                can_delete_messages=True,
+                                                                can_manage_video_chats=True,
+                                                                can_restrict_members=True,
+                                                                can_promote_members=True,
+                                                                can_change_info=True,
+                                                                can_invite_users=True,
+                                                                can_pin_messages=True,
+                                                                is_anonymous=False
+                                                            )
+                                                            )
                 except Exception as e:
                     LOG.exception("Exception (in promoteMembers): " + str(e))
             return True
@@ -220,11 +288,17 @@ class Communication:
             LOG.exception("Exception (in setChatDescription): " + str(e))
             return False
 
-    def leaveChat(self, chatId: int) -> bool:
+    def leaveChat(self, sessionType: SessionType, chatId: int) -> bool:
+        assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+        assert isinstance(chatId, int), "ChatId should be int"
+
         LOG.info("Leaving group: " + str(chatId))
+        LOG.info("SessionType: " + str(sessionType))
         try:
-            assert chatId is not None, "ChatId should not be null"
-            self.sessionUser.leave_chat(chat_id=chatId)
+            if sessionType == SessionType.USER:
+                self.sessionUser.leave_chat(chat_id=chatId)
+            else:
+                self.sessionBot.leave_chat(chat_id=chatId)
             return True
         except Exception as e:
             LOG.exception("Exception (in leaveChat): " + str(e))
@@ -309,24 +383,60 @@ def runPyrogram():
     comm = Communication()
     comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
     # chatID = comm.createSuperGroup(name="test1", description="test1")
-    chatID = -1
+    # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
+
+    chatID = -1001893075719
     botID = 1
-    botName = '1'
+    botName = "@edenBotTestBot"
     userID = 1
     # first intecation
-    comm.sendMessage(sessionType=SessionType.USER, chatId=botName, text="From bot")
+    comm.sendMessage(sessionType=SessionType.USER, chatId=botName, text="From bot <br/> to user \n with new line"
+                                                                        "and \\n new line")
+
+    gctm = GroupCommunicationTextManagement()
+    buttons: tuple[Button] = gctm.invitationLinkToTheGroupButons(groupLink="https://t.me/+iCrYgZ_rgqxmZGE0")
+
+    comm.sendMessage(sessionType=SessionType.BOT, chatId="@EdenElectionSupport",
+                     text=gctm.invitationLinkToTheGroup(round=1),
+                     inlineReplyMarkup=InlineKeyboardMarkup(
+                        inline_keyboard=
+                        [
+                            [
+                                InlineKeyboardButton(text=buttons[0]['text'],
+                                                     url=buttons[0]['value']),
+
+                            ]
+                        ]
+                    )
+    )
 
     print("chatID: " + str(chatID))
     print(chatID)
     print("------")
-    comm.addChatMembers(chatId=chatID, participants=["1", botName])
-    comm.promoteMembers(chatId=chatID, participants=[botName])
-    comm.sendMessage(sessionType=SessionType.USER, chatId=chatID, text="Hello world!564565464")
+    comm.addChatMembers(chatId=chatID, participants=["@edenElectionSupport", "@nejcSkerjanc2", botName])
+    # comm.promoteMembers(chatId=chatID, participants=[botName, "@edenElectionSupport"])
+    comm.sendMessage(sessionType=SessionType.USER,
+                     chatId=chatID,
+                     text="Hope you will get next messages in next few minutes!")
+    comm.sendMessage(sessionType=SessionType.USER,
+                     chatId=chatID,
+                     text="I am bot  - bot, i am 30 seconds ahead in the future:)",
+                     scheduleDate=DateTimeManagement.getUnixTimestampInDT() + timedelta(seconds=30))
+    comm.sendMessage(sessionType=SessionType.USER,
+                     chatId=chatID,
+                     text="I am bot  - bot, i am 60 seconds ahead in the future:)",
+                     scheduleDate=DateTimeManagement.getUnixTimestampInDT() + timedelta(seconds=60))
+
+    comm.sendMessage(sessionType=SessionType.USER,
+                     chatId=chatID,
+                     text="I am leaving now!")
+
+    comm.leaveChat(sessionType=SessionType.USER, chatId=chatID)
+
     comm.idle()
 
 
 def main():
-
     ###########################################
     # multiprocessing
     pyogram = Process(target=runPyrogram)
@@ -336,8 +446,6 @@ def main():
     while True:
         time.sleep(3)
         print("main Thread")
-
-
     i = 9
 
 

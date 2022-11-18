@@ -1,6 +1,7 @@
 from app.database.room import Room
 from app.database.extendedParticipant import ExtendedParticipant
 
+
 class ExtendedRoom(Room):
     def __init__(self, electionID: int, round: int, roomIndex: int, roomNameShort: str, roomNameLong: str,
                  roomID: int = None, roomTelegramID: int = None):
@@ -20,3 +21,6 @@ class ExtendedRoom(Room):
 
     def getMembers(self) -> list[ExtendedParticipant]:
         return self.members
+
+    def getMembersTelegramIDsIfKnown(self) -> list[str]:
+        return [x for x in self.members if x.telegramID is not None and len(x.telegramID) > 2]

@@ -17,7 +17,7 @@ class ParticipantsManagement:
     def __init__(self, edenData: EdenData):
         self.edenData = edenData
         self.participants = []
-        self.database = Database()
+        self.database = Database() #Remove this outside
 
 
     def getParticipantsFromChainAndMatchWithDatabase(self, election: Election, height: int = None):

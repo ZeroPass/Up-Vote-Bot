@@ -2,7 +2,6 @@ from enum import Enum
 
 import chain
 import database
-import transmission
 import time
 
 from app.chain import EdenData
@@ -10,11 +9,12 @@ from app.chain.dfuse import *
 from app.chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
-from app.constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token
-from app.database import Database
+from app.constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
+from app.database import Database, Election
 from app.log import Log
 from datetime import datetime
 from app.debugMode.modeDemo import ModeDemo, Mode
+from app.groupManagement import GroupManagement
 import gettext
 
 from app.transmission import Communication
@@ -51,8 +51,8 @@ class EdenBot:
 
 
         # fill database with election status data if table is empty
-        database: Database = Database()
-        database.fillElectionStatuses()
+        self.database: Database = Database()
+        self.database.fillElectionStatuses()
 
         self.mode = mode
         self.modeDemo = modeDemo
@@ -75,6 +75,7 @@ class EdenBot:
         self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
                                                                             nodeTime=self.edenData.getChainDatetime())
 
+
         # creat communication object
         LOG.debug("Initialization of telegram bot...")
         self.communication = Communication()
@@ -82,11 +83,17 @@ class EdenBot:
                                  apiHash=telegramApiHash,
                                  botToken=botToken)
 
+        LOG.debug(" ...and group management object ...")
+        self.groupManagement = GroupManagement(edenData=edenData,
+                                          database=self.database,
+                                          communication=self.communication,
+                                          mode=mode)
+
         LOG.debug("... is finished")
 
         # set current election state
-        self.currentElectionState: CurrentElectionStateHandler = None
-        self.setCurrentElectionStateAndCallCustomActions()
+        self.currentElectionStateHandler: CurrentElectionStateHandler = None
+        self.setCurrentElectionStateAndCallCustomActions(database=self.database)
 
 
 
@@ -102,12 +109,13 @@ class EdenBot:
     def botModeNotElection(self):
         # setting up database (participants)
         # sending alerts
-        assert (self.currentElectionState is not None), "Current election state is not set"
-        if self.currentElectionState == CurrentElectionStateHandlerRegistratrionV1:
+        assert (self.currentElectionStateHandler is not None), "Current election state is not set"
+        if self.currentElectionStateHandler == CurrentElectionStateHandlerRegistratrionV1:
             todo = 7
 
-    def setCurrentElectionStateAndCallCustomActions(self):
+    def setCurrentElectionStateAndCallCustomActions(self, database: Database):
         try:
+            assert isinstance(database, Database), "database is not an instance of Database"
             LOG.debug("Check current election state from blockchain on height: " + str(
                 self.modeDemo.getCurrentBlock()) if self.modeDemo is not None else "<current/live>")
             edenData: Response = self.edenData.getCurrentElectionState(height=self.modeDemo.currentBlockHeight
@@ -121,32 +129,47 @@ class EdenBot:
 
             receivedData = edenData.data.data
 
-            # initialize state and call custom action if exists, motherwise there is just a comment in log
+            # initialize state and call custom action if exists, otherwise there is just a comment in log
             electionState = receivedData[0]
             if electionState == "current_election_state_registration_v1":
-                self.currentElectionState = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
-                self.currentElectionState.customActions(edenData=self.edenData,
-                                                        communication=self.communication,
-                                                        modeDemo=self.modeDemo)
+                self.currentElectionStateHandler = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
+                self.currentElectionStateHandler.customActions(database=database,
+                                                               edenData=self.edenData,
+                                                               communication=self.communication,
+                                                               modeDemo=self.modeDemo)
             elif electionState == "current_election_state_seeding_v1":
-                self.currentElectionState = CurrentElectionStateHandlerSeedingV1(receivedData[1])
-                self.currentElectionState.customActions(edenData=self.edenData,
-                                                        communication=self.communication,
-                                                        modeDemo=self.modeDemo)
+                self.currentElectionStateHandler = CurrentElectionStateHandlerSeedingV1(receivedData[1])
+                self.currentElectionStateHandler.customActions(database=database,
+                                                               edenData=self.edenData,
+                                                               communication=self.communication,
+                                                               modeDemo=self.modeDemo)
             elif electionState == "current_election_state_init_voters_v1":
-                self.currentElectionState = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
-                self.currentElectionState.customActions()
+                self.currentElectionStateHandler = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
+                self.currentElectionStateHandler.customActions()
             elif electionState == "current_election_state_active":
-                self.currentElectionState = CurrentElectionStateHandlerActive(receivedData[1])
-                self.currentElectionState.customActions()
+                self.currentElectionStateHandler = CurrentElectionStateHandlerActive(receivedData[1])
+                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement)
             elif electionState == "current_election_state_final":
-                self.currentElectionState = CurrentElectionStateHandlerFinal(receivedData[1])
-                self.currentElectionState.customActions()
+                self.currentElectionStateHandler = CurrentElectionStateHandlerFinal(receivedData[1])
+                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement)
             else:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
 
             LOG.debug("Current election state: " + str(receivedData[0]) + " with data: ".join(
                 ['{0}={1}'.format(k, v) for k, v in receivedData[1].items()]))
+
+            election: Election = self.database.getLastElection()
+            if election is None:
+                raise EdenBotException("Election is not set in database")
+
+            # write current election state to database
+            previousElectionState: CurrentElectionState = \
+                database.updateElectionColumnElectionStateIfChanged(election=election,
+                                                                    currentElectionState=
+                                                                    self.currentElectionStateHandler.
+                                                                    currentElectionState)
+            LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
+                      + str(self.currentElectionStateHandler.currentElectionState.value))
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             raise EdenBotException("Exception: " + str(e))
@@ -164,13 +187,10 @@ class EdenBot:
     def start(self):
         LOG.info("Starting EdenBot")
         try:
-            # init database
-            database = Database()
-
             while True:
                 # sleep time depends on bot mode
                 if self.mode == Mode.LIVE:
-                    time.sleep(REPEAT_TIME[self.currentElectionState.edenBotMode].value)
+                    time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode].value)
                 else:
                     # Mode.DEMO
                     time.sleep(0.1)  # in demo mode sleep 0.1s
@@ -185,13 +205,14 @@ class EdenBot:
                         LOG.success("Demo mode finished")
                         break
 
-                # define current election state
-                self.setCurrentElectionStateAndCallCustomActions()
+                # define current election state and write it to the database
+                self.setCurrentElectionStateAndCallCustomActions(database=self.database)
+
 
                 # check if there is a time for telegram alert message
 
                 # call the function that corresponds to the bot mode
-                if self.currentElectionState.getBotMode() == EdenBotMode.ELECTION:
+                if self.currentElectionStateHandler.getBotMode() == EdenBotMode.ELECTION:
                     LOG.info("ELECTION")
                     self.botModeElection()
                 else:

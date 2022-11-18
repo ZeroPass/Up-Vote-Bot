@@ -1,6 +1,6 @@
 from .database import Database
 from .database import DatabaseExceptionConnection
-from .database import Abi, ElectionStatus, Election, Reminder, ReminderSent, ReminderSendStatus
+from .database import Abi, ElectionStatus, Election, Reminder, ReminderSent, ReminderSendStatus, TokenService
 from .extendedParticipant import ExtendedParticipant
 from .extendedRoom import ExtendedRoom
 
@@ -16,6 +16,7 @@ __all__ = [
     'ExtendedRoom',
     "Reminder",
     "ReminderSent",
-    "ReminderSendStatus"
+    "ReminderSendStatus",
+    "TokenService"
 ]
 

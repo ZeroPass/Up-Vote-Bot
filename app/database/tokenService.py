@@ -1,16 +1,16 @@
-import datetime as DateTimeP
+from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, Table, Column, Text, CHAR, VARBINARY, VARCHAR, String, Integer
+from sqlalchemy import DateTime, Column, Text, CHAR
 from app.database.base import Base
 
-class Token(Base):
-    __tablename__ = 'token'
+class TokenService(Base):
+    __tablename__ = 'tokenService'
     name = Column(CHAR(32), nullable=False, primary_key=True)
     value = Column(Text, nullable=False)
     expireBy = Column(DateTime, nullable=False)
 
 
-    def __init__(self, name: str, value: str, expireBy: DateTime):
+    def __init__(self, name: str, value: str, expireBy: datetime):
         """Initialization object"""
         self.name = name
         self.value = value

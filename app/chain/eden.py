@@ -201,7 +201,7 @@ class EdenData:
                 self.dfuseConnection.dfuseToken = database.getToken(name="dfuse")
 
             else:
-                LOG.debug("Token exists and is not expired, use it")
+                LOG.debug("Token exists and it is not expired, use it")
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called updateDfuseApiKey; Description: " + str(e))

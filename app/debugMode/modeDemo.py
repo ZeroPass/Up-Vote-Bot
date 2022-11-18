@@ -49,7 +49,7 @@ class ModeDemo:
         LOGModeDemo.debug("ModeDemo; Set start block height to: " + str(height))
         self.startBlockHeight = height
         self.currentBlockHeight = height
-        self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(height)
+        self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=height)
 
     def setEndBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
