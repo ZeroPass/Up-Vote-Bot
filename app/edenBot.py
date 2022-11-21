@@ -1,6 +1,5 @@
 from enum import Enum
 
-import chain
 import database
 import time
 
@@ -41,17 +40,17 @@ REPEAT_TIME = {
 class EdenBot:
     botMode: EdenBotMode
 
-    def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str,  mode: Mode, modeDemo: ModeDemo = None):
+    def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str, database: Database, mode: Mode, modeDemo: ModeDemo = None):
         LOG.info("Initialization of EdenBot")
         assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
         assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
         assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
         assert isinstance(botToken, str), "botToken is not a string"
+        assert isinstance(database, Database), "database is not an instance of Database"
 
-
+        self.database = database
 
         # fill database with election status data if table is empty
-        self.database: Database = Database()
         self.database.fillElectionStatuses()
 
         self.mode = mode
@@ -85,9 +84,9 @@ class EdenBot:
 
         LOG.debug(" ...and group management object ...")
         self.groupManagement = GroupManagement(edenData=edenData,
-                                          database=self.database,
-                                          communication=self.communication,
-                                          mode=mode)
+                                               database=self.database,
+                                               communication=self.communication,
+                                               mode=mode)
 
         LOG.debug("... is finished")
 
@@ -148,10 +147,12 @@ class EdenBot:
                 self.currentElectionStateHandler.customActions()
             elif electionState == "current_election_state_active":
                 self.currentElectionStateHandler = CurrentElectionStateHandlerActive(receivedData[1])
-                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement)
+                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement,
+                                                               modeDemo=self.modeDemo)
             elif electionState == "current_election_state_final":
                 self.currentElectionStateHandler = CurrentElectionStateHandlerFinal(receivedData[1])
-                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement)
+                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement,
+                                                               modeDemo=self.modeDemo)
             else:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
 
@@ -193,13 +194,13 @@ class EdenBot:
                     time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode].value)
                 else:
                     # Mode.DEMO
+                    LOG.debug("Demo mode: sleep time: " + str(0.1))
                     time.sleep(0.1)  # in demo mode sleep 0.1s
 
                 # increase chain height if DEMO mode
                 if self.mode == Mode.DEMO:
                     if self.modeDemo.isNextBlock():
-                        blockHeihgt: int = self.modeDemo.getNextBlock()
-                        LOG.info("Next block height (DEMO mode): " + str(blockHeihgt))
+                        self.modeDemo.getNextBlock()
                     else:
                         LOG.debug("No next block height (DEMO mode);")
                         LOG.success("Demo mode finished")
@@ -208,10 +209,7 @@ class EdenBot:
                 # define current election state and write it to the database
                 self.setCurrentElectionStateAndCallCustomActions(database=self.database)
 
-
-                # check if there is a time for telegram alert message
-
-                # call the function that corresponds to the bot mode
+                # call the function that corresponds to the bot mode - important because of the different sleep times
                 if self.currentElectionStateHandler.getBotMode() == EdenBotMode.ELECTION:
                     LOG.info("ELECTION")
                     self.botModeElection()
@@ -225,12 +223,15 @@ class EdenBot:
 
 
 def main():
-    print("------>EdenBot<-------")
+    print("------>Python<-------")
     import sys
-    print(sys.version)
+    print("\nVersion: " + str(sys.version))
+    print("\n\n")
+    print("------>EdenBot<-------\n\n")
 
     dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
-    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
+    database = Database()
+    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
 
     modeDemo = ModeDemo(start=datetime(2022, 7, 9, 11, 59),
                         end=datetime(2022, 7, 9, 13, 30),
@@ -242,7 +243,9 @@ def main():
             telegramApiID=telegram_api_id,
             telegramApiHash=telegram_api_hash,
             botToken=telegram_bot_token,
-            mode=Mode.DEMO, modeDemo=modeDemo).start()
+            mode=Mode.DEMO,
+            database=database,
+            modeDemo=modeDemo).start()
 
     breakpoint = True
 

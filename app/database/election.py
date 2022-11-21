@@ -19,3 +19,8 @@ class Election(Base):
         self.electionID = electionID
         self.date = date
         self.status = status.electionStatusID
+
+    def __str__(self):
+        return "ElectionID: " + str(self.electionID) + \
+               " Date: " + str(self.date.strftime("%d.%m.%Y %H:%M:%S")) +\
+               " Status: " + str(self.status)

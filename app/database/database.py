@@ -463,7 +463,7 @@ class Database(metaclass=Singleton):
                 LOG.debug("Election for date " + str(electionFromDB.date) + " found.")
 
             # create reminders
-            LOG.debug("Creating reminders for election at" + str(electionFromDB.date))
+            LOG.debug("Creating reminders for election at: " + str(electionFromDB.date))
             self.createRemindersIfNotExists(election=electionFromDB)
             return electionFromDB
 
@@ -480,32 +480,6 @@ class Database(metaclass=Singleton):
         except Exception as e:
             LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
             return None
-
-    """def getElection(self, datetime: datetime):
-        try:
-            LOG("Getting election for date " + str(datetime))
-            session = self.session
-            # get election
-            electionFromDB = (
-                session.query(Election).filter(Election.date == datetime).first()
-            )
-            if electionFromDB is None:
-                LOG.debug("Election for date " + str(datetime) + " not found, creating new")
-                electionFromDB = Election(date=datetime)
-                session.add(electionFromDB)
-                session.flush()  # commit and get id in the room object
-                LOG.info("Election for date " + str(electionFromDB.date) + " saved")
-            else:
-                LOG.debug("Election for date " + str(electionFromDB.date) + " found.")
-
-            # create reminders
-            LOG.debug("Creating reminders for election at" + str(electionFromDB.date))
-            self.createRemindersIfNotExists(election=electionFromDB)
-            return electionFromDB
-
-        except Exception as e:
-            LOG.exception(message="Problem occurred in function setElection: " + str(e))
-        """
 
     def getLastElection(self) -> Election:
         try:

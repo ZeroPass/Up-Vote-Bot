@@ -47,6 +47,20 @@ class ResponseSuccessful(Response):
         return self._data
 
 
+class Counter:
+    def __init__(self, start=0):
+        self.count = start
+
+    def call(self) -> int:
+        self.count += 1
+        return self.count
+
+    def reset(self):
+        self.count = 0
+
+    def __str__(self) -> str:
+        return str(self.count)
+
 class ResponseError(Response):
     def __init__(self, error: str):
         super(ResponseError, self).__init__(successful=False)
@@ -67,12 +81,16 @@ class DfuseConnection:
             LOG.exception("API key is null")
             raise DfuseError("API key is null")
         self.apiKeyParam = dfuseApiKey
+
+        # initialize counter
+        self.counter = Counter()
         #self.connect()
 
     def getTokenFromApiKey(self) -> ():
         # returns token and expiration date
         try:
             connection = http.client.HTTPSConnection("auth.eosnation.io")
+            LOG.debug("Dfuse counter: " + str(self.counter.call()))
             connection.request('POST',
                                '/v1/auth/issue',
                                json.dumps({"api_key": self.apiKeyParam}),
@@ -120,7 +138,7 @@ class DfuseConnection:
     def connect(self) -> ():
         # returns token and expiration date
         LOG.info("Start establishing connection on dfuse")
-        return DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3)
+        return DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3,counterObj=self.counter)
 
     def getAbiFromChain(self, account: str, height: int) ->Response:
         try:
@@ -139,7 +157,8 @@ class DfuseConnection:
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params=parameters,
-                headers=self.headers(), verify=False))
+                headers=self.headers(), verify=False),
+                counterObj=self.counter)
 
             abiHex = json.loads(result.text)
             if result.status_code == 200:
@@ -204,7 +223,7 @@ class DfuseConnection:
             # if scope is zero we need to manually parse binary data to json
             isJson = False if scope is None else True
 
-            parameters= dict({
+            parameters = dict({
                 'account': account,
                 "table": table,
                 "primary_key": primaryKey,
@@ -219,7 +238,8 @@ class DfuseConnection:
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params=parameters,
-                headers=self.headers(), verify=False))
+                headers=self.headers(), verify=False),
+                counterObj=self.counter)
             j = json.loads(result.text)
             if result.status_code == 200:
                 LOG.success("Status code:200")
@@ -251,7 +271,8 @@ class DfuseConnection:
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params=parameters,
-                headers=self.headers(), verify=False))
+                headers=self.headers(), verify=False),
+                counterObj=self.counter)
 
             j = json.loads(result.text)
             if result.status_code == 200:
@@ -293,7 +314,8 @@ class DfuseConnection:
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params=parameters,
-                headers=self.headers(), verify=False))
+                headers=self.headers(), verify=False),
+                ounterObj=self.counter)
             j = json.loads(result.text)
             if result.status_code == 200:
                 LOG.success("Status code:200")
@@ -327,7 +349,8 @@ class DfuseConnection:
             result = DfuseConnection.retry(lambda: requests.get(
                 self.link(path=path),
                 params={},
-                headers=self.headers(), verify=False))
+                headers=self.headers(), verify=False),
+                counterObj=self.counter)
             j = json.loads(result.text)
             if result.status_code == 200:
                 LOG.success("Status code:200")
@@ -340,7 +363,7 @@ class DfuseConnection:
             LOG.exception(str(e))
 
 
-    def retry(func, ex_type=Exception, limit=5, wait_ms=100, wait_increase_ratio=2, logger=True):
+    def retry(func, counterObj: Counter, ex_type=Exception, limit=5, wait_ms=100, wait_increase_ratio=2, logger=True):
         """
         Retry a function invocation until no exception occurs
         :param func: function to invoke
@@ -352,10 +375,12 @@ class DfuseConnection:
         :return: result of first successful invocation
         :raises: last invocation exception if attempts exhausted or exception is not an instance of ex_type
         """
+        assert isinstance(counterObj, Counter), "counterObj must be of type Counter"
         attempt = 1
         while True:
             try:
                 LOG_RETRY.info("Running the retry function " + str(attempt) + " times")
+                LOG_RETRY.debug("Dfuse counter: " + str(counterObj.call()))
                 return func()
             except Exception as ex:
                 if not isinstance(ex, ex_type):

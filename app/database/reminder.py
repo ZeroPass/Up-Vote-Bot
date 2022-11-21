@@ -1,7 +1,6 @@
 from enum import Enum
-from typing import Optional
 from datetime import datetime
-from sqlalchemy import DateTime, Column, Integer, ForeignKey, Text, CHAR
+from sqlalchemy import DateTime, Column, Integer, ForeignKey, CHAR
 
 from app.constants import ReminderGroup
 from app.database.participant import Participant
@@ -35,6 +34,12 @@ class Reminder(Base):
         self.dateTimeBefore = dateTimeBefore
         self.reminderGroup = reminderGroup.value
         self.electionID = electionID
+
+    def __str__(self):
+        return "ReminderID: " + str(self.reminderID) if self.reminderID is not None else "<None>" + \
+               " DateTimeBefore: " + str(self.dateTimeBefore) + \
+               " ElectionID: " + str(self.electionID) + \
+               " ReminderGroup: " + str(self.reminderGroup)
 
 
 class ReminderSent(Base):

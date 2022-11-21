@@ -68,6 +68,8 @@ class ModeDemo:
             raise ModeDemoException("No current block available")
         self.currentBlockHeight += self.step
         self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=self.currentBlockHeight)
+        LOGModeDemo.debug("ModeDemo; Current block height is now: " + str(self.currentBlockHeight) +
+                          " and timestamp is: " + str(self.currentBlockTimestamp))
         if self.isNextBlock() is False:
             LOGModeDemo.exception("ModeDemo; Next block is not available")
             raise ModeDemoException("No next block available")

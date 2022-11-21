@@ -18,6 +18,8 @@ from app.transmission import SessionType, Communication
 
 import gettext
 
+from app.transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+
 _ = gettext.gettext
 __ = gettext.ngettext
 
@@ -79,7 +81,7 @@ class ReminderManagement:
             raise ReminderManagementException(
                 "Exception thrown when called getParticipantsFromChainAndMatchWithDatabase; Description: " + str(e))
 
-    def     setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:
+    def setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:
         """Set execution time; if modeDemo is defined then use datetime from modeDemo.blockHeight
         otherwise
         use time of the node as main time of server"""
@@ -106,10 +108,16 @@ class ReminderManagement:
                     if isinstance(item, Reminder):
                         reminder: Reminder = item
                         LOG.info("Reminder: " + str(reminder))
+                        LOG.debug("Reminder time: " + str(reminder.dateTimeBefore) +
+                                  "; Execution time: " + str(executionTime) +
+                                  "; Reminder time span: " + str(reminder.dateTimeBefore + timedelta(
+                                                                    minutes=time_span_for_notification)) +
+                                  " ..."
+                                  )
 
                         if reminder.dateTimeBefore < executionTime < reminder.dateTimeBefore + timedelta(
                                 minutes=time_span_for_notification):
-                            LOG.info("Send reminder to election id: " + str(reminder.electionID) +
+                            LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
                             members: list[Participant] = self.getMembersFromDatabase(election=election)
                             reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
@@ -127,7 +135,9 @@ class ReminderManagement:
                                 if isSent:
                                     LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
                                              + member.telegramID)
-                                break
+
+                        else:
+                            LOG.debug("... reminder is not needed!")
 
             else:
                 LOG.error("Reminders are not set in the database. Something went wrong.")
@@ -285,7 +295,7 @@ class ReminderManagement:
                 LOG.trace("Demo mode is enabled, sending message to admins")
                 for admin in telegram_admins_id:
                     text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
-                           member.telegramID
+                           ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
                     sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
                                                                   chatId=admin,
                                                                   text=text,

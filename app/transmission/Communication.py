@@ -114,9 +114,10 @@ class Communication:
         LOG.info("Send message to: " + str(chatId) + " with text: " + text
                  + " and scheduleDate: " + str(scheduleDate) if scheduleDate is not None else "<now>")
         try:
-            assert sessionType is not None, "Session should not be null"
-            assert sessionType is SessionType.USER and inlineReplyMarkup is not None, \
-                "when SessionType is USER there is no option to send inlineReplyMarkup!"
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert (sessionType is SessionType.BOT) or \
+                   (sessionType is SessionType.USER and inlineReplyMarkup is None), \
+                        "when SessionType is USER there is no option to send inlineReplyMarkup!"
             if sessionType == SessionType.BOT:
                 response = self.sessionBot.send_message(chat_id=chatId,
                                                         text=text,

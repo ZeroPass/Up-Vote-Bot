@@ -20,16 +20,18 @@ LOG = Log(className="EdenChain")
 
 
 class EdenData:
+    # dfusConnection and database should be initialized at the beginning of the program - because of the threading
     dfuseConnection: DfuseConnection
 
-    def __init__(self, dfuseConnection: DfuseConnection):
+    def __init__(self, dfuseConnection: DfuseConnection, database: Database):
         LOG.info("Initialization of EdenChain")
         assert isinstance(dfuseConnection, DfuseConnection), "dfuseConnection is not of type DfuseConnection"
+        assert isinstance(database, Database), "database is not of type Database"
         self.dfuseConnection = dfuseConnection
 
         # update api key
-        self.updateDfuseApiKey()
-        schedule.every(5).seconds.do(self.updateDfuseApiKey)
+        self.updateDfuseApiKey(database=database)
+        schedule.every(10).minutes.do(self.updateDfuseApiKey, database=database)
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -90,7 +92,7 @@ class EdenData:
                                                     height=height)
         except Exception as e:
             LOG.exception(str(e))
-            return ResponseError("Exception thrown when called getNextElectionTime; Description: " + str(e))
+            return ResponseError("Exception thrown when called getCurrentElectionState; Description: " + str(e))
 
     def getParticipants(self, height: int = None):
         try:
@@ -105,7 +107,7 @@ class EdenData:
                                                  height=height)
         except Exception as e:
             LOG.exception(str(e))
-            return ResponseError("Exception thrown when called getElectionState; Description: " + str(e))
+            return ResponseError("Exception thrown when called getParticipants; Description: " + str(e))
 
     def getMembers(self, height: int = None):
         try:
@@ -124,8 +126,8 @@ class EdenData:
 
     def getBlockNumOfTimestamp(self, timestamp: datetime) -> Response:
         try:
-            LOG.info("Get block number on datetime: " + str(datetime))
-            assert (isinstance(timestamp, datetime))
+            assert isinstance(timestamp, datetime), "timestamp is not of type datetime"
+            LOG.info("Get block number on datetime: " + timestamp.strftime("%Y-%m-%d %H:%M:%S"))
             return self.dfuseConnection.getBlockHeightFromTimestamp(timestamp=timestamp)
         except Exception as e:
             LOG.exception(str(e))
@@ -174,10 +176,10 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getChainDatetime; Description: " + str(e))
 
-    def updateDfuseApiKey(self):
+    def updateDfuseApiKey(self, database: Database):
         try:
+            assert isinstance(database, Database), "database is not of type Database"
             LOG.debug("Updating dfuse api key if necessary")
-            database: Database = Database()
             if database.checkIfTokenExists(name="dfuse") is False:
                 LOG.debug("Token does not exist, create it")
                 tokenAndExpireDate: () = self.dfuseConnection.connect()
@@ -215,7 +217,6 @@ def main():
     nodeTime = dfuseObj.getChainDatetime()
     kva = dfuseObj.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
                                                          nodeTime=datetime.fromisoformat(nodeTime))
-
     ret = 9
 
 

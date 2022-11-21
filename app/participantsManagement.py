@@ -14,10 +14,10 @@ LOG = Log(className="ParticipantsManagement")
 
 class ParticipantsManagement:
 
-    def __init__(self, edenData: EdenData):
+    def __init__(self, edenData: EdenData, database: Database):
         self.edenData = edenData
         self.participants = []
-        self.database = Database() #Remove this outside
+        self.database = database
 
 
     def getParticipantsFromChainAndMatchWithDatabase(self, election: Election, height: int = None):
