@@ -3,7 +3,7 @@
 Read its description and donate at [pomelo.io/grants/bot4eden](https://pomelo.io/grants/bot4eden)!
 
 
-It is a bot written in Python language which main purpose is to suppor [Eden](https://genesis.eden.eoscommunity.org/) elections.
+It is a bot written in Python language which main purpose is to support [Eden](https://genesis.eden.eoscommunity.org/) elections.
 
 ## Preconditions
 
