@@ -88,6 +88,11 @@ class EdenBot:
                                                communication=self.communication,
                                                mode=mode)
 
+        self.communication.idle()
+        while True:
+            time.sleep(3)
+
+
         LOG.debug("... is finished")
 
         # set current election state
@@ -233,7 +238,7 @@ def main():
     database = Database()
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
 
-    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 11, 59),
+    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 13, 3),
                         end=datetime(2022, 7, 9, 13, 30),
                         edenObj=edenData,
                         step=240  # 2min

@@ -12,10 +12,10 @@ class Room(Base):
     roomNameLong = Column(CHAR(128), nullable=False)
     round = Column(Integer, nullable=False)
     roomIndex = Column(Integer, nullable=False)
-    roomTelegramID = Column(Integer, nullable=True)
+    roomTelegramID = Column(CHAR(128))
 
     def __init__(self, electionID: int, round: int, roomIndex: int, roomNameShort: str, roomNameLong: str,
-                 roomID: int = None, roomTelegramID: int = None):
+                 roomID: int = None, roomTelegramID: str = None):
         """Initialization object"""
         assert isinstance(roomID, (int, type(None)))
         assert isinstance(electionID, int)
@@ -23,7 +23,7 @@ class Room(Base):
         assert isinstance(roomNameLong, str)
         assert isinstance(round, int)
         assert isinstance(roomIndex, int)
-        assert isinstance(roomTelegramID, (int, type(None)))
+        assert isinstance(roomTelegramID, (str, type(None)))
 
         self.roomID = roomID
         self.electionID = electionID

@@ -21,10 +21,12 @@ from app.database.election import Election
 from app.database.electionStatus import ElectionStatus
 from app.database.participant import Participant
 from app.database.extendedParticipant import ExtendedParticipant
+from app.database.extendedRoom import ExtendedRoom
 from app.database.room import Room
 from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
 
 LOG = Log(className="Database")
+
 
 class Singleton(type):
     _instances = {}
@@ -54,11 +56,14 @@ class Database(metaclass=Singleton):
 
     def __init__(self):
         try:
+            # 2006 mysql server has gone away error
+            # https://stackoverflow.com/posts/55127866/revisions
+
             LOG.debug("Initializing database")
             driver = 'mysql+pymysql'
             url = URL.create(driver, database_user, database_password, database_host, database_port, database_name)
             # mysql connection
-            self._engine = create_engine(url, pool_recycle=3600)
+            self._engine = create_engine(url, pool_recycle=3600, pool_pre_ping=True)
             connection = self._engine.connect()
             self.SessionMaker = sessionmaker(bind=connection)
             self.session = self.SessionMaker()
@@ -183,7 +188,8 @@ class Database(metaclass=Singleton):
                                                    election: Election,
                                                    currentElectionState: CurrentElectionState) -> CurrentElectionState:
         assert isinstance(election, Election), "election is not of type Election"
-        assert isinstance(currentElectionState, CurrentElectionState), "currentElectionState is not of type CurrentElectionState"
+        assert isinstance(currentElectionState,
+                          CurrentElectionState), "currentElectionState is not of type CurrentElectionState"
         try:
             # function return PREVIOUS election state - not current. If election state was not changed, return None
             session = self.session
@@ -237,7 +243,7 @@ class Database(metaclass=Singleton):
                                                         accountName=accountName,
                                                         sendStatus=sendStatus)
                 session.add(reminderSentRecordFromDB)
-                session.commit()  # commit and get id in the room object
+                session.flush()  # commit and get id in the room object
                 LOG.info("ReminderSend entrance for account " + accountName + " saved")
             else:
                 LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
@@ -362,14 +368,64 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting participant: " + str(e))
             return None
 
-    def createRooms(self, electionID: int, listOfRooms: list[Room]) -> list[Room]:
+    def getParticipantByTelegramID(self, telegramID: str) -> Participant:
+        assert isinstance(telegramID, str), "telegramID is not a string"
+        try:
+            session = self.session
+            participant = session.query(Participant).filter(Participant.telegramID == telegramID).first()
+            return participant
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting participant by telegramid: " + str(e))
+            return None
 
-        assert isinstance(electionID, int), "electionID is not an int"
+    def getRooms(self, election: Election, round: int, roomIndex) -> list[Room]:
+        assert isinstance(election, Election)
+        try:
+            session = self.session
+            cs = (
+                session.query(Room).filter(Room.electionID == election.electionID).all()
+            )
+            if cs is None:
+                return None
+            return cs
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting rooms: " + str(e))
+            return None
+
+    def getRoomPreelection(self, election: Election) -> Room:
+        assert isinstance(election, Election)
+        try:
+            session = self.session
+            room = session.query(Room).filter(Room.electionID == election.electionID,
+                                           Room.roomIndex == -1).first()
+            if room is None:
+                LOG.debug("Pre-election room for election " + str(election.electionID) + " not found")
+            else:
+                LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
+            return room
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting room: " + str(e))
+            return None
+
+    def createRooms(self, listOfRooms: list[ExtendedRoom]) -> list[Room]:
         assert isinstance(listOfRooms, list), "listOfRooms is not a list"
         try:
-            LOG.debug("Creating rooms for election " + str(electionID) + " return updated list filled with id entry")
+            LOG.debug("Creating rooms for election; return updated list filled with id entry")
             session = self.session
-            session.bulk_save_objects(listOfRooms, return_defaults=True)
+            for room in listOfRooms:
+                # iterate over all rooms to detect if they already exist
+                assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
+                roomFromDB = session.query(Room).filter(Room.electionID == room.electionID,
+                                                        Room.roomIndex == room.roomIndex,
+                                                        Room.round == room.round).first()
+
+                if roomFromDB is None:
+                    LOG.debug("Room does not exists. Add it to database")
+                    session.add(room)
+                else:
+                    LOG.debug("Room already exists. Just get the id")
+                    room.roomID = roomFromDB.roomID
+
             session.commit()
             return listOfRooms
 
@@ -377,27 +433,49 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when creating rooms: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating rooms: " + str(e))
 
-    def updateRoomsTelegramID(self, listOfRooms: list[Room]) -> list[Room]:
-        assert isinstance(listOfRooms, list), "listOfRooms is not a list"
+    def updateRoomTelegramID(self, room: ExtendedRoom) -> bool:
+        assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
         try:
             LOG.debug("Updating rooms; it returns updated list filled with id entry")
             session = self.session
-            for room in listOfRooms:
-                session.query(Room).filter(Room.roomID == room.roomID). \
-                    update({Room.roomTelegramID: room.roomTelegramID})
+            session.query(Room).filter(Room.roomID == room.roomID). \
+                update({Room.roomTelegramID: room.roomTelegramID})
             session.commit()
-            return listOfRooms
+            return True
         except Exception as e:
             LOG.exception(message="Problem occurred when updating rooms(telegramID): " + str(e))
-            raise DatabaseExceptionConnection("Problem occurred when updating rooms (telegramID): " + str(e))
+            return False
 
-    # """, extendedParticipantsList: list(ExtendedParticipant)"""
-    def delegateParticipantsToTheRoom(self, extendedParticipantsList: list[ExtendedParticipant]):
+    def delegateParticipantsToTheRoom(self, extendedParticipantsList: list[ExtendedParticipant], roomPreelection: Room):
+        #must be compated with preelection room - user can be in more than one election
         try:
             assert isinstance(extendedParticipantsList, list), "extendedParticipantsList is not a list"
             LOG.debug("Delegate participant to the room = add RoomId to the participant")
             session = self.session
-            session.bulk_save_objects(extendedParticipantsList, return_defaults=True)
+            #session.bulk_save_objects(extendedParticipantsList, return_defaults=True, update_changed_only=True)
+            for participant in extendedParticipantsList:
+                assert isinstance(participant, ExtendedParticipant), "participant is not a ExtendedParticipant"
+                participantFromDBAll = session.query(Participant).filter(
+                                            Participant.accountName == participant.accountName).all()
+
+                inPreelctionRoom: list[ExtendedParticipant] = \
+                    [x for x in participantFromDBAll if x.roomID == roomPreelection.roomID]
+                alreadyInRoom: list[ExtendedParticipant] = \
+                    [x for x in participantFromDBAll if x.roomID == participant.roomID]
+
+                # if there are participants that are not in the filters above, means that participants participated in
+                # more than one election
+
+                if len(inPreelctionRoom) > 0:
+                    LOG.debug("Participant is in pre-election room. Move him to the election room; participant" +
+                              str(participant.accountName))
+                    session.query(Participant).filter(Participant.accountName == participant.accountName,
+                                                      Participant.roomID == roomPreelection.roomID). \
+                        update({Participant.roomID: participant.roomID})
+                elif len(alreadyInRoom) > 0:
+                    LOG.debug("Participant is already in election room. Do nothing; participant" +
+                              str(participant.accountName))
+
             session.commit()
         except Exception as e:
             LOG.exception(message="Problem occurred when updating participant to the group: " + str(e))
@@ -471,11 +549,15 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
 
     def electionGroupsCreated(self, election: Election, round: int) -> bool:
-        #is group created for this election and round?
+        # is group created for this election and round?
         try:
             session = self.session
-            numberOfRooms: int = session.query(Room).\
-                filter(Room.electionID == election.electionID and Room.round == round).count()
+
+            numberOfRooms: int = session.query(Room). \
+                filter(Room.electionID == election.electionID,
+                       Room.round == round,
+                       Room.roomIndex != -1,
+                       Room.roomTelegramID != -1).count()
             return True if numberOfRooms > 0 else False
         except Exception as e:
             LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
@@ -682,6 +764,7 @@ class Database(metaclass=Singleton):
 
             if cs is None:
                 return None
+            return cs
         except Exception as e:
             LOG.exception(message="Problem occurred when getting users in room: " + str(e))
             return None
@@ -758,25 +841,68 @@ def main():
     print("Hello World!")
     database = Database()
     # kaj = database.getUsersInRoom(1)
-    # list: list[ExtendedParticipant] = []
-    """list.append(ExtendedParticipant(accountName="abc",
-                                   roomID=1,
-                                   participationStatus=True,
-                                   telegramID="123",
-                                   nftTemplateID=1,
-                                   participantName="abc",
-                                   index=1,
-                                   voteFor="abc"))
-    list.append(ExtendedParticipant(accountName="abcc",
-                                   roomID=1,
-                                   participationStatus=True,
-                                   telegramID="1234",
-                                   nftTemplateID=3,
-                                   participantName="abcd",
-                                   index=4,
-                                   voteFor="abcderf"))"""
+    list: list[ExtendedParticipant] = []
 
-    # kvaje = database.delegateParticipantToTheRoom(extendedParticipantsList=list)
+
+    room1 = Room(
+        electionID=1,
+        round=7,
+        roomIndex=3,
+        roomTelegramID="kvajeto",
+        roomNameLong="longlong",
+        roomNameShort="shortshort",
+        roomID=1
+    )
+    room2 = ExtendedRoom.fromRoom(room1)
+
+    par1 = Participant(accountName="abc",
+                                    roomID=1,
+                                    participationStatus=True,
+                                    telegramID="123",
+                                    nftTemplateID=1,
+                                    participantName="abc")
+
+    par2 = ExtendedParticipant.fromParticipant(participant=par1, voteFor="def", index=2)
+
+    list.append(ExtendedParticipant(accountName="abc",
+                                    roomID=1,
+                                    participationStatus=True,
+                                    telegramID="123",
+                                    nftTemplateID=1,
+                                    participantName="abc",
+                                    index=1,
+                                    voteFor="abc"))
+    list.append(ExtendedParticipant(accountName="abcc",
+                                    roomID=1,
+                                    participationStatus=True,
+                                    telegramID="1234",
+                                    nftTemplateID=3,
+                                    participantName="abcd",
+                                    index=4,
+                                    voteFor="abcderf"))
+
+    list1: list[ExtendedRoom] = []
+    list1.append(ExtendedRoom(
+        electionID=1,
+        round=7,
+        roomIndex=3,
+        roomTelegramID="kvajeto",
+        roomNameLong="longlong",
+        roomNameShort="shortshort",
+        # roomID=1
+    ))
+    list1.append(ExtendedRoom(
+        electionID=1,
+        round=7,
+        roomIndex=4,
+        roomTelegramID="kvajeto1",
+        roomNameLong="longlong1",
+        roomNameShort="shortshort1",
+        # roomID=1
+    ))
+    kvaje1 = database.createRooms(listOfRooms=list1)
+
+    # kvaje = database.delegateParticipantsToTheRoom(extendedParticipantsList=list)
     # reminder: Reminder = Reminder(reminderID=1, electionID=1, dateTimeBefore=datetime.now())
     """database.createReminderSentRecord(reminder= reminder,
                                      participant= Participant(accountName="2luminaries1",
@@ -794,8 +920,8 @@ def main():
                                   )
 
     kvaje = database.updateElectionColumnElectionStateIfChanged(election=election,
-                                                        currentElectionState=CurrentElectionState.
-                                                        CURRENT_ELECTION_STATE_SEEDING_V1)
+                                                                currentElectionState=CurrentElectionState.
+                                                                CURRENT_ELECTION_STATE_SEEDING_V1)
 
     # database.getMembers(election=election)
     database.getUsersInRoom(roomTelegramID=-1)

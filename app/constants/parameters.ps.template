@@ -3,9 +3,6 @@
 # abieos-python
 # dfuse
 
-
-admin_array: {} = {''}
-
 # dfuse
 dfuse_api_key: str = ""
 dfuse_url: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end

@@ -9,7 +9,7 @@ from app.chain.dfuse import Response, ResponseError
 from app.debugMode.modeDemo import Mode
 from app.log import Log
 from app.constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
-    admin_array, CurrentElectionState
+    telegram_admins_id, CurrentElectionState
 from app.database import Database, Election, ExtendedParticipant, ExtendedRoom
 from app.database.room import Room
 from app.database.participant import Participant
@@ -48,6 +48,7 @@ class RoomName:
             f"RoomName: round={round}, group={roomIndex}, season={season}, isLastRound={isLastRound}, year={year}")
 
     def nameLong(self):
+        # round number should be 1 higher than the actual round number
         # Eden - Round 1, Group 1, Delegates. Season 4, Year 2022.
         if self.isLastRound:
             # Eden Chief Delegates. Season 4, Year 2022.
@@ -56,16 +57,19 @@ class RoomName:
         else:
             # Eden - Round 1, Group 1, Delegates. Season 4, Year 2022.
             LOGroomName.debug(
-                f"Eden - Round {self.round}, Group{self.roomIndex:02d}, Delegates. Season {self.season}, Year {self.year}.")
-            return f"Eden - Round {self.round}, Group{self.roomIndex:02d}, Delegates. Season {self.season}, Year {self.year}."
+                f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, "
+                f"Election.  Season {self.season}, Year {self.year}.")
+            return f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, " \
+                   f"Election.  Season {self.season}, Year {self.year}."
 
     def nameShort(self):
+        # round number should be 1 higher than the actual round number
         if self.isLastRound:
             # Eden Chief Delegates S4, 2022
             return f"Eden Chief Delegates S{self.season}, {self.year}"
         else:
             # Eden R1G1 Delegates S4,2022
-            return f"Eden - R{self.round}G{self.roomIndex:02d} Delegates. S{self.season},{self.year}."
+            return f"Eden R{self.round + 1}G{self.roomIndex} election S{self.season},{self.year}."
 
 
 class RoomAllocation:
@@ -128,9 +132,9 @@ class Group:
 
 class RoomArray:
     def __init__(self):
-        self.rooms = list[ExtendedRoom]
+        self.rooms: list[ExtendedRoom] = []
 
-    def getRoom(self, roomIndex: int, round: int) -> Room:
+    def getRoom(self, roomIndex: int, round: int) -> ExtendedRoom:
         for room in self.rooms:
             if room.roomIndex == roomIndex and room.round == round:
                 return room
@@ -172,41 +176,52 @@ class GroupManagement:
                 raise GroupManagementException("Error when called getParticipants; Description: " + response.error)
             LOG.debug("Participants from chain: " + str(response.data))
             members = []
-            for item in response.data:
-                if item['round'] == round:
-                    participant: Participant = self.database.getParticipant(item['member'])
-                    extendedParticipant: Participant = ExtendedParticipant(participant=participant,
-                                                                           index=item['index'],
-                                                                           voteFor=item['candidate'])
+            if response.data is not None:
+                for key, value in response.data.items():
+                    if isinstance(value, ResponseError):
+                        LOG.exception("Row error when called getParticipants; Description: " + value.error)
+                        continue
 
-                    members.append(extendedParticipant)
-            members.sort()
+                    if value.data['round'] == round:
+                        participant: Participant = self.database.getParticipant(accountName=key)
+                        extendedParticipant: extendedParticipant = ExtendedParticipant.fromParticipant(
+                                                                                participant=participant,
+                                                                                index=value.data['index'],
+                                                                                voteFor=value.data['candidate'])
+
+                        members.append(extendedParticipant)
             return members
         except Exception as e:
-            LOG.exception("Exception thrown when called GroupManagement.getParticipants. If there is a problem with"
-                          "datat strucutre maybe the call was not made when state is CurrentElectionStateActive"
+            LOG.exception("Exception thrown when called GroupManagement.getParticipantsFromChain. If there is a problem"
+                          "wit data structure maybe the call was not made when state is CurrentElectionStateActive"
                           " Description: "
                           + str(e))
+
             raise GroupManagementException(
-                "Exception thrown when called GroupManagement.getParticipants; Description: " + str(e))
+                "Exception thrown when called GroupManagement.getParticipantsFromChain; Description: " + str(e))
 
     def getGroups(self, election: Election, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False,
                   height: int = None) -> list[ExtendedRoom]:
         assert isinstance(election, Election), "election must be an Election object"
+        assert isinstance(round, int), "round must be an int"
+        assert isinstance(numParticipants, int), "numParticipants must be an int"
+        assert isinstance(numGroups, int), "numGroups must be an int"
+        assert isinstance(isLastRound, bool), "isLastRound must be a bool"
+        assert isinstance(height, (int, type(None))), "height must be an int or None"
         """Create groups"""
         try:
             LOG.info("Create groups")
 
 
             roomArray: RoomArray = RoomArray()
-            for index in range(1, numGroups + 1):
+            for index in range( numGroups):  # from 0 to numGroups -1
                 roomName: RoomName = RoomName(round=round,
                                               roomIndex=index,
                                               season=eden_season,
                                               year=eden_year,
                                               isLastRound=isLastRound)
 
-                room: ExtendedRoom = ExtendedRoom(electionID=election.id,
+                room: ExtendedRoom = ExtendedRoom(electionID=election.electionID,
                                                   round=round,
                                                   roomIndex=index,
                                                   roomNameLong=roomName.nameLong(),
@@ -217,11 +232,11 @@ class GroupManagement:
             LOG.debug("Number of created rooms: " + str(roomArray.numRooms()))
 
             LOG.info("Writing rooms to database and setting new variable with indexes in group")
-            roomsListWithIndexes = self.database.createRooms(electionID=election.electionID,
-                                                             listOfRooms=roomArray.getRoomArray())
-            roomsArrayWithIndexes: RoomArray = RoomArray()
-            roomsArrayWithIndexes.setRooms(roomsListWithIndexes)
-            LOG.info("Room creation finished. Rooms are set with IDs in database")
+            #rooms: list[ExtendedRoom] = roomArray.getRoomArray()
+            roomsListWithIndexes = self.database.createRooms(listOfRooms=roomArray.getRoomArray())
+            roomsListWithIndexesUpdated: RoomArray = RoomArray()
+            roomsListWithIndexesUpdated.setRooms(roomsListWithIndexes)
+            LOG.info("... room creation finished. Rooms are set with IDs in database.")
 
             LOG.info("Add participants to the rooms and write it to database")
             extendedParticipantsList: list[ExtendedParticipant] = self.getParticipantsFromChain(round=round,
@@ -244,26 +259,30 @@ class GroupManagement:
                 LOG.info("Extended participant: " + str(item))
                 roomIndex = roomAllocation.memberIndexToGroup(item.index)
                 # found the room with the index (name is +1 used)
-                room: Room = roomsArrayWithIndexes.getRoom(roomIndex=roomIndex, round=round)
+                room: ExtendedRoom = roomsListWithIndexesUpdated.getRoom(roomIndex=roomIndex, round=round)
 
                 # add participant to room
-                room.addParticipant(item)
+                room.addMember(item)
 
                 # add room to participant - database related
-                item.roomID = room.id
+                item.roomID = room.roomID
 
-            self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedParticipantsList)
+            preelectionRoom: Room = self.database.getRoomPreelection(election=election)
+            if preelectionRoom is None:
+                raise GroupManagementException("Preelection room is not set in database")
+            self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedParticipantsList,
+                                                        roomPreelection=preelectionRoom)
             LOG.info("Participants are delegated to the rooms")
-            return roomsArrayWithIndexes.getRoomArray()
+            return roomsListWithIndexesUpdated.getRoomArray()
         except Exception as e:
-            LOG.exception(str(e))
-            raise GroupManagementException("Exception thrown when called createGroups; Description: " + str(e))
+            LOG.exception("Exception thrown when called getGroups; Description: " + str(e))
+            raise GroupManagementException("Exception thrown when called getGroups; Description: " + str(e))
 
     def createRoom(self, extendedRoom: ExtendedRoom) -> int:
         # everything that needs to be done when a room is created and right after that
         try:
             # creates room and returns roomID
-            if self.communication.isInitialized() is False:
+            if self.communication.isInitialized is False:
                 LOG.error("Communication is not initialized")
                 raise GroupManagementException("Communication is not initialized")
 
@@ -275,14 +294,24 @@ class GroupManagement:
             chatID = self.communication.createSuperGroup(name=extendedRoom.roomNameShort,
                                                          description=extendedRoom.roomNameLong)
 
+            # updating telegramID in database
+            extendedRoom.roomTelegramID = str(chatID)
+            if self.database.updateRoomTelegramID(room=extendedRoom):
+                LOG.info("Room telegram ID is updated in database")
+            else:
+                LOG.error("Room telegram ID is not updated in database")
+
+
             # not needed because of supergroup
             # self.communication.setChatDescription(chatID=chatID, description=extendedRoom.roomNameLong)
 
             # add participants to the room / supergroup
             LOG.debug("Add bot to the room")
-            self.communication.addChatMembers(chatID=chatID, userID=[telegram_bot_name])
+            self.communication.addChatMembers(chatId=chatID, participants=[telegram_bot_name])
             LOG.debug("Promote bot in the room to admin rights")
-            self.communication.promoteMembers(sessionType=SessionType.USER, chatID=chatID, userID=[telegram_bot_name])
+            self.communication.promoteMembers(sessionType=SessionType.USER,
+                                              chatId=chatID,
+                                              participants=[telegram_bot_name])
 
             #self.communication.leaveChat(sessionType=SessionType.USER, chatID=chatID) # just temporary comment out
 
@@ -290,16 +319,19 @@ class GroupManagement:
             # From this point the user bot is not allowed - bot has all rights and can do everything it needs to be done
             #
 
-            LOG.debug("Add participants to the room")
+            LOG.debug("Add participants to the room - communication part related")
             if self.mode == Mode.LIVE:
                 self.communication.addChatMembers(chatId=chatID,
                                                   participants=extendedRoom.getMembersTelegramIDsIfKnown())
             else:
                 knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
-                LOG.debug("This line printed because of test mode. Known telegram IDs: " + knownTelegramIDs)
-                LOG.debug("Instead of participants, bot will working with admin_array:" + admin_array)
+                LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
+                LOG.debug("Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
                 self.communication.addChatMembers(chatId=chatID,
-                                                  participants=admin_array)
+                                                  participants=telegram_admins_id)
+
+            # LOG.debug("Add participants to the room - database related")
+            # check if needed self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedRoom.getMembers(),
 
             LOG.debug("Promote participants to admin rights")
             # make sure BOT has admin rights
@@ -309,11 +341,11 @@ class GroupManagement:
                                                   participants=extendedRoom.getMembersTelegramIDsIfKnown())
             else:
                 knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
-                LOG.debug("This line printed because of test mode. Known telegram IDs: " + knownTelegramIDs)
-                LOG.debug("Instead of participants, bot will working with admin_array:" + admin_array)
+                LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
+                LOG.debug("Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
                 self.communication.promoteMembers(sessionType=SessionType.BOT,
-                                                  chatID=chatID,
-                                                  userID=admin_array)
+                                                  chatId=chatID,
+                                                  participants=telegram_admins_id)
 
             # initialize text management object
             gCtextManagement: GroupCommunicationTextManagement = \
@@ -323,17 +355,24 @@ class GroupManagement:
             # chat with the bot
 
             # make sure bot has admin rights
-            inviteLink: str = self.communication.getInvitationLink(sessionType=SessionType.BOT, chatID=chatID)
+            inviteLink: str = self.communication.getInvitationLink(sessionType=SessionType.BOT, chatId=chatID)
             if isinstance(inviteLink, str) is False:
                 LOG.error("Invitation link is not valid. Not private (bot-user) message sent to the participants")
             else:
                 LOG.debug(
                     "Invitation link is valid. Send private (bot-user) message to the participants. This invitation"
                     "link is valid until next call of this function! Make sure you handle it properly!")
-                buttons = gCtextManagement.invitationLinkToTheGroupButons(invitationLink=inviteLink)
-                for item in extendedRoom.getMembersTelegramIDsIfKnown():
+                buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
+
+                if self.mode == Mode.LIVE:
+                    members = extendedRoom.getMembersTelegramIDsIfKnown()
+                else:
+                    # demo mode
+                    members = telegram_admins_id
+
+                for item in members:
                     self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                   chatID=item,
+                                                   chatId=item,
                                                    text=gCtextManagement.invitationLinkToTheGroup(
                                                        round=extendedRoom.round),
                                                    inlineReplyMarkup=InlineKeyboardMarkup(
@@ -348,24 +387,24 @@ class GroupManagement:
                                                    ))
 
             LOG.info("Send welcome message to the room")
-            self.communication.sendMessage(chatID=chatID,
+            self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,
                                            text=gCtextManagement.wellcomeMessage(inviteLink=inviteLink,
                                                                                  round=extendedRoom.round))
 
             LOG.info("Print out the room participants")
-            self.communication.sendMessage(chatID=chatID,
+            self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,
                                            text=gCtextManagement.participantsInTheRoom())
-            for participant in extendedRoom.participants:
-                self.communication.sendMessage(chatID=chatID,
+            for participant in extendedRoom.members:
+                self.communication.sendMessage(chatId=chatID,
                                                sessionType=SessionType.BOT,
                                                text=gCtextManagement.participant(accountName=participant.accountName,
                                                                                  participantName=
                                                                                  participant.participantName,
                                                                                  telegramID=participant.telegramID))
             if self.mode == Mode.DEMO:
-                self.communication.sendMessage(chatID=chatID,
+                self.communication.sendMessage(chatId=chatID,
                                                sessionType=SessionType.BOT,
                                                text=gCtextManagement.demoMessageInCreateGroup())
 
@@ -444,30 +483,26 @@ class GroupManagement:
 
             LOG.info("Initialization of group")
 
-            rooms: list[ExtendedRoom] = self.getGroups(election=Election, round=round, numParticipants=numParticipants,
+            rooms: list[ExtendedRoom] = self.getGroups(election=election, round=round, numParticipants=numParticipants,
                                                        numGroups=numGroups,
                                                        isLastRound=isLastRound,
                                                        height=height)
 
             for room in rooms:
-                LOG.info("Room: " + str(room))
-                LOG.info("Room name: " + str(room.roomNameLong))
-                LOG.info("Room ID: " + str(room.id))
-                LOG.info("Room participants: " + str(room.participants))
-                LOG.info("Room participants count: " + str(len(room.participants)))
+                LOG.info("Room: " + str(room) +
+                         ", name: " + str(room.roomNameLong) +
+                         ", ID: " + str(room.roomID) +
+                         ", num of participants: " + str(len(room.getMembers())) +
+                         ", participants: " + str(room.getMembers())
+                )
 
                 # initialize names of the participants
-                for participant in room.participants:
+                for participant in room.getMembers():
                     participant.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(participant.telegramID)
 
                 chatID = self.createRoom(extendedRoom=room)
-                room.roomTelegramID = chatID
-            LOG.info("Updating rooms in the database - telegramID column")
-            self.database.updateRoomsTelegramID(listOfRooms=rooms)
-            self.database.updateElectionSetGroupCreatedOnTrue(election=election)
-
-
-
+                LOG.info("Chat with next chatID has been created: " + str(chatID) if chatID is not None
+                         else "<not created>")
         except Exception as e:
             LOG.exception(str(e))
             raise GroupManagementException(
@@ -479,8 +514,8 @@ class GroupManagement:
         assert isinstance(round, int), "round is not an int object"
         assert isinstance(numParticipants, int), "numParticipants is not an int object"
         assert isinstance(numGroups, int), "numGroups is not an int object"
-        assert isinstance(isLastRound, [bool, type(None)]), "isLastRound is not a bool object or None"
-        assert isinstance(height, [int, type(None)]), "height is not an int object or None"
+        assert isinstance(isLastRound, (bool, type(None))), "isLastRound is not a bool object or None"
+        assert isinstance(height, (int, type(None))), "height is not an int object or None"
 
         try:
             LOG.info("Group management started")
@@ -491,7 +526,7 @@ class GroupManagement:
                 raise GroupManagementException("GroupManagement.createGroups; No election found!")
 
             # check if groups are already created
-            if self.database.electionGroupsCreated() is False:
+            if self.database.electionGroupsCreated(election=election, round=round) is False or True:  # TODO: remove after testing
                 LOG.info("Groups are not created yet, creating them")
                 self.groupInitialization(election=election,
                                          round=round,
@@ -512,6 +547,9 @@ class GroupManagement:
 
 def main():
     print("breakpoint")
+
+
+
 
 
 if __name__ == "__main__":

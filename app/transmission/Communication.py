@@ -4,7 +4,7 @@ from enum import Enum
 
 from pyrogram.errors import FloodWait
 from pyrogram.handlers import MessageHandler
-from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton
+from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand
 
 from app.constants.parameters import *
 from app.database import Database
@@ -18,7 +18,7 @@ from pyrogram import Client, emoji, filters, types, idle
 
 import time
 
-from app.text.textManagement import GroupCommunicationTextManagement, Button
+from app.text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement
 
 
 # api_id = 48490
@@ -58,18 +58,38 @@ class Communication:
         try:
             LOG.debug("... user session")
             self.setSession(sessionType=SessionType.USER,
-                            client=Client(name="session_user", api_id=apiId, api_hash=apiHash))
+                            client=Client(name=communication_session_name_user,
+                                          api_id=apiId,
+                                          api_hash=apiHash))
             self.startSession(sessionType=SessionType.USER)
 
             LOG.debug("... bot session")
             self.setSession(sessionType=SessionType.BOT,
-                            client=Client(name="sessionBot", api_id=apiId, api_hash=apiHash, bot_token=botToken))
+                            client=Client(name=communication_session_name_bot,
+                                          api_id=apiId,
+                                          api_hash=apiHash,
+                                          bot_token=botToken))
 
             # client: Client = self.getSession(SessionType.BOT)
             self.sessionBot.add_handler(
                 MessageHandler(callback=Communication.wellcomeProcedure, filters=filters.new_chat_members))
+
+            self.sessionBot.add_handler(
+                MessageHandler(callback=Communication.commandResponseStart,
+                               filters=filters.command(commands=["start"]) & filters.private)
+            )
+
+            self.sessionBot.add_handler(
+                MessageHandler(callback=Communication.commandResponseInfo,
+                                 filters=filters.command(commands=["info"]) & filters.private)
+            )
+
             # self._init()
             self.startSession(sessionType=SessionType.BOT)
+
+            self.sessionBot.set_bot_commands([
+                BotCommand("start", "Start the bot"),
+                BotCommand("info", "get info about the bot")])
 
             self.isInitialized = True
             LOG.debug("... done!")
@@ -107,8 +127,10 @@ class Communication:
                     sessionType: SessionType,
                     chatId: int,
                     text: str,
+                    disableWebPagePreview=False,
                     scheduleDate: datetime = None,
-                    inlineReplyMarkup: InlineKeyboardMarkup = None) -> bool:
+                    inlineReplyMarkup: InlineKeyboardMarkup = None,
+                    ) -> bool:
         # warning:
         # when sessionType is SessionType.USER you cannot send message with inline keyboard
         LOG.info("Send message to: " + str(chatId) + " with text: " + text
@@ -117,17 +139,19 @@ class Communication:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
             assert (sessionType is SessionType.BOT) or \
                    (sessionType is SessionType.USER and inlineReplyMarkup is None), \
-                        "when SessionType is USER there is no option to send inlineReplyMarkup!"
+                "when SessionType is USER there is no option to send inlineReplyMarkup!"
             if sessionType == SessionType.BOT:
                 response = self.sessionBot.send_message(chat_id=chatId,
                                                         text=text,
                                                         schedule_date=scheduleDate,
-                                                        reply_markup=inlineReplyMarkup)
+                                                        reply_markup=inlineReplyMarkup,
+                                                        disable_web_page_preview=disableWebPagePreview)
             else:
                 response = self.sessionUser.send_message(chat_id=chatId,
                                                          text=text,
                                                          schedule_date=scheduleDate,
-                                                         reply_markup=inlineReplyMarkup)
+                                                         reply_markup=inlineReplyMarkup,
+                                                         disable_web_page_preview=disableWebPagePreview)
             LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
             return True if type(response) is types.Message else False
         except FloodWait as e:
@@ -310,48 +334,135 @@ class Communication:
     #
 
     async def wellcomeProcedure(client: Client, message):
-        LOG.success("New chat member: " + str(message.new_chat_members))
-        chatid = message.chat.id
-        LOG.success(".. in chat: " + str(chatid))
-        database: Database = Database()
-        for newMember in message.new_chat_members:
-            if isinstance(newMember, types.User):
-                LOG.success("Wellcome message to user: " + str(newMember.id))
-                LOG.debug("... with username: " + str(newMember.username) if newMember.username is not None else "None")
-                LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
-                LOG.debug("...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
-                await client.send_message(chatid, "Wellcome " +
-                                                  str(newMember.username) if newMember.username is not None else "" +
-                                                                                                                 " to the chat!")
+        try:
+            LOG.success("New chat member: " + str(message.new_chat_members))
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+            database: Database = Database()
+            for newMember in message.new_chat_members:
+                if isinstance(newMember, types.User):
+                    LOG.success("Wellcome message to user: " + str(newMember.id))
+                    LOG.debug(
+                        "... with username: " + str(newMember.username) if newMember.username is not None else "None")
+                    LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
+                    LOG.debug(
+                        "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
+                    await client.send_message(chat_id=chatid, text="Wellcome " +
+                                                                   str(newMember.username) if newMember.username is not None else "" +
+                                                                                                                                  " to the chat!")
 
-                # promote only users who supposed to be in this room
-                participants: list[Participant] = database.getUsersInRoom(roomTelegramID=chatid)
-                for participant in participants:
-                    if participant.telegramID is not None and participant.telegramID == newMember.username:
-                        LOG.debug("User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
-                        await client.promote_chat_member(chat_id=chatid,
-                                                         user_id=newMember.username,
-                                                         privileges=ChatPrivileges(
-                                                             can_manage_chat=True,
-                                                             can_delete_messages=True,
-                                                             can_manage_video_chats=True,
-                                                             can_restrict_members=True,
-                                                             can_promote_members=True,
-                                                             can_change_info=True,
-                                                             can_invite_users=True,
-                                                             can_pin_messages=True,
-                                                             is_anonymous=False
-                                                         ))
-                        LOG.success("Promoting  user " + str(participant.telegramID) + " to admin successfully done!")
-                        break
-                return
+                    # promote only users who supposed to be in this room
+                    participants: list[Participant] = database.getUsersInRoom(roomTelegramID=chatid)
+                    if participants is None:
+                        LOG.error("WellcomeProcedure; No participants in this room or room not found")
+                        return
+                    for participant in participants:
+                        if participant.telegramID is not None and participant.telegramID == newMember.username:
+                            LOG.debug(
+                                "User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
+                            await client.promote_chat_member(chat_id=chatid,
+                                                             user_id=newMember.username,
+                                                             privileges=ChatPrivileges(
+                                                                 can_manage_chat=True,
+                                                                 can_delete_messages=True,
+                                                                 can_manage_video_chats=True,
+                                                                 can_restrict_members=True,
+                                                                 can_promote_members=True,
+                                                                 can_change_info=True,
+                                                                 can_invite_users=True,
+                                                                 can_pin_messages=True,
+                                                                 is_anonymous=False
+                                                             ))
+                            LOG.success(
+                                "Promoting  user " + str(participant.telegramID) + " to admin successfully done!")
+                            break
+                else:
+                    LOG.success("New member is not instance of 'User'")
+        except Exception as e:
+            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
+            return
+
+    async def commandResponseStart(client: Client, message):
+        try:
+            LOG.success("Response on command 'start' from user: " + str(message.chat.username) if not None else "None")
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+
+            database: Database = Database()
+            if isinstance(message.chat.username, str):
+                LOG.debug("Username exists: " + str(message.chat.username))
+
+            participant: Participant = database.getParticipantByTelegramID(telegramID=message.chat.username)
+
+            # reply_markup=inlineReplyMarkup, disable_web_page_preview=disableWebPagePreview
+
+            botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
+            telegramID: str = "@" + str(message.chat.username) if message.chat.username is not None else None
+            if participant is None:
+                LOG.error("Participant not found in database")
+                await client.send_message(chat_id=chatid,
+                                          text=botCommunicationManagement.startCommandNotKnownTelegramID(
+                                              telegramID=telegramID),
+                                          reply_markup=InlineKeyboardMarkup(
+                                              inline_keyboard=
+                                              [
+                                                  [
+                                                      InlineKeyboardButton(
+                                                          text=botCommunicationManagement.startCommandNotKnownTelegramIDButtonText(),
+                                                          url=eden_support_url),
+
+                                                  ]
+                                              ]
+                                          )
+                                          )
+
             else:
-                LOG.success("New member is not instance of 'User'")
+                LOG.debug("Participant found in database")
+                await client.send_message(chat_id=chatid,
+                                          text=botCommunicationManagement.startCommandKnownTelegramID(
+                                              telegramID=telegramID))
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            return
+
+    async def commandResponseInfo(client: Client, message):
+        try:
+            LOG.success("Response on command 'info' from user: " + str(message.chat.username) if not None else "None")
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+
+            database: Database = Database()
+            if isinstance(message.chat.username, str):
+                LOG.debug("Username exists: " + str(message.chat.username))
+
+            participant: Participant = database.getParticipantByTelegramID(telegramID=message.chat.username)
+
+            botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
+            await client.send_message(chat_id=chatid,
+                                      text=botCommunicationManagement.infoCommand(),
+                                      reply_markup=InlineKeyboardMarkup(
+                                          inline_keyboard=
+                                          [
+                                              [
+                                                  InlineKeyboardButton(
+                                                      text=botCommunicationManagement.infoCommandButtonText(),
+                                                      url=eden_portal_url),
+
+                                              ]
+                                          ]
+                                      )
+                                      )
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            return
 
     def idle(self):
         idle()
 
     def setFilters(self):
+        # not in  use
         LOG.info("Set filters: " + str(filters))
         client: Client = self.getSession(SessionType.BOT)
         # client1: Client = self.getSession(SessionType.USER)
@@ -388,10 +499,10 @@ def runPyrogram():
 
     chatID = -1001893075719
     botID = 1
-    botName = "@edenBotTestBot"
+    botName = "@up_vote_demo_bot"
     userID = 1
     # first intecation
-    comm.sendMessage(sessionType=SessionType.USER, chatId=botName, text="From bot <br/> to user \n with new line"
+    """comm.sendMessage(sessionType=SessionType.USER, chatId=botName, text="From bot <br/> to user \n with new line"
                                                                         "and \\n new line")
 
     gctm = GroupCommunicationTextManagement()
@@ -400,16 +511,16 @@ def runPyrogram():
     comm.sendMessage(sessionType=SessionType.BOT, chatId="@EdenElectionSupport",
                      text=gctm.invitationLinkToTheGroup(round=1),
                      inlineReplyMarkup=InlineKeyboardMarkup(
-                        inline_keyboard=
-                        [
-                            [
-                                InlineKeyboardButton(text=buttons[0]['text'],
-                                                     url=buttons[0]['value']),
+                         inline_keyboard=
+                         [
+                             [
+                                 InlineKeyboardButton(text=buttons[0]['text'],
+                                                      url=buttons[0]['value']),
 
-                            ]
-                        ]
-                    )
-    )
+                             ]
+                         ]
+                     )
+                     )
 
     print("chatID: " + str(chatID))
     print(chatID)
@@ -433,8 +544,8 @@ def runPyrogram():
                      text="I am leaving now!")
 
     comm.leaveChat(sessionType=SessionType.USER, chatId=chatID)
-
-    comm.idle()
+    
+    comm.idle()"""
 
 
 def main():

@@ -273,7 +273,7 @@ class ReminderManagement:
             # be sure that next comparison is correct, because we really do not want to send fake messages to
             # users
 
-            sendResponse: bool
+            sendResponse: bool = False
 
             if modeDemo is None:
                 # LIVE MODE
@@ -309,10 +309,9 @@ class ReminderManagement:
                                                                if sendResponse is True
                                                                else ReminderSendStatus.ERROR)
 
-            LOG.debug("Sending to participant: " + member.telegramID + " text: " + text)
             return sendResponse
 
         except Exception as e:
             LOG.exception(str(e))
             raise ReminderManagementException(
-                "Exception thrown when called sendReminderAndWriteToDatabase; Description: " + str(e))
+                "Exception thrown when called sendAndSyncWithDatabase; Description: " + str(e))

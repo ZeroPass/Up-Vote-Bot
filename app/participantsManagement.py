@@ -29,8 +29,7 @@ class ParticipantsManagement:
                         roomNameShort="Room p-e",
                         roomNameLong="Room pre-election",
                         round=0,
-                        roomIndex=-1,
-                        roomTelegramID=-1)
+                        roomIndex=-1)
             #self.database.createParticipantsIfNotExists(participants=participant, election=election)
             LOG.debug("Participants created")
             for p in participant:

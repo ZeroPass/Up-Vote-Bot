@@ -34,6 +34,40 @@ class TextManagement:
     def newLine(self) -> str:
         return "\n"
 
+class BotCommunicationManagement(TextManagement):
+
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def startCommandKnownTelegramID(self, telegramID: str) -> str:
+        assert isinstance(telegramID, (str, type(None))), "telegramID must be a string"
+        telegramID = str(telegramID) if telegramID is not None else "<Unknown ID>"
+        return _("Welcome __%s__ !" + self.newLine() + self.newLine() +
+                 "Now you will be reminded about next Eden election date, and guides  you through it. " + self.newLine() +
+                 "There is no spam, so keep the notifications on!") % (telegramID)
+
+    def startCommandNotKnownTelegramID(self, telegramID: str) -> str:
+        assert isinstance(telegramID, (str, type(None))), "telegramID must be a string"
+        telegramID = str(telegramID) if telegramID is not None else "<Unknown ID>"
+        return _("Hi __%s__, " + self.newLine() + self.newLine() +
+                 "you are not yet inducted into Eden.") % (telegramID)
+
+    def startCommandNotKnownTelegramIDButtonText(self):
+        return _("Ask for an invite")
+
+    def newUserCommand(self, telegramID: str) -> str:
+        assert isinstance(telegramID, (str, type(None))), "telegramID must be a string"
+        telegramID = str(telegramID) if telegramID is not None else "<Unknown ID>"
+        return _("Wellcome %s to the chat!") % (telegramID)
+
+    def infoCommand(self) -> str:
+        return _("This bot reminds you about the next Eden election date and guides you through it. " + self.newLine() +
+                 "There is no spam, so keep the notifications on!")
+
+    def infoCommandButtonText(self) -> str:
+        return _("Learn more about Eden")
+
+
 
 class GroupCommunicationTextManagement(TextManagement):
     def __init__(self, language: Language = Language.ENGLISH):
@@ -43,7 +77,7 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(round, int), "round must be an int"
         return _("Hey," + self.newLine() +
                  "Round %d has started." + self.newLine() +
-                 "Please join the group using this link bellow:") % (round)
+                 "Please join the group using this link bellow:") % (round + 1)
 
     def invitationLinkToTheGroupButons(self, inviteLink: str) -> tuple[Button]:
         # return a dict with the dictionary of the buttons(text link)
@@ -51,11 +85,12 @@ class GroupCommunicationTextManagement(TextManagement):
         return Button(text="Join the group", value=inviteLink),
 
     def wellcomeMessage(self, inviteLink: str, round: int) -> str:
+        assert isinstance(inviteLink, str), "groupLink must be a str"
         assert isinstance(round, int), "round must be an int"
         return _("Welcome to to Eden communication group!" + self.newLine() +
                  "This is round %d. " + self.newLine() + self.newLine() +
                  "If any participant is not joined yet (and should be), send this invite link:" + self.newLine() +
-                 "%s") % (round, inviteLink)
+                 "%s") % (round + 1, inviteLink)
 
     def participantsInTheRoom(self) -> str:
         return _("Participants in the room: \n")
@@ -65,10 +100,12 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(participantName, str), "participantName must be a string"
         assert isinstance(telegramID, str), "telegramId must be a string"
 
-        return _("•Eden name: **%s** (name: %s); TelegramID: __%s__") % (
+        return _("•Eden: **%s**\n"
+                 "\t-name: %s\n"
+                 "\ttelegramID: __%s__") % (
                     accountName,  # fist parameter
                     participantName if participantName is not None else "/",  # second parameter
                     telegramID if telegramID is not None and len(telegramID) > 2 else "<NOT_KNOWN_TELEGRAM_ID>")
 
     def demoMessageInCreateGroup(self) -> str:
-        return _("ALERT: Participants above are not really in the group. This is just a demo. Only admins added")
+        return _("ALERT: Participants above are not really in the group. This is just a demo. Only testers added")

@@ -35,7 +35,7 @@ class RawActionWeb:
 
     def electOpt(self, member: str = None):
         """action: electOpt"""
-        assert isinstance(member, [str, type(None)]), "member must be a string or None"
+        assert isinstance(member, (str, type(None))), "member must be a string or None"
 
 
         LOG.debug("electopt; member: " + member if member is not None else "None")
@@ -51,8 +51,8 @@ class RawActionWeb:
     def electVote(self, round: int, voter: str = None, candidate: str = None) -> str:
         """action: electVote"""
         assert isinstance(round, int), "round must be an integer"
-        assert isinstance(voter, [str, type(None)]), "voter must be a string or None"
-        assert isinstance(candidate, [str, type(None)]), "candidate must be a string or None"
+        assert isinstance(voter, (str, type(None))), "voter must be a string or None"
+        assert isinstance(candidate, (str, type(None))), "candidate must be a string or None"
 
         LOG.debug("ElectVote; round: " + str(round) +
                   "; voter: " + voter if voter is not None else "None" +

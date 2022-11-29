@@ -300,7 +300,7 @@ class DfuseConnection:
             # if scope is zero we need to manually parse binary data to json
             isJson = False if scope is None else True
 
-            parameters= dict({
+            parameters = dict({
                 'account': account,
                 "table": table,
                 "scope": scope if scope is not None else "",
@@ -315,7 +315,7 @@ class DfuseConnection:
                 self.link(path=path),
                 params=parameters,
                 headers=self.headers(), verify=False),
-                ounterObj=self.counter)
+                counterObj=self.counter)
             j = json.loads(result.text)
             if result.status_code == 200:
                 LOG.success("Status code:200")
