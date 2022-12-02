@@ -5,3 +5,4 @@ class ReminderGroup(Enum):
     NOT_ATTENDED = 0
     ATTENDED = 1
     BOTH = 2
+    IN_ELECTION = 3

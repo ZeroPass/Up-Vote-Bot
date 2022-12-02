@@ -232,6 +232,7 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
     def customActions(self, groupManagement: GroupManagement, modeDemo: ModeDemo = None):
         assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_FINAL")
+        # TODO: final state does not do anything, just congrats message, no group created or anything like that
         # group management call
 
         groupManagement.manage(round=self.getRound(),

@@ -228,8 +228,6 @@ class Database(metaclass=Singleton):
         assert isinstance(accountName, str)
         assert isinstance(sendStatus, Enum)
         try:
-            #####################
-
             session = self.session
             # get election
             reminderSentRecordFromDB = (
@@ -275,6 +273,26 @@ class Database(metaclass=Singleton):
             LOG.exception(
                 message="Problem occurred when getting participants without 'reminder sent record': " + str(e))
             return None
+
+    def createTimeIsUpReminder(self, reminder: Reminder) -> Reminder:
+        try:
+            session = self.session
+            reminderSendRecords = session.query(Reminder) \
+                .filter(Reminder.electionID == reminder.electionID,
+                        Reminder.reminderGroup == reminder.reminderGroup).first()
+
+            if reminderSendRecords is None:
+                session.add(reminder)
+                session.flush()
+
+            session = self.session
+            session.add(reminder)
+            session.flush()
+            LOG.info("Reminder(timie is up) for election " + str(reminder.electionID) + " saved")
+            return reminder
+        except Exception as e:
+            LOG.exception(message="Problem occurred when creating (time's up) reminder: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when creating (time's up) reminder: " + str(e))
 
     def createRemindersIfNotExists(self, election: Election):
         try:
@@ -330,13 +348,20 @@ class Database(metaclass=Singleton):
         except Exception as e:
             LOG.exception(message="Problem occurred when creating reminders: " + str(e))
 
-    def getReminders(self, election: Election) -> list[Reminder]:
-        assert isinstance(election, Election)
+    def getReminders(self, election: Election, reminderGroup: int = None) -> list[Reminder]:
+        assert isinstance(election, Election), "election is not Election"
+        assert isinstance(reminderGroup, (int, type(None)), "reminderGroup is not int or None")
         try:
             session = self.session
-            cs = (
-                session.query(Reminder).filter(Reminder.electionID == election.electionID).all()
-            )
+            if reminderGroup is None:
+                cs = (
+                    session.query(Reminder).filter(Reminder.electionID == election.electionID).all()
+                )
+            else:
+                cs = (
+                    session.query(Reminder).filter(Reminder.electionID == election.electionID,
+                                                   Reminder.reminderGroup == reminderGroup).all()
+                )
             if cs is None:
                 return None
             return cs
@@ -425,6 +450,7 @@ class Database(metaclass=Singleton):
                 else:
                     LOG.debug("Room already exists. Just get the id")
                     room.roomID = roomFromDB.roomID
+                    room.roomTelegramID = roomFromDB.roomTelegramID
 
             session.commit()
             return listOfRooms
@@ -480,49 +506,6 @@ class Database(metaclass=Singleton):
         except Exception as e:
             LOG.exception(message="Problem occurred when updating participant to the group: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when updating participant to the group: " + str(e))
-
-    """def setMemberWithElectionIDAndWithoutRoomID(self, election: Election, participant: Participant) -> Participant:
-        LOG.debug("Setting member with electionID and without roomID")
-        assert isinstance(election, Election)
-        assert isinstance(participant, Participant)
-        try:
-            session = self.session
-            # get room
-            room = (
-                session.query(Room)
-                .filter(Room.electionID == election.id, Room.round == 0)
-                .first()
-            )
-            if room is None:
-                LOG.debug("Room for election " + str(election.id) + " not found, creating new")
-                room = Room(electionID=election.id, round=0, roomName="PreElectionRoom")
-                session.add(room)
-                session.flush() #commit and get id in the room object
-                LOG.info("Room for election " + str(election.id) + " saved")
-            else:
-                LOG.debug("Room for election " + str(election.id) + " found.")
-
-            # get participant
-            participantfromDB = (
-                session.query(Participant).filter(Participant.roomID == room.roomID,
-                                                  Participant.participantID == participant.participantID)
-                .first()
-            )
-            if participantfromDB is None:
-                LOG.debug("Participant for election " + str(election.id) + " not found, creating new")
-                participantfromDB = participant
-                participantfromDB.roomID = room.roomID
-                session.flush(participantfromDB)
-                session.commit()
-                LOG.info("Participant for election " + str(election.id) + " saved")
-            else:
-                LOG.debug("Participant for election " + str(election.id) + " found.")
-
-            #return participant with participandID value
-            return participantfromDB
-
-        except Exception as e:
-            LOG.exception(message="Problem occurred in function setMemberWithElectionIDAndWithoutRoomID: " + str(e))"""
 
     def setElection(self, election: Election) -> Election:
         try:
@@ -720,6 +703,29 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting members: " + str(e))
             return None
 
+    def getMembersInElectionRoundNotYetSend(self, election: Election, reminder: Reminder) -> list[Participant]:
+        assert isinstance(election, Election), "election is not of type Election"
+        assert isinstance(reminder, Reminder), "remionder is not of type Reminder"
+        try:
+            session = self.session
+
+            reminderSentParticipant = session.query(ReminderSent.accountName) \
+                .filter(ReminderSent.reminderID == reminder.reminderID,
+                        ReminderSent.sendStatus == ReminderSendStatus.SEND.value).all()
+            reminderSentParticipant = [i[0] for i in reminderSentParticipant]
+
+            result = session.query(Room, Participant) \
+                .join(Participant, Participant.roomID == Room.roomID) \
+                .filter(Room.round == reminder.round,
+                        Room.roomIndex >= 0,
+                        Participant.accountName.notin_(reminderSentParticipant)).all()
+            kva, kva1 = result[0]
+
+            return result
+        except Exception as e:
+            LOG.exception(message="Problem occurred when getting members: " + str(e))
+            return None
+
     def getOneReminderSentRecord(self, reminder: Reminder, participant: Participant) -> ReminderSent:
         assert isinstance(reminder, Reminder)
         assert isinstance(participant, Participant)
@@ -900,7 +906,7 @@ def main():
         roomNameShort="shortshort1",
         # roomID=1
     ))
-    kvaje1 = database.createRooms(listOfRooms=list1)
+    #kvaje1 = database.createRooms(listOfRooms=list1)
 
     # kvaje = database.delegateParticipantsToTheRoom(extendedParticipantsList=list)
     # reminder: Reminder = Reminder(reminderID=1, electionID=1, dateTimeBefore=datetime.now())
@@ -913,18 +919,20 @@ def main():
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
 
-    election: Election = Election(electionID=3,
+    election: Election = Election(electionID=1,
                                   status=ElectionStatus(electionStatusID=7,
                                                         status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
                                   date=datetime.now()
                                   )
 
-    kvaje = database.updateElectionColumnElectionStateIfChanged(election=election,
-                                                                currentElectionState=CurrentElectionState.
-                                                                CURRENT_ELECTION_STATE_SEEDING_V1)
+    reminder: Reminder = Reminder(reminderID=13, electionID=1, dateTimeBefore=datetime.now(), round=0)
+
+    #kvaje = database.updateElectionColumnElectionStateIfChanged(election=election,
+    #                                                            currentElectionState=CurrentElectionState.
+    #                                                            CURRENT_ELECTION_STATE_SEEDING_V1)
 
     # database.getMembers(election=election)
-    database.getUsersInRoom(roomTelegramID=-1)
+    database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
     # result = database.getParticipantsWithoutReminderSentRecord(reminder=reminder)
 
     # database.saveOrUpdateAbi("test", "test1")

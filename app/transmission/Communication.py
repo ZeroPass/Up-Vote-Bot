@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -18,7 +19,8 @@ from pyrogram import Client, emoji, filters, types, idle
 
 import time
 
-from app.text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement
+from app.text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement, \
+    WellcomeMessageTextManagement
 
 
 # api_id = 48490
@@ -123,6 +125,33 @@ class Communication:
         else:
             self.sessionUser.start()
 
+    def sendPhoto(self,
+                  sessionType: SessionType,
+                  chatId: (str, int),
+                  photoPath: str,
+                  caption: str = None,
+                  replyMarkup: InlineKeyboardMarkup = None):
+        try:
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str"
+            assert isinstance(photoPath, str), " photoPath should be str"
+            assert isinstance(caption, (str, type(None))), "Caption should be str or None"
+            LOG.info("Sending photo to: " + str(chatId))
+
+            if sessionType == SessionType.BOT:
+                self.sessionBot.send_photo(chat_id=chatId,
+                                           photo=open(photoPath, 'rb'),
+                                           caption=caption,
+                                           reply_markup=replyMarkup)
+            else:
+                self.sessionUser.send_photo(chat_id=chatId,
+                                            photo=open(photoPath, 'rb'),
+                                            caption=caption,
+                                            reply_markup=replyMarkup)
+
+        except Exception as e:
+            LOG.exception("Exception (in sendPhoto): " + str(e))
+
     def sendMessage(self,
                     sessionType: SessionType,
                     chatId: int,
@@ -191,6 +220,16 @@ class Communication:
         except Exception as e:
             LOG.exception("Exception (in createSuperGroup): " + str(e))
             return None
+
+    def getUsers(self, sessionType: SessionType) -> list:
+        if sessionType == SessionType.BOT:
+            kva = self.sessionBot.get_users(user_ids="me")
+            return self.sessionBot.get_users()
+        else:
+            kva = self.sessionUser.get_users(user_ids="me")
+            return self.sessionUser.get_users()
+
+        return self.sessionUser.iter_participants(self.sessionUser.get_me())
 
     def getInvitationLink(self, sessionType: SessionType, chatId: int) -> str:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
@@ -347,9 +386,11 @@ class Communication:
                     LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
                     LOG.debug(
                         "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
-                    await client.send_message(chat_id=chatid, text="Wellcome " +
-                                                                   str(newMember.username) if newMember.username is not None else "" +
-                                                                                                                                  " to the chat!")
+
+                    #if new member is a bot do nothing
+                    if newMember.is_bot:
+                        LOG.debug("...is bot. Do nothing")
+                        continue
 
                     # promote only users who supposed to be in this room
                     participants: list[Participant] = database.getUsersInRoom(roomTelegramID=chatid)
@@ -360,6 +401,14 @@ class Communication:
                         if participant.telegramID is not None and participant.telegramID == newMember.username:
                             LOG.debug(
                                 "User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
+
+                            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+                            await client.send_message(chat_id=chatid,
+                                                      text=wellcomeMessageObject.getWellcomeMessage(
+                                                          participantAccountName=str(participant.accountName)
+                                                      ))
+
                             await client.promote_chat_member(chat_id=chatid,
                                                              user_id=newMember.username,
                                                              privileges=ChatPrivileges(
@@ -496,6 +545,11 @@ def runPyrogram():
     comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
     # chatID = comm.createSuperGroup(name="test1", description="test1")
     # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
+
+    comm.sendPhoto(sessionType=SessionType.BOT,
+                   chatId="test",
+                   caption="test",
+                   photoPath=open('../../assets/startVideoPreview1.png'))
 
     chatID = -1001893075719
     botID = 1

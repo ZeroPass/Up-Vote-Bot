@@ -2,10 +2,12 @@ from enum import Enum
 
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
-from app.chain.dfuse import DfuseConnection
+from app.chain.dfuse import DfuseConnection, ResponseSuccessful
 from app.constants import dfuse_api_key, time_span_for_notification, \
-    alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id, ReminderGroup
+    alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id, ReminderGroup, \
+    time_span_for_notification_time_is_up
 from app.database import Election, Database
+from app.database.room import Room
 from app.log import Log
 from datetime import datetime, timedelta
 from app.chain.eden import EdenData, Response, ResponseError
@@ -69,6 +71,26 @@ class ReminderManagement:
             LOG.exception(str(e))
             raise ReminderManagementException("Exception thrown when called getLastElection; Description: " + str(e))
 
+    def createRemindersTimeIsUpIfNotExists(self, election: Election, round: int, roundEnd: datetime):
+        """Create round end reminders if not exists"""
+        try:
+            LOG.info("Create reminders in election if not exists")
+            reminder10 = Reminder(electionID=election.electionID,
+                                  round=round,
+                                  reminderGroup=ReminderGroup.IN_ELECTION,
+                                  dateTimeBefore=roundEnd - timedelta(minutes=10))
+            self.database.createTimeIsUpReminder(reminder=reminder10)
+            reminder5 = Reminder(electionID=election.electionID,
+                                 round=round,
+                                 reminderGroup=ReminderGroup.IN_ELECTION,
+                                 dateTimeBefore=roundEnd - timedelta(minutes=5))
+            self.database.createTimeIsUpReminder(reminder=reminder5)
+            LOG.debug("Reminders created")
+        except Exception as e:
+            LOG.exception(str(e))
+            raise ReminderManagementException(
+                "Exception thrown when called createRemindersIFNotExists; Description: " + str(e))
+
     def createRemindersIfNotExists(self, election: Election):
         """Create reminder if there is no reminder in database"""
         try:
@@ -94,12 +116,65 @@ class ReminderManagement:
             blockchainTime: datetime = modeDemo.getCurrentBlockTimestamp()
             return blockchainTime
 
+
+    def sendReminderTimeIsUpIfNeeded(self, election: Election, modeDemo:ModeDemo = None):
+        """Send reminder if time is up"""
+        try:
+            LOG.info("Send reminder if time is up")
+
+            executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
+
+            reminders: list = self.database.getReminders(election=election, reminderGroup=ReminderGroup.IN_ELECTION)
+            if reminders is not None:
+                for reminder in reminders:
+                    LOG.info("Reminder (time is up): " + str(reminder))
+                    LOG.debug("Reminder (time is up) time: " + str(reminder.dateTimeBefore) +
+                              "; Execution time: " + str(executionTime) +
+                              "; Reminder time span: " + str(reminder.dateTimeBefore + timedelta(
+                                                    minutes=time_span_for_notification_time_is_up)) +
+                              " ..."
+                              )
+                    if reminder.dateTimeBefore <= executionTime <= reminder.dateTimeBefore + timedelta(
+                                                                            minutes=time_span_for_notification_time_is_up):
+                        LOG.info("... send reminder to election id: " + str(reminder.electionID) +
+                                 " and dateTimeBefore: " + str(reminder.dateTimeBefore))
+                        roomsAndParticipants: list[list(Room, Participant)] = self.getMembersFromDatabaseInElection(
+                                                                                            election=election,
+                                                                                            reminder=reminder)
+                        votes: Response = self.edenData.getVotes()
+
+                        if isinstance(votes, ResponseError):
+                            LOG.error("Error when called getVotes: " +votes.error)
+                            raise ReminderManagementException("Error when called getVotes: " +votes.error)
+
+                        for room, participant in roomsAndParticipants:
+                            LOG.debug("Group: " + str(room) + "; Participant: " + str(participant))
+
+                            # check if participant has voted
+                            candidate = [y.data['candidate'] for x, y in votes.data.items() if
+                                         x == participant.accountName and isinstance(y, ResponseSuccessful)]
+                            if len(candidate) == 0:
+                                # participant has not voted
+                                LOG.info("Participant has not voted")
+                                self.communication.sendReminderTimeIsUp(participant=participant, room=room)
+                            else:
+                                # participant has voted
+                                LOG.info("Participant has voted")
+                                self.communication.sendReminderTimeIsUpVoted(participant=participant, room=room)
+
+
+
+        except Exception as e:
+            LOG.exception(str(e))
+            raise ReminderManagementException \
+                ("Exception thrown when called sendReminderTimeIsUpIfNeeded; Description: " + str(e))
+
     def sendReminderIfNeeded(self, election: Election, modeDemo: ModeDemo = None):
         """Send reminder if needed"""
         try:
             LOG.info("Send reminders if needed")
 
-            executionTime = self.setExecutionTime(modeDemo=modeDemo)
+            executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
             LOG.debug("Working time: " + str(executionTime))
 
             reminders = self.database.getReminders(election=election)
@@ -119,7 +194,8 @@ class ReminderManagement:
                                 minutes=time_span_for_notification):
                             LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
-                            members: list[Participant] = self.getMembersFromDatabase(election=election)
+                            members: list[Participant] = self.getMembersFromDatabaseInElection(election=election,
+                                                                                               reminder=reminder)
                             reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
                                 reminder=reminder)
                             for member in members:
@@ -170,6 +246,21 @@ class ReminderManagement:
             else:
                 raise Exception("Participants are not set in the database. Something went wrong.")
                 return None
+        except Exception as e:
+            LOG.exception(str(e))
+            raise ReminderManagementException(
+                "Exception thrown when called getMembersFromDatabase; Description: " + str(e))
+
+    def getMembersFromDatabaseInElection(self, election: Election, reminder: Reminder):
+        """Get participants from database in election process"""
+        """Returns list of rooms[0] and participants[1]"""
+        try:
+            assert isinstance(election, Election), "election is not instance of Election"
+            assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
+
+            LOG.info("Get participants from database in election process")
+            groupsAndParticipants = self.database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
+            return groupsAndParticipants
         except Exception as e:
             LOG.exception(str(e))
             raise ReminderManagementException(

@@ -1,6 +1,5 @@
 from enum import Enum
 
-import database
 import time
 
 from app.chain import EdenData
@@ -11,12 +10,14 @@ from app.chain.electionStateObjects import EdenBotMode, CurrentElectionStateHand
 from app.constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
 from app.database import Database, Election
 from app.log import Log
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.debugMode.modeDemo import ModeDemo, Mode
 from app.groupManagement import GroupManagement
 import gettext
 
-from app.transmission import Communication
+from app.transmission import Communication, SessionType
+
+from multiprocessing import Process
 
 
 ######## Multilanguage support in the future -= not translated yet =-
@@ -40,7 +41,8 @@ REPEAT_TIME = {
 class EdenBot:
     botMode: EdenBotMode
 
-    def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str, database: Database, mode: Mode, modeDemo: ModeDemo = None):
+    def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str, database: Database,
+                 mode: Mode, modeDemo: ModeDemo = None):
         LOG.info("Initialization of EdenBot")
         assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
         assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
@@ -74,7 +76,6 @@ class EdenBot:
         self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
                                                                             nodeTime=self.edenData.getChainDatetime())
 
-
         # creat communication object
         LOG.debug("Initialization of telegram bot...")
         self.communication = Communication()
@@ -88,18 +89,11 @@ class EdenBot:
                                                communication=self.communication,
                                                mode=mode)
 
-        self.communication.idle()
-        while True:
-            time.sleep(3)
-
-
         LOG.debug("... is finished")
 
         # set current election state
         self.currentElectionStateHandler: CurrentElectionStateHandler = None
         self.setCurrentElectionStateAndCallCustomActions(database=self.database)
-
-
 
     def getChainHeight(self) -> int:
         if self.mode == Mode.DEMO:
@@ -255,5 +249,43 @@ def main():
     breakpoint = True
 
 
+def runPyrogram():
+    comm = Communication()
+    comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
+    # chatID = comm.createSuperGroup(name="test1", description="test1")
+    # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
+
+    comm.sendMessage(chatId="nejcSkerjanc2",
+                     text="test",
+                     sessionType=SessionType.BOT,
+                     scheduleDate=datetime.now() + timedelta(seconds=10)
+
+                     )
+
+    comm.getUsers(sessionType=SessionType.USER)
+
+    comm.getUsers(sessionType=SessionType.BOT)
+
+
+    comm.sendPhoto(sessionType=SessionType.BOT,
+                   chatId="nejcSkerjanc2",
+                   caption="test",
+                   photoPath="test")
+
+
+def mainPyrogram():
+    ###########################################
+    # multiprocessing
+    pyogram = Process(target=runPyrogram)
+    pyogram.start()
+    #############################################
+
+    while True:
+        time.sleep(3)
+        print("main Thread")
+    i = 9
+
+
 if __name__ == "__main__":
-    main()
+    #main()
+    mainPyrogram() #to test pyrogram application - because of one genuine session file

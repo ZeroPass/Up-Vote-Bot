@@ -21,17 +21,21 @@ class Reminder(Base):
     reminderID = Column(Integer, primary_key=True, autoincrement=True)
     dateTimeBefore = Column(DateTime)
     electionID = Column(Integer, ForeignKey(Election.electionID))
+    round = Column(Integer, nullable=True)  # going to be used only for time's up reminder
     reminderGroup = Column(Integer)
 
-    def __init__(self, dateTimeBefore: datetime, electionID: int, reminderGroup: ReminderGroup = ReminderGroup.BOTH, reminderID: int = None):
+    def __init__(self, dateTimeBefore: datetime, electionID: int, reminderGroup: ReminderGroup = ReminderGroup.BOTH,
+                 round: int = None, reminderID: int = None):
         """Initialization object"""
-        assert isinstance(electionID, int)
-        assert isinstance(dateTimeBefore, datetime)
-        assert isinstance(reminderGroup, ReminderGroup)
-        assert isinstance(reminderID, (int, type(None)))
+        assert isinstance(electionID, int), "ElectionID must be int"
+        assert isinstance(dateTimeBefore, datetime), "DateTimeBefore must be datetime"
+        assert isinstance(round, (int, type(None))), "Round must be int or None"
+        assert isinstance(reminderGroup, ReminderGroup), "ReminderGroup must be ReminderGroup"
+        assert isinstance(reminderID, (int, type(None))), "ReminderID must be int or None"
 
         self.reminderID = reminderID
         self.dateTimeBefore = dateTimeBefore
+        self.round = round
         self.reminderGroup = reminderGroup.value
         self.electionID = electionID
 
@@ -39,6 +43,7 @@ class Reminder(Base):
         return "ReminderID: " + str(self.reminderID) if self.reminderID is not None else "<None>" + \
                " DateTimeBefore: " + str(self.dateTimeBefore) + \
                " ElectionID: " + str(self.electionID) + \
+               " Round: " + str(self.round) + \
                " ReminderGroup: " + str(self.reminderGroup)
 
 

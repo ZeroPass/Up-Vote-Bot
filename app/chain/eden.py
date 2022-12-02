@@ -3,7 +3,7 @@ import threading
 # from struct import Struct
 import time
 from datetime import datetime, timedelta
-from app.chain.dfuse import DfuseConnection, ResponseError, Response
+from app.chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
 from app.constants import eden_account, dfuse_api_key
 from app.database import Database
 from app.log.log import Log
@@ -133,6 +133,20 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getBlockNumOfTimestamp; Description: " + str(e))
 
+    def getVotes(self, height: int = None):
+        try:
+            LOG.info("Get votes on height: " + str(height) if height is not None else "<current/live>")
+            ACCOUNT = eden_account
+            TABLE = 'votes'
+            SCOPE = None
+
+            return self.dfuseConnection.getTable(account=ACCOUNT,
+                                                 table=TABLE,
+                                                 scope=SCOPE,
+                                                 height=height)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getVotes; Description: " + str(e))
     def getDifferenceBetweenNodeAndServerTime(self, serverTime: datetime, nodeTime: datetime):
         try:
             LOG.info("Get difference between node and server time")
@@ -211,12 +225,26 @@ class EdenData:
 
 def main():
     print("Hello World!")
-    dfuseObj = EdenData(dfuseApiKey=dfuse_api_key)
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
+    database = Database()
+    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
 
-    resnevem = dfuseObj.getTimestampOfBlock(1312423)
-    nodeTime = dfuseObj.getChainDatetime()
-    kva = dfuseObj.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
-                                                         nodeTime=datetime.fromisoformat(nodeTime))
+    test = edenData.getVotes(height=272119950 + 100)
+    kva = test.data
+    kva1 = test.data
+
+    #for x, y in test.data.items():
+    #    print(x, y)
+
+    bula = [y.data['candidate'] for x, y in test.data.items() if x == 'bender.g3' and isinstance(y, ResponseSuccessful)]
+    b = 9
+
+    #enadvatir = edenData.getCurrentElectionState()
+
+    #resnevem = dfuseObj.getTimestampOfBlock(1312423)
+    #nodeTime = dfuseObj.getChainDatetime()
+    #kva = dfuseObj.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
+    #                                                     nodeTime=datetime.fromisoformat(nodeTime))
     ret = 9
 
 

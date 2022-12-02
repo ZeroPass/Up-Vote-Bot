@@ -1,4 +1,5 @@
 import gettext
+from datetime import datetime
 from typing import TypedDict, Tuple, Dict
 
 from app.constants.language import Language
@@ -33,6 +34,28 @@ class TextManagement:
 
     def newLine(self) -> str:
         return "\n"
+
+
+class WellcomeMessageTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def getWellcomeMessage(self, participantAccountName: str) -> str:
+        assert isinstance(participantAccountName, str), "participantAccountName must be a string"
+        return _("Welcome __%s__ to the room!") % participantAccountName
+
+
+class ElectionTimeIsUpTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def groupMessage(self, roundEnd: datetime, messageTime: datetime, participant: list(Participant)) -> str:
+        assert isinstance(roundEnd, datetime), "roundEnd must be a datetime"
+        assert isinstance(messageTime, datetime), "messageTime must be a datetime"
+        assert isinstance(participant, list), "participant must be a list"
+
+        return _("Election __%s__ with description __%s__ has been created with ID __%d__") % (
+            electionName, electionDescription, electionID)
 
 class BotCommunicationManagement(TextManagement):
 
@@ -84,13 +107,13 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(inviteLink, str), "groupLink must be a str"
         return Button(text="Join the group", value=inviteLink),
 
-    def wellcomeMessage(self, inviteLink: str, round: int) -> str:
+    def welcomeMessage(self, inviteLink: str, round: int, group: int) -> str:
         assert isinstance(inviteLink, str), "groupLink must be a str"
         assert isinstance(round, int), "round must be an int"
-        return _("Welcome to to Eden communication group!" + self.newLine() +
-                 "This is round %d. " + self.newLine() + self.newLine() +
-                 "If any participant is not joined yet (and should be), send this invite link:" + self.newLine() +
-                 "%s") % (round + 1, inviteLink)
+        assert isinstance(group, int), "group must be an int"
+        return _("Welcome to Eden Group %d in the Round %d." + self.newLine() + self.newLine() +
+                 "If any participant is not joined yet (and should be), send them this invite link:" + self.newLine() +
+                 "%s") % (group, round + 1, inviteLink)
 
     def participantsInTheRoom(self) -> str:
         return _("Participants in the room: \n")
@@ -100,12 +123,38 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(participantName, str), "participantName must be a string"
         assert isinstance(telegramID, str), "telegramId must be a string"
 
-        return _("•Eden: **%s**\n"
-                 "\t-name: %s\n"
-                 "\ttelegramID: __%s__") % (
+        return _("• Eden: **%s**\n"
+                 "\t name: %s\n"
+                 "\t Telegram: __%s__") % (
                     accountName,  # fist parameter
                     participantName if participantName is not None else "/",  # second parameter
                     telegramID if telegramID is not None and len(telegramID) > 2 else "<NOT_KNOWN_TELEGRAM_ID>")
 
     def demoMessageInCreateGroup(self) -> str:
-        return _("ALERT: Participants above are not really in the group. This is just a demo. Only testers added")
+        return _("__ALERT: Participants above are not really in the group. This is just a demo. Only testers added__")
+
+
+    def timeIsAlmostUpGroup(self, timeLeftInMinutes: int, round: int) -> str:
+        assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
+        assert isinstance(round, int), "round must be an int"
+
+        return _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
+                 "check the button bellow. Check the bot messages if you need to vote on bloks.") % \
+                (round, timeLeftInMinutes)
+
+    def timeIsAlmostUpButtons(self) -> tuple[str]:
+        return [_("Vote on Eden members portal", "or on blocks.io")]
+
+
+    def timeIsAlmostUpPrivate(self, timeLeftInMinutes: int, round: int) -> str:
+        assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
+        assert isinstance(round, int), "round must be an int"
+
+        return _("Only **%d minutes left** for voting in round %d. In the case of portal connection"
+                 " issues, you can choose blocks.") % \
+                (round, timeLeftInMinutes)
+
+    def sendPhotoHowToStartVideoCallCaption(self):
+        return _("Start or join the video chat." + self.newLine() + self.newLine() +
+                 "Once inside, click start recording in the menu.")
+

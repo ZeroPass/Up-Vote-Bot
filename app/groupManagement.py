@@ -1,15 +1,15 @@
 from datetime import datetime
 
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from requests_unixsocket import Session
 
 from app.chain import EdenData
 from app.chain.dfuse import Response, ResponseError
-#from app.chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
+# from app.chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
 from app.debugMode.modeDemo import Mode
 from app.log import Log
 from app.constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
-    telegram_admins_id, CurrentElectionState
+    telegram_admins_id, CurrentElectionState, start_video_preview_path
 from app.database import Database, Election, ExtendedParticipant, ExtendedRoom
 from app.database.room import Room
 from app.database.participant import Participant
@@ -58,9 +58,9 @@ class RoomName:
             # Eden - Round 1, Group 1, Delegates. Season 4, Year 2022.
             LOGroomName.debug(
                 f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, "
-                f"Election.  Season {self.season}, Year {self.year}.")
+                f"election.  Season {self.season}, Year {self.year}.")
             return f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, " \
-                   f"Election.  Season {self.season}, Year {self.year}."
+                   f"election.  Season {self.season}, Year {self.year}."
 
     def nameShort(self):
         # round number should be 1 higher than the actual round number
@@ -185,9 +185,9 @@ class GroupManagement:
                     if value.data['round'] == round:
                         participant: Participant = self.database.getParticipant(accountName=key)
                         extendedParticipant: extendedParticipant = ExtendedParticipant.fromParticipant(
-                                                                                participant=participant,
-                                                                                index=value.data['index'],
-                                                                                voteFor=value.data['candidate'])
+                            participant=participant,
+                            index=value.data['index'],
+                            voteFor=value.data['candidate'])
 
                         members.append(extendedParticipant)
             return members
@@ -212,9 +212,8 @@ class GroupManagement:
         try:
             LOG.info("Create groups")
 
-
             roomArray: RoomArray = RoomArray()
-            for index in range( numGroups):  # from 0 to numGroups -1
+            for index in range(numGroups):  # from 0 to numGroups -1
                 roomName: RoomName = RoomName(round=round,
                                               roomIndex=index,
                                               season=eden_season,
@@ -232,7 +231,7 @@ class GroupManagement:
             LOG.debug("Number of created rooms: " + str(roomArray.numRooms()))
 
             LOG.info("Writing rooms to database and setting new variable with indexes in group")
-            #rooms: list[ExtendedRoom] = roomArray.getRoomArray()
+            # rooms: list[ExtendedRoom] = roomArray.getRoomArray()
             roomsListWithIndexes = self.database.createRooms(listOfRooms=roomArray.getRoomArray())
             roomsListWithIndexesUpdated: RoomArray = RoomArray()
             roomsListWithIndexesUpdated.setRooms(roomsListWithIndexes)
@@ -301,7 +300,6 @@ class GroupManagement:
             else:
                 LOG.error("Room telegram ID is not updated in database")
 
-
             # not needed because of supergroup
             # self.communication.setChatDescription(chatID=chatID, description=extendedRoom.roomNameLong)
 
@@ -313,7 +311,7 @@ class GroupManagement:
                                               chatId=chatID,
                                               participants=[telegram_bot_name])
 
-            #self.communication.leaveChat(sessionType=SessionType.USER, chatID=chatID) # just temporary comment out
+            # self.communication.leaveChat(sessionType=SessionType.USER, chatID=chatID) # just temporary comment out
 
             #
             # From this point the user bot is not allowed - bot has all rights and can do everything it needs to be done
@@ -326,7 +324,8 @@ class GroupManagement:
             else:
                 knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
                 LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
-                LOG.debug("Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
+                LOG.debug(
+                    "Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
                 self.communication.addChatMembers(chatId=chatID,
                                                   participants=telegram_admins_id)
 
@@ -342,7 +341,8 @@ class GroupManagement:
             else:
                 knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
                 LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
-                LOG.debug("Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
+                LOG.debug(
+                    "Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
                 self.communication.promoteMembers(sessionType=SessionType.BOT,
                                                   chatId=chatID,
                                                   participants=telegram_admins_id)
@@ -364,6 +364,7 @@ class GroupManagement:
                     "link is valid until next call of this function! Make sure you handle it properly!")
                 buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
 
+                # send private message to the participants, in case of test mode to the admins
                 if self.mode == Mode.LIVE:
                     members = extendedRoom.getMembersTelegramIDsIfKnown()
                 else:
@@ -387,26 +388,41 @@ class GroupManagement:
                                                    ))
 
             LOG.info("Send welcome message to the room")
-            self.communication.sendMessage(chatId=chatID,
-                                           sessionType=SessionType.BOT,
-                                           text=gCtextManagement.wellcomeMessage(inviteLink=inviteLink,
-                                                                                 round=extendedRoom.round))
+            welcomeMessage: str = ""
 
-            LOG.info("Print out the room participants")
+            welcomeMessage += gCtextManagement.welcomeMessage(inviteLink=inviteLink,
+                                                              round=extendedRoom.round,
+                                                              group=extendedRoom.roomIndex + 1)
+            welcomeMessage += gCtextManagement.newLine()
+            welcomeMessage += gCtextManagement.newLine()
+
+            # head text for participant list
+            welcomeMessage += gCtextManagement.participantsInTheRoom()
+            welcomeMessage += gCtextManagement.newLine()
+            for participant in extendedRoom.members:
+                welcomeMessage += gCtextManagement.participant(accountName=participant.accountName,
+                                                               participantName=
+                                                               participant.participantName,
+                                                               telegramID=participant.telegramID)
+                welcomeMessage += gCtextManagement.newLine()
+                welcomeMessage += gCtextManagement.newLine()
+
+            if self.mode == Mode.DEMO:
+                welcomeMessage += gCtextManagement.newLine()
+                welcomeMessage += gCtextManagement.newLine()
+                welcomeMessage += gCtextManagement.demoMessageInCreateGroup()
+
             self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,
-                                           text=gCtextManagement.participantsInTheRoom())
-            for participant in extendedRoom.members:
-                self.communication.sendMessage(chatId=chatID,
-                                               sessionType=SessionType.BOT,
-                                               text=gCtextManagement.participant(accountName=participant.accountName,
-                                                                                 participantName=
-                                                                                 participant.participantName,
-                                                                                 telegramID=participant.telegramID))
-            if self.mode == Mode.DEMO:
-                self.communication.sendMessage(chatId=chatID,
-                                               sessionType=SessionType.BOT,
-                                               text=gCtextManagement.demoMessageInCreateGroup())
+                                           text=welcomeMessage,
+                                           disableWebPagePreview=True)
+
+            LOG.info("Show print screen how to start video call")
+            self.communication.sendPhoto(chatId=chatID,
+                                         sessionType=SessionType.BOT,
+                                         photoPath=start_video_preview_path,
+                                         caption=gCtextManagement.sendPhotoHowToStartVideoCallCaption()
+                                         )
 
             LOG.info("Creating room finished")
             return chatID
@@ -440,21 +456,28 @@ class GroupManagement:
             assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes is not an int object"
             assert timeLeftInMinutes > 0, "timeLeftInMinutes is not greater than 0"
 
-            text: str = _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
-                          "check the buttons bellow") % (extendedRoom.round, timeLeftInMinutes)
+            textManagement: GroupCommunicationTextManagement = GroupCommunicationTextManagement(
+                language=default_language)
+
+            # send notification to the room
+            text: str = textManagement.timeIsAlmostUpGroup(timeLeftInMinutes=timeLeftInMinutes,
+                                                           round=extendedRoom.round)
+
+            buttonText: tuple[str] = textManagement.timeIsAlmostUpButton()
+
+            if len(buttonText) != 2:
+                LOG.error("Button text is not valid")
+                raise GroupManagementException("Button text is not valid")
 
             inlineReplyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                 inline_keyboard=
                 [
                     [
-                        InlineKeyboardButton(text=_("Vote on Eden members portal"),
-                                             url=eden_portal_url_action),
-                        InlineKeyboardButton(text=_("or on blocks.io"),  # check if specific link is possible
-                                             url=RawActionWeb().electVote(round=extendedRoom.round,
-                                                                          voter=None,
-                                                                          candidate=None))
+                        InlineKeyboardButton(text=buttonText[0],
+                                             url=eden_portal_url_action)
                     ]
                 ]
+
             )
 
             self.communication.sendMessage(sessionType=SessionType.BOT,
@@ -462,6 +485,32 @@ class GroupManagement:
                                            text=text,
                                            inlineReplyMarkup=inlineReplyMarkup
                                            )
+
+            # send notification to the participants
+
+            textParticipant: str = textManagement.timeIsAlmostUpGroup(timeLeftInMinutes=timeLeftInMinutes,
+                                                                      round=extendedRoom.round)
+
+            for participant in extendedRoom.participants:
+                inlineReplyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
+                    inline_keyboard=
+                    [
+                        [
+                            InlineKeyboardButton(text=buttonText[0],
+                                                 url=eden_portal_url_action),
+                            InlineKeyboardButton(text=buttonText[1],  # check if specific link is possible
+                                                 url=RawActionWeb().electVote(round=extendedRoom.round,
+                                                                              voter=None,
+                                                                              candidate=None))
+                        ]
+                    ]
+                )
+
+                self.communication.sendMessage(sessionType=SessionType.BOT,
+                                               chatID=participant.telegramID,
+                                               text=text,
+                                               inlineReplyMarkup=inlineReplyMarkup
+                                               )
 
         except Exception as e:
             LOG.exception(str(e))
@@ -480,7 +529,6 @@ class GroupManagement:
             LOG.info(message="should be called only when state is CurrentElectionStateHandlerActive "
                              "or CurrentElectionStateHandlerFinal")
 
-
             LOG.info("Initialization of group")
 
             rooms: list[ExtendedRoom] = self.getGroups(election=election, round=round, numParticipants=numParticipants,
@@ -494,13 +542,18 @@ class GroupManagement:
                          ", ID: " + str(room.roomID) +
                          ", num of participants: " + str(len(room.getMembers())) +
                          ", participants: " + str(room.getMembers())
-                )
+                         )
 
                 # initialize names of the participants
                 for participant in room.getMembers():
                     participant.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(participant.telegramID)
 
-                chatID = self.createRoom(extendedRoom=room)
+                chatID: int = None
+                if room.roomTelegramID is None:
+                    LOG.info("Room has not telegram ID - create it")
+                    chatID = self.createRoom(extendedRoom=room)
+                else:
+                    LOG.debug("Room has telegram ID - skip creating room")
                 LOG.info("Chat with next chatID has been created: " + str(chatID) if chatID is not None
                          else "<not created>")
         except Exception as e:
@@ -526,7 +579,8 @@ class GroupManagement:
                 raise GroupManagementException("GroupManagement.createGroups; No election found!")
 
             # check if groups are already created
-            if self.database.electionGroupsCreated(election=election, round=round) is False or True:  # TODO: remove after testing
+            if self.database.electionGroupsCreated(election=election,
+                                                   round=round) is False or True:  # TODO: remove after testing
                 LOG.info("Groups are not created yet, creating them")
                 self.groupInitialization(election=election,
                                          round=round,
@@ -543,13 +597,8 @@ class GroupManagement:
             raise GroupManagementException("Exception thrown when called manage function; Description: " + str(e))
 
 
-
-
 def main():
     print("breakpoint")
-
-
-
 
 
 if __name__ == "__main__":

@@ -222,12 +222,12 @@ class DfuseConnection:
 
             # if scope is zero we need to manually parse binary data to json
             isJson = False if scope is None else True
-
+            #isJson = True
             parameters = dict({
                 'account': account,
                 "table": table,
                 "primary_key": primaryKey,
-                "scope": scope if scope is not None else "",
+                "scope": scope if scope is not None else "0",
                 "json": str(isJson).lower() #do not parse on server, not working because of abi version (for now)
             })
             #if height is set (we are looking in the history)
