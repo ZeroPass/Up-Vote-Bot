@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TypedDict, Tuple, Dict
 
 from app.constants.language import Language
-
+from app.database import ExtendedRoom, ExtendedParticipant
 _ = gettext.gettext
 __ = gettext.ngettext
 
@@ -44,18 +44,6 @@ class WellcomeMessageTextManagement(TextManagement):
         assert isinstance(participantAccountName, str), "participantAccountName must be a string"
         return _("Welcome __%s__ to the room!") % participantAccountName
 
-
-class ElectionTimeIsUpTextManagement(TextManagement):
-    def __init__(self, language: Language = Language.ENGLISH):
-        super().__init__(language)
-
-    def groupMessage(self, roundEnd: datetime, messageTime: datetime, participant: list(Participant)) -> str:
-        assert isinstance(roundEnd, datetime), "roundEnd must be a datetime"
-        assert isinstance(messageTime, datetime), "messageTime must be a datetime"
-        assert isinstance(participant, list), "participant must be a list"
-
-        return _("Election __%s__ with description __%s__ has been created with ID __%d__") % (
-            electionName, electionDescription, electionID)
 
 class BotCommunicationManagement(TextManagement):
 
@@ -134,25 +122,46 @@ class GroupCommunicationTextManagement(TextManagement):
         return _("__ALERT: Participants above are not really in the group. This is just a demo. Only testers added__")
 
 
-    def timeIsAlmostUpGroup(self, timeLeftInMinutes: int, round: int) -> str:
+    def timeIsAlmostUpGroup(self, timeLeftInMinutes: int, round: int, extendedRoom: ExtendedRoom) -> str:
         assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
         assert isinstance(round, int), "round must be an int"
+        assert isinstance(extendedRoom, ExtendedRoom), "extendedRoom must be a ExtendedRoom"
 
-        return _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
-                 "check the button bellow. Check the bot messages if you need to vote on bloks.") % \
+        text: str = _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
+                 "check the button bellow. Check the bot messages if you need to vote on bloks." + self.newLine() + self.newLine() +
+                 "Vote statistic: "+ self.newLine()  ) % \
                 (round, timeLeftInMinutes)
+
+        participants: list[ExtendedParticipant] = extendedRoom.getMembers()
+
+        for participant in participants:
+            if participant.voteFor is None or participant.voteFor == "":
+                text += _("• **%s** votes for __%s__" + self.newLine()) % \
+                        (participant.participantName, participant.voteFor)
+            else:
+                text += _("• **%s** has not voted yet" + self.newLine()) % \
+                        (participant.participantName)
+
+
 
     def timeIsAlmostUpButtons(self) -> tuple[str]:
         return [_("Vote on Eden members portal", "or on blocks.io")]
 
 
-    def timeIsAlmostUpPrivate(self, timeLeftInMinutes: int, round: int) -> str:
+    def timeIsAlmostUpPrivate(self, timeLeftInMinutes: int, round: int, voteFor: str = None) -> str:
         assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
         assert isinstance(round, int), "round must be an int"
 
-        return _("Only **%d minutes left** for voting in round %d. In the case of portal connection"
-                 " issues, you can choose blocks.") % \
+        if voteFor is None:
+            return _("Only **%d minutes left** for voting in round %d. You have **not voted** yet. "
+                     "Please vote on Eden members portal." + self.newLine() +
+                     "In the case of portal connection"
+                     " issues, you can choose bloks.io.") % \
                 (round, timeLeftInMinutes)
+        else:
+            return _("Only **%d minutes left** for voting in round %d. You already voted for **%s**. "
+                     "You can change your decision on portal or on bloks.io.") % \
+                (round, timeLeftInMinutes, voteFor)
 
     def sendPhotoHowToStartVideoCallCaption(self):
         return _("Start or join the video chat." + self.newLine() + self.newLine() +

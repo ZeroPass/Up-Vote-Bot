@@ -719,7 +719,6 @@ class Database(metaclass=Singleton):
                 .filter(Room.round == reminder.round,
                         Room.roomIndex >= 0,
                         Participant.accountName.notin_(reminderSentParticipant)).all()
-            kva, kva1 = result[0]
 
             return result
         except Exception as e:

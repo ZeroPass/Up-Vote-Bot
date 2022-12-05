@@ -249,43 +249,34 @@ def main():
     breakpoint = True
 
 
-def runPyrogram():
+def runPyrogramTestMode():
     comm = Communication()
     comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
     # chatID = comm.createSuperGroup(name="test1", description="test1")
     # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
 
-    comm.sendMessage(chatId="nejcSkerjanc2",
+    comm.sendMessage(chatId="kva",
                      text="test",
                      sessionType=SessionType.BOT,
                      scheduleDate=datetime.now() + timedelta(seconds=10)
-
                      )
 
-    comm.getUsers(sessionType=SessionType.USER)
-
-    comm.getUsers(sessionType=SessionType.BOT)
-
-
     comm.sendPhoto(sessionType=SessionType.BOT,
-                   chatId="nejcSkerjanc2",
+                   chatId="neki",
                    caption="test",
-                   photoPath="test")
+                   photoPath="test"
+                   )
 
 
-def mainPyrogram():
-    ###########################################
+def mainPyrogramTestMode():
     # multiprocessing
-    pyogram = Process(target=runPyrogram)
+    pyogram = Process(target=runPyrogramTestMode)
     pyogram.start()
-    #############################################
 
     while True:
         time.sleep(3)
         print("main Thread")
-    i = 9
-
 
 if __name__ == "__main__":
-    #main()
-    mainPyrogram() #to test pyrogram application - because of one genuine session file
+    mal main()
+    #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

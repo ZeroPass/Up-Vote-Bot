@@ -5,9 +5,11 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyb
 from app.chain.dfuse import DfuseConnection, ResponseSuccessful
 from app.constants import dfuse_api_key, time_span_for_notification, \
     alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id, ReminderGroup, \
-    time_span_for_notification_time_is_up
-from app.database import Election, Database
+    time_span_for_notification_time_is_up, alert_message_time_round_end_is_coming, eden_portal_url_action
+from app.constants.rawActionWeb import RawActionWeb
+from app.database import Election, Database, ExtendedParticipant, ExtendedRoom
 from app.database.room import Room
+from app.groupManagement import RoomArray
 from app.log import Log
 from datetime import datetime, timedelta
 from app.chain.eden import EdenData, Response, ResponseError
@@ -16,6 +18,7 @@ from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
 from datetime import datetime
 from app.debugMode.modeDemo import ModeDemo
 from app.dateTimeManagement import DateTimeManagement
+from app.text.textManagement import GroupCommunicationTextManagement
 from app.transmission import SessionType, Communication
 
 import gettext
@@ -74,17 +77,35 @@ class ReminderManagement:
     def createRemindersTimeIsUpIfNotExists(self, election: Election, round: int, roundEnd: datetime):
         """Create round end reminders if not exists"""
         try:
-            LOG.info("Create reminders in election if not exists")
-            reminder10 = Reminder(electionID=election.electionID,
-                                  round=round,
-                                  reminderGroup=ReminderGroup.IN_ELECTION,
-                                  dateTimeBefore=roundEnd - timedelta(minutes=10))
-            self.database.createTimeIsUpReminder(reminder=reminder10)
-            reminder5 = Reminder(electionID=election.electionID,
-                                 round=round,
-                                 reminderGroup=ReminderGroup.IN_ELECTION,
-                                 dateTimeBefore=roundEnd - timedelta(minutes=5))
-            self.database.createTimeIsUpReminder(reminder=reminder5)
+            LOG.info("Create reminders (time is up) in election if not exists")
+            for item in alert_message_time_round_end_is_coming:
+                if len(item) != 3:
+                    raise ReminderManagementException("alert_message_time_round_end_is_coming is not in correct size")
+                if isinstance(item[0], int) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[0]: "
+                                  "element is not int")
+
+                    raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[0]: "
+                                                      "element is not int")
+                if isinstance(item[1], Enum) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[1]: "
+                                  "element is not ReminderGroup")
+
+                    raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[1]: "
+                                                      "element is not ReminderGroup")
+                if isinstance(item[2], str) is False:
+                    LOG.exception("alert_message_time_election_is_coming tuple[2]: "
+                                  "element is not str")
+
+                    raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[2]: "
+                                                      "element is not str")
+
+                reminder = Reminder(electionID=election.electionID,
+                                    round=round,
+                                    reminderGroup=item[1],
+                                    dateTimeBefore=roundEnd - timedelta(minutes=item[0]))
+                self.database.createTimeIsUpReminder(reminder=reminder)
+
             LOG.debug("Reminders created")
         except Exception as e:
             LOG.exception(str(e))
@@ -135,9 +156,19 @@ class ReminderManagement:
                               " ..."
                               )
                     if reminder.dateTimeBefore <= executionTime <= reminder.dateTimeBefore + timedelta(
-                                                                            minutes=time_span_for_notification_time_is_up):
+                                                                    minutes=time_span_for_notification_time_is_up):
+
                         LOG.info("... send reminder to election id: " + str(reminder.electionID) +
-                                 " and dateTimeBefore: " + str(reminder.dateTimeBefore))
+                                 " and dateTimeBefore: " + str(reminder.dateTimeBefore) +
+                                 " and round: " + str(reminder.round))
+
+                        #get text of reminder
+                        minutesToElectionInMinutes = (election.date - executionTime).total_seconds() / 60
+                        closestReminder: tuple[int, ReminderGroup, str] = self.theNearestDateTime(
+                            alert_message_time_election_is_coming,
+                            minutesToElectionInMinutes)
+
+
                         roomsAndParticipants: list[list(Room, Participant)] = self.getMembersFromDatabaseInElection(
                                                                                             election=election,
                                                                                             reminder=reminder)
@@ -147,22 +178,54 @@ class ReminderManagement:
                             LOG.error("Error when called getVotes: " +votes.error)
                             raise ReminderManagementException("Error when called getVotes: " +votes.error)
 
+                        if len(roomsAndParticipants) == 0:
+                            LOG.critical("No rooms and participants")
+                            return
+
+                        #extendedRoom = ExtendedRoom.fromRoom(room= )
+                        roomArray: RoomArray = RoomArray()
+                        currentRoom: ExtendedRoom = None
+
                         for room, participant in roomsAndParticipants:
                             LOG.debug("Group: " + str(room) + "; Participant: " + str(participant))
 
+                            # only first time
+                            if currentRoom is None:
+                                currentRoom = ExtendedRoom.fromRoom(room=room)
+
+                            # if current room is not the same as previous, add it to the array
+                            if currentRoom.roomID != room.roomID:
+                                roomArray.setRoom(room=currentRoom)
+                                currentRoom = ExtendedRoom.fromRoom(room=room)
+
+                            #add participant to current room
+                            currentRoom.addMember(member=participant)
+
+                            # send to participant
                             # check if participant has voted
                             candidate = [y.data['candidate'] for x, y in votes.data.items() if
                                          x == participant.accountName and isinstance(y, ResponseSuccessful)]
-                            if len(candidate) == 0:
-                                # participant has not voted
-                                LOG.info("Participant has not voted")
-                                self.communication.sendReminderTimeIsUp(participant=participant, room=room)
-                            else:
-                                # participant has voted
-                                LOG.info("Participant has voted")
-                                self.communication.sendReminderTimeIsUpVoted(participant=participant, room=room)
+
+                            #create extended participant - because of votefor variable
+                            extendedParticipant: ExtendedParticipant = \
+                                                 ExtendedParticipant.fromParticipant(participant=participant)
+                            #set vote
+                            extendedParticipant.voteFor = candidate[0] if len(candidate) > 0 else None
 
 
+                            self.sendAndSyncWithDatabaseRoundIsAlmostFinish(member=extendedParticipant,
+                                                                            reminder=reminder,
+                                                                            modeDemo=modeDemo,
+                                                                            election=election,
+                                                                            closestReminterConst=closestReminder
+                                                                            )
+
+                        # send message to the group
+                        self.sendToTheGroupTimeIsUp(reminder=reminder,
+                                                    election=election,
+                                                    closestReminderConst=closestReminder,
+                                                    roomArray=roomArray,
+                                                    modeDemo=modeDemo)
 
         except Exception as e:
             LOG.exception(str(e))
@@ -194,8 +257,7 @@ class ReminderManagement:
                                 minutes=time_span_for_notification):
                             LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
-                            members: list[Participant] = self.getMembersFromDatabaseInElection(election=election,
-                                                                                               reminder=reminder)
+                            members: list[Participant] = self.getMembersFromDatabase(election=election)
                             reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
                                 reminder=reminder)
                             for member in members:
@@ -203,7 +265,7 @@ class ReminderManagement:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue
 
-                                isSent: bool = self.sendAndSyncWithDatabase(member=member,
+                                isSent: bool = self.sendAndSyncWithDatabaseElectionIsComing(member=member,
                                                                             election=election,
                                                                             reminder=reminder,
                                                                             reminderSentList=reminderSentList,
@@ -258,6 +320,7 @@ class ReminderManagement:
             assert isinstance(election, Election), "election is not instance of Election"
             assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
 
+            # round is in the reminder object
             LOG.info("Get participants from database in election process")
             groupsAndParticipants = self.database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
             return groupsAndParticipants
@@ -275,8 +338,7 @@ class ReminderManagement:
             return nearest
         except Exception as e:
             LOG.exception(str(e))
-            raise ReminderManagementException(
-                "Exception thrown when called nearestDateTime; Description: " + str(e))
+            raise ReminderManagementException("Exception thrown when called nearestDateTime; Description: " + str(e))
 
     def getTextForUpcomingElection(self, member: Participant, electionDateTime: datetime, reminder: Reminder,
                                    currentTime: datetime) -> str:
@@ -321,7 +383,166 @@ class ReminderManagement:
             LOG.exception("Exception (in getTextForUpcomingElection): " + str(e))
             raise ReminderManagementException("Exception (in getTextForUpcomingElection): " + str(e))
 
-    def sendAndSyncWithDatabase(self, member: Participant, election: Election, reminder: Reminder,
+    def sendToTheGroupTimeIsUpsendToTheGroupTimeIsUp(self,
+                               election: Election,
+                               reminder: Reminder,
+                               closestReminderConst: tuple[int, ReminderGroup, str],
+                               roomArray: RoomArray,
+                               modeDemo: ModeDemo = None):
+        """Send reminder that the round is almost finished - in group"""
+        try:
+            assert isinstance(election, Election), "election is not instance of Election"
+            assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
+            assert isinstance(closestReminderConst, tuple), "closestReminderConst is not instance of tuple"
+            assert isinstance(roomArray, RoomArray), "roomArray is not instance of RoomArray"
+            assert isinstance(modeDemo, ModeDemo), "modeDemo is not instance of ModeDemo"
+
+            gctm: GroupCommunicationTextManagement = GroupCommunicationTextManagement()
+            timeIsUpButtons: tuple[str] = gctm.timeIsAlmostUpButtons()
+
+            #prepare replay markup
+            replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
+                [
+                    [  # First row - link to the portal
+                        InlineKeyboardButton(  # Opens a web URL
+                            timeIsUpButtons[0],
+                            url=eden_portal_url_action
+                        )
+                    ]
+                ]
+            )
+
+            LOG.info("Send reminder that the round is almost finished - in group")
+            rooms: list[ExtendedRoom] = roomArray.getRoomArray()
+            for room in rooms:
+                #prepare and sent message to the group
+                text: str = gctm.timeIsAlmostUpGroup(timeLeftInMinutes=closestReminderConst[0],
+                                                     round=reminder.round,
+                                                     extendedRoom=room,
+                                                     )
+
+
+                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                              chatId=room.roomTelegramIDD,
+                                                              text=text,
+                                                              inlineReplyMarkup=replyMarkup)
+
+
+                if sendResponse is not None:
+                    LOG.debug("sendToTheGroupTimeIsUp; Message was sent to the group: " + str(room.roomTelegramIDD))
+                else:
+                    LOG.error("sendToTheGroupTimeIsUp; Message was not sent to the group: " + str(room.roomTelegramIDD))
+
+        except Exception as e:
+            LOG.exception(str(e))
+            raise ReminderManagementException("Exception thrown when called sendToTheGroup; Description: " + str(e))
+
+
+    def sendAndSyncWithDatabaseRoundIsAlmostFinish(self, member: ExtendedParticipant, election: Election, reminder: Reminder,
+                                                   closestReminderConst: tuple[int, ReminderGroup, str],
+                                modeDemo: ModeDemo = None) -> bool:
+        """Send reminder and write to database"""
+        ###I have participants without reminderSent record, send the message to them, write to database
+
+        try:
+            assert isinstance(member, ExtendedParticipant), "member is not instance of ExtendedParticipant"
+            assert isinstance(election, Election), "election is not instance of Election"
+            assert len(closestReminderConst) != 3, "closestReminderConst is not correct size"
+            assert isinstance(closestReminderConst[0], int), "closestReminderConst[0] is not instance of int"
+            assert isinstance(closestReminderConst[1],
+                              ReminderGroup), "closestReminderConst[1] is not instance of ReminderGroup"
+            assert isinstance(closestReminderConst[2], str), "closestReminderConst[2] is not instance of str"
+            LOG.trace("Member: " + str(member))
+            LOG.trace("Election id: " + str(election.electionID))
+            LOG.trace("Reminder: " + str(reminder))
+
+
+            #
+            # Create inline keyboard markup
+            #
+            gctm: GroupCommunicationTextManagement = GroupCommunicationTextManagement()
+            timeIsUpButtons: tuple[str] = gctm.timeIsAlmostUpButtons()
+
+            if len(timeIsUpButtons) != 2:
+                LOG.exception("timeIsUpButtons is not tuple with 2 items")
+                raise ReminderManagementException("timeIsUpButtons is not tuple with 2 items")
+
+            replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
+                [
+                    [  # First row - link to the portal
+                        InlineKeyboardButton(  # Opens a web URL
+                            timeIsUpButtons[0],
+                            url=eden_portal_url_action
+                        ),
+                        # Second row - link to the blocks
+                        InlineKeyboardButton(  # Opens a web URL
+                            timeIsUpButtons[1],
+                            url=RawActionWeb().electVote(round=reminder.round,
+                                                         voter=member.accountName,
+                                                         candidate=None)
+                        ),
+                    ]
+                ]
+            )
+
+            #
+            # Send message to the user
+            #
+
+            # prepare and send notification to the user
+            text: str = gctm.timeIsAlmostUpPrivate(timeLeftInMinutes=closestReminderConst[0],
+                                                   round=reminder.round,
+                                                   voteFor=member.voteFor)
+
+            # be sure that next comparison is correct, because we really do not want to send fake messages to
+            # users
+
+            sendResponse: bool = False
+
+            if modeDemo is None:
+                # LIVE MODE
+                LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
+                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                              chatId=member.telegramID,
+                                                              text=text,
+                                                              inlineReplyMarkup=replyMarkup)
+
+                LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
+                         + ". Saving to the database under electionID: " + str(election.electionID))
+
+
+            else:
+                # DEMO MODE
+                LOG.trace("Demo mode is enabled, sending message to admins")
+                for admin in telegram_admins_id:
+                    text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
+                           ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
+                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                                  chatId=admin,
+                                                                  text=text,
+                                                                  inlineReplyMarkup=replyMarkup)
+
+                    LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
+                             + ". Saving to the database under electionID: " + str(election.electionID))
+
+            #
+            # Save the recod to the database
+            #
+
+            self.database.createOrUpdateReminderSentRecord(reminder=reminder,
+                                                           accountName=member.accountName,
+                                                           sendStatus=ReminderSendStatus.SEND if sendResponse is True
+                                                               else ReminderSendStatus.ERROR)
+
+            return sendResponse
+
+        except Exception as e:
+            LOG.exception(str(e))
+            raise ReminderManagementException(
+                "Exception thrown when called sendAndSyncWithDatabaseElectionIsComing; Description: " + str(e))
+
+
+    def sendAndSyncWithDatabaseElectionIsComing(self, member: Participant, election: Election, reminder: Reminder,
                                 reminderSentList: list[ReminderSent],
                                 modeDemo: ModeDemo = None) -> bool:
         """Send reminder and write to database"""
@@ -405,4 +626,4 @@ class ReminderManagement:
         except Exception as e:
             LOG.exception(str(e))
             raise ReminderManagementException(
-                "Exception thrown when called sendAndSyncWithDatabase; Description: " + str(e))
+                "Exception thrown when called sendAndSyncWithDatabaseElectionIsComing; Description: " + str(e))

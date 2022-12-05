@@ -191,24 +191,43 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
     def getConfigRoundEnd(self):
         return self.data["round_end"]
 
-    def customActions(self, groupManagement: GroupManagement, modeDemo: ModeDemo = None):
+    def customActions(self,
+                      groupManagement: GroupManagement,
+                      database: Database,
+                      edenData: EdenData,
+                      communication: Communication,
+                      modeDemo: ModeDemo = None):
+
         assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_ACTIVE")
-        # group management call
 
-        """            self.groupInitialization(election=election,
-                                         round=currentElectionState.round,
-                                         numParticipants=currentElectionState.numParticipants,
-                                         numGroups=currentElectionState.numGroups,
-                                         isLastRound=currentElectionState.isLastRound,
-                                         height=currentElectionState.height)"""
+
+        electionStatusIDfromDB: ElectionStatus = database.getElectionStatus(self.currentElectionState)
+        if electionStatusIDfromDB == None:
+            LOG.exception("'Election status' not found in database")
+            raise Exception("'Election status' not found in database")
+
+        election: Election = Election(date=datetime.fromisoformat(self.getStartTime()),
+                                      status=electionStatusIDfromDB)
+
+        # setting new election + creating notification records
+        election = database.setElection(election=election)
 
         groupManagement.manage(round=self.getRound(),
                                numParticipants=self.getConfigNumParticipants(),
                                numGroups=self.getConfigNumGroups(),
                                isLastRound=False,
                                height=modeDemo.currentBlockHeight if modeDemo is not None else None)
+
+        # send notification
+        reminderManagement: ReminderManagement = ReminderManagement(database=database,
+                                                                    edenData=edenData,
+                                                                    communication=communication,
+                                                                    modeDemo=modeDemo)
+        # reminderManagement.createRemindersIfNotExists(election=election) already in setElection
+        reminderManagement.sendReminderTimeIsUpIfNeeded(election=election,
+                                                        modeDemo=modeDemo)
 
 
 # Data['current_election_state_final', {'seed': {'current': 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', 'start_time':

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from requests_unixsocket import Session
@@ -6,11 +6,12 @@ from requests_unixsocket import Session
 from app.chain import EdenData
 from app.chain.dfuse import Response, ResponseError
 # from app.chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
-from app.debugMode.modeDemo import Mode
+from app.debugMode.modeDemo import Mode, ModeDemo
 from app.log import Log
 from app.constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
-    telegram_admins_id, CurrentElectionState, start_video_preview_path
-from app.database import Database, Election, ExtendedParticipant, ExtendedRoom
+    telegram_admins_id, CurrentElectionState, start_video_preview_path, ReminderGroup, \
+    time_span_for_notification_time_is_up
+from app.database import Database, Election, ExtendedParticipant, ExtendedRoom, Reminder
 from app.database.room import Room
 from app.database.participant import Participant
 
@@ -450,12 +451,56 @@ class GroupManagement:
             LOG.exception(str(e))
             raise GroupManagementException("Exception thrown when called sendInBot; Description: " + str(e))
 
-    def sendNotificationTimeLeft(self, extendedRoom: ExtendedRoom, timeLeftInMinutes: int):
+    def sendNotificationTimeLeftIfNeeded(self, extendedRoom: ExtendedRoom, round: int, modeDemo: ModeDemo):
         try:
             assert isinstance(extendedRoom, ExtendedRoom), "extendedRoom is not an ExtendedRoom object"
-            assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes is not an int object"
-            assert timeLeftInMinutes > 0, "timeLeftInMinutes is not greater than 0"
+            assert isinstance(round, int), "round is not an int object"
+            assert round > 0, "round is not greater than 0"
 
+            executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
+            reminders = self.database.getReminders(election=extendedRoom.electionID,
+                                                   reminderGroup=ReminderGroup.IN_ELECTION)
+
+            if reminders is not None:
+                for item in reminders:
+                    if isinstance(item, Reminder):
+                        reminder: Reminder = item
+                        LOG.info("Reminder: " + str(reminder))
+                        LOG.debug("Reminder time: " + str(reminder.dateTimeBefore) +
+                                  "; Reminder time span: " + str(reminder.dateTimeBefore + timedelta(
+                            minutes=time_span_for_notification_time_is_up)) +
+                                  " ..."
+                                  )
+
+                        if reminder.dateTimeBefore < executionTime < reminder.dateTimeBefore + timedelta(
+                                minutes=time_span_for_notification_time_is_up):
+                            LOG.info("... send reminder to election id: " + str(reminder.electionID) +
+                                     " and dateTimeBefore: " + str(reminder.dateTimeBefore))
+                            #members: list[Participant] = self.database.getMembersInElectionRoundNotYetSend(election=election)
+                            reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
+                                reminder=reminder)
+                            for member in extendedRoom.members:
+                                if member.telegramID is None or len(member.telegramID) < 3:
+                                    LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
+                                    continue
+
+                                isSent: bool = self.sendAndSyncWithDatabaseElectionIsComing(member=member,
+                                                                                            election=election,
+                                                                                            reminder=reminder,
+                                                                                            reminderSentList=reminderSentList,
+                                                                                            modeDemo=modeDemo)
+                                if isSent:
+                                    LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
+                                             + member.telegramID)
+
+                        else:
+                            LOG.debug("... reminder is not needed!")
+
+            else:
+                LOG.error("Reminders are not set in the database. Something went wrong.")
+
+
+            ##############################
             textManagement: GroupCommunicationTextManagement = GroupCommunicationTextManagement(
                 language=default_language)
 
@@ -511,7 +556,7 @@ class GroupManagement:
                                                text=text,
                                                inlineReplyMarkup=inlineReplyMarkup
                                                )
-
+        #################
         except Exception as e:
             LOG.exception(str(e))
             raise GroupManagementException("Exception thrown when called notificationTimeLeft; Description: " + str(e))
