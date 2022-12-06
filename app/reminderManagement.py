@@ -148,6 +148,7 @@ class ReminderManagement:
             reminders: list = self.database.getReminders(election=election, reminderGroup=ReminderGroup.IN_ELECTION)
             if reminders is not None:
                 for reminder in reminders:
+                    reminderRound: int = reminder.round
                     LOG.info("Reminder (time is up): " + str(reminder))
                     LOG.debug("Reminder (time is up) time: " + str(reminder.dateTimeBefore) +
                               "; Execution time: " + str(executionTime) +
@@ -198,30 +199,35 @@ class ReminderManagement:
                                 roomArray.setRoom(room=currentRoom)
                                 currentRoom = ExtendedRoom.fromRoom(room=room)
 
-                            #add participant to current room
-                            currentRoom.addMember(member=participant)
+                            # create extended participant - because of votefor variable
+                            extendedParticipant: ExtendedParticipant = \
+                                ExtendedParticipant.fromParticipant(participant=participant,
+                                                                    index=0  # index doest matter here
+                                                                    )
+
 
                             # send to participant
                             # check if participant has voted
                             candidate = [y.data['candidate'] for x, y in votes.data.items() if
-                                         x == participant.accountName and isinstance(y, ResponseSuccessful)]
+                                         x == extendedParticipant.accountName and isinstance(y, ResponseSuccessful)]
 
-                            #create extended participant - because of votefor variable
-                            extendedParticipant: ExtendedParticipant = \
-                                                 ExtendedParticipant.fromParticipant(participant=participant)
+
                             #set vote
                             extendedParticipant.voteFor = candidate[0] if len(candidate) > 0 else None
+
+                            # add participant to current room
+                            currentRoom.addMember(member=extendedParticipant)
 
 
                             self.sendAndSyncWithDatabaseRoundIsAlmostFinish(member=extendedParticipant,
                                                                             reminder=reminder,
                                                                             modeDemo=modeDemo,
                                                                             election=election,
-                                                                            closestReminterConst=closestReminder
+                                                                            closestReminderConst=closestReminder
                                                                             )
 
                         # send message to the group
-                        self.sendToTheGroupTimeIsUp(reminder=reminder,
+                        self.sendToTheGroupTimeIsUp(reminderRound=reminderRound,
                                                     election=election,
                                                     closestReminderConst=closestReminder,
                                                     roomArray=roomArray,
@@ -383,16 +389,16 @@ class ReminderManagement:
             LOG.exception("Exception (in getTextForUpcomingElection): " + str(e))
             raise ReminderManagementException("Exception (in getTextForUpcomingElection): " + str(e))
 
-    def sendToTheGroupTimeIsUpsendToTheGroupTimeIsUp(self,
+    def sendToTheGroupTimeIsUp(self,
                                election: Election,
-                               reminder: Reminder,
+                               reminderRound: int,
                                closestReminderConst: tuple[int, ReminderGroup, str],
                                roomArray: RoomArray,
                                modeDemo: ModeDemo = None):
         """Send reminder that the round is almost finished - in group"""
         try:
             assert isinstance(election, Election), "election is not instance of Election"
-            assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
+            assert isinstance(reminderRound, int), "reminderRound is not instance of int"
             assert isinstance(closestReminderConst, tuple), "closestReminderConst is not instance of tuple"
             assert isinstance(roomArray, RoomArray), "roomArray is not instance of RoomArray"
             assert isinstance(modeDemo, ModeDemo), "modeDemo is not instance of ModeDemo"
@@ -415,23 +421,30 @@ class ReminderManagement:
             LOG.info("Send reminder that the round is almost finished - in group")
             rooms: list[ExtendedRoom] = roomArray.getRoomArray()
             for room in rooms:
-                #prepare and sent message to the group
-                text: str = gctm.timeIsAlmostUpGroup(timeLeftInMinutes=closestReminderConst[0],
-                                                     round=reminder.round,
-                                                     extendedRoom=room,
-                                                     )
+                try:
+                    #prepare and sent message to the group
+                    text: str = gctm.timeIsAlmostUpGroup(timeLeftInMinutes=closestReminderConst[0],
+                                                         round=reminderRound,
+                                                         extendedRoom=room,
+                                                         )
+
+                    if room.roomTelegramID is None:
+                        LOG.error("ReminderManagement.sendToTheGroupTimeIsUp; Room telegram ID is None")
+                        raise ReminderManagementException("ReminderManagement.sendToTheGroupTimeIsUp;Room telegram ID is None")
+
+                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                                  chatId=int(room.roomTelegramID),
+                                                                  text=text,
+                                                                  inlineReplyMarkup=replyMarkup)
+
+                    if sendResponse is not None:
+                        LOG.debug("sendToTheGroupTimeIsUp; Message was sent to the group: " + str(room.roomTelegramID))
+                    else:
+                        LOG.error("sendToTheGroupTimeIsUp; Message was not sent to the group: " + str(room.roomTelegramID))
+                except:
+                    LOG.exception("Exception thrown when called sendToTheGroupTimeIsUp; Description: ")
 
 
-                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                              chatId=room.roomTelegramIDD,
-                                                              text=text,
-                                                              inlineReplyMarkup=replyMarkup)
-
-
-                if sendResponse is not None:
-                    LOG.debug("sendToTheGroupTimeIsUp; Message was sent to the group: " + str(room.roomTelegramIDD))
-                else:
-                    LOG.error("sendToTheGroupTimeIsUp; Message was not sent to the group: " + str(room.roomTelegramIDD))
 
         except Exception as e:
             LOG.exception(str(e))
@@ -447,14 +460,14 @@ class ReminderManagement:
         try:
             assert isinstance(member, ExtendedParticipant), "member is not instance of ExtendedParticipant"
             assert isinstance(election, Election), "election is not instance of Election"
-            assert len(closestReminderConst) != 3, "closestReminderConst is not correct size"
+            assert len(closestReminderConst) == 3, "closestReminderConst is not correct size"
             assert isinstance(closestReminderConst[0], int), "closestReminderConst[0] is not instance of int"
             assert isinstance(closestReminderConst[1],
                               ReminderGroup), "closestReminderConst[1] is not instance of ReminderGroup"
             assert isinstance(closestReminderConst[2], str), "closestReminderConst[2] is not instance of str"
-            LOG.trace("Member: " + str(member))
-            LOG.trace("Election id: " + str(election.electionID))
-            LOG.trace("Reminder: " + str(reminder))
+            LOG.debug("Member: " + str(member))
+            LOG.debug("Election id: " + str(election.electionID))
+            LOG.debug("Reminder: " + str(reminder))
 
 
             #
@@ -514,13 +527,14 @@ class ReminderManagement:
             else:
                 # DEMO MODE
                 LOG.trace("Demo mode is enabled, sending message to admins")
+                sendResponse = True
                 for admin in telegram_admins_id:
                     text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
                            ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                  chatId=admin,
-                                                                  text=text,
-                                                                  inlineReplyMarkup=replyMarkup)
+                    self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                   chatId=admin,
+                                                   text=text,
+                                                   inlineReplyMarkup=replyMarkup)
 
                     LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
                              + ". Saving to the database under electionID: " + str(election.electionID))

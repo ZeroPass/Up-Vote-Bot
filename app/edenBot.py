@@ -127,6 +127,7 @@ class EdenBot:
 
             receivedData = edenData.data.data
 
+            election: Election = None
             # initialize state and call custom action if exists, otherwise there is just a comment in log
             electionState = receivedData[0]
             if electionState == "current_election_state_registration_v1":
@@ -145,8 +146,13 @@ class EdenBot:
                 self.currentElectionStateHandler = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
                 self.currentElectionStateHandler.customActions()
             elif electionState == "current_election_state_active":
+                election = self.database.getLastElection()
                 self.currentElectionStateHandler = CurrentElectionStateHandlerActive(receivedData[1])
-                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement,
+                self.currentElectionStateHandler.customActions(election=self.database.getLastElection(),
+                                                               groupManagement=self.groupManagement,
+                                                               database=database,
+                                                               edenData=self.edenData,
+                                                               communication=self.communication,
                                                                modeDemo=self.modeDemo)
             elif electionState == "current_election_state_final":
                 self.currentElectionStateHandler = CurrentElectionStateHandlerFinal(receivedData[1])
@@ -158,9 +164,10 @@ class EdenBot:
             LOG.debug("Current election state: " + str(receivedData[0]) + " with data: ".join(
                 ['{0}={1}'.format(k, v) for k, v in receivedData[1].items()]))
 
-            election: Election = self.database.getLastElection()
             if election is None:
-                raise EdenBotException("Election is not set in database")
+                election = self.database.getLastElection()
+                if election is None:
+                    raise EdenBotException("Election is still None - not set in database")
 
             # write current election state to database
             previousElectionState: CurrentElectionState = \
@@ -232,10 +239,11 @@ def main():
     database = Database()
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
 
-    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 13, 3),
-                        end=datetime(2022, 7, 9, 13, 30),
+    #120 blocks per minute
+    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 13, 53), #datetime(2022, 7, 9, 13, 3),
+                        end=datetime(2022, 7, 9, 14, 5), #datetime(2022, 7, 9, 13, 30),
                         edenObj=edenData,
-                        step=240  # 2min
+                        step=180  # 1.5 min
                         )
 
     EdenBot(edenData=edenData,
@@ -278,5 +286,5 @@ def mainPyrogramTestMode():
         print("main Thread")
 
 if __name__ == "__main__":
-    mal main()
+    main()
     #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

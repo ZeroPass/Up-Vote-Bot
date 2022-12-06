@@ -130,22 +130,23 @@ class GroupCommunicationTextManagement(TextManagement):
         text: str = _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
                  "check the button bellow. Check the bot messages if you need to vote on bloks." + self.newLine() + self.newLine() +
                  "Vote statistic: "+ self.newLine()  ) % \
-                (round, timeLeftInMinutes)
+                (timeLeftInMinutes, round + 1)
 
         participants: list[ExtendedParticipant] = extendedRoom.getMembers()
 
         for participant in participants:
             if participant.voteFor is None or participant.voteFor == "":
                 text += _("• **%s** votes for __%s__" + self.newLine()) % \
-                        (participant.participantName, participant.voteFor)
+                        (participant.accountName, participant.voteFor)
             else:
                 text += _("• **%s** has not voted yet" + self.newLine()) % \
-                        (participant.participantName)
-
+                        (participant.accountName)
+        return text
 
 
     def timeIsAlmostUpButtons(self) -> tuple[str]:
-        return [_("Vote on Eden members portal", "or on blocks.io")]
+        return [_("Vote on Eden members portal"),
+                _("or on bloks.io")]
 
 
     def timeIsAlmostUpPrivate(self, timeLeftInMinutes: int, round: int, voteFor: str = None) -> str:
@@ -156,12 +157,12 @@ class GroupCommunicationTextManagement(TextManagement):
             return _("Only **%d minutes left** for voting in round %d. You have **not voted** yet. "
                      "Please vote on Eden members portal." + self.newLine() +
                      "In the case of portal connection"
-                     " issues, you can choose bloks.io.") % \
-                (round, timeLeftInMinutes)
+                     " issues, you can choose ```bloks.io.```") % \
+                (timeLeftInMinutes, round + 1)
         else:
             return _("Only **%d minutes left** for voting in round %d. You already voted for **%s**. "
-                     "You can change your decision on portal or on bloks.io.") % \
-                (round, timeLeftInMinutes, voteFor)
+                     "You can change your decision on portal or on ```bloks.io.```") % \
+                (timeLeftInMinutes, round + 1, voteFor)
 
     def sendPhotoHowToStartVideoCallCaption(self):
         return _("Start or join the video chat." + self.newLine() + self.newLine() +

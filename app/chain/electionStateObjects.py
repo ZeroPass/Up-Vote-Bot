@@ -192,13 +192,17 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
         return self.data["round_end"]
 
     def customActions(self,
+                      election: Election,
                       groupManagement: GroupManagement,
                       database: Database,
                       edenData: EdenData,
                       communication: Communication,
                       modeDemo: ModeDemo = None):
-
+        assert isinstance(election, Election), "election is not an instance of Election"
         assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
+        assert isinstance(database, Database), "database must be a Database object"
+        assert isinstance(edenData, EdenData), "edenData must be a EdenData object"
+        assert isinstance(communication, Communication), "communication must be a Communication object"
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_ACTIVE")
 
@@ -208,11 +212,20 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
             LOG.exception("'Election status' not found in database")
             raise Exception("'Election status' not found in database")
 
-        election: Election = Election(date=datetime.fromisoformat(self.getStartTime()),
-                                      status=electionStatusIDfromDB)
-
         # setting new election + creating notification records
         election = database.setElection(election=election)
+
+
+
+        # send notification
+        reminderManagement: ReminderManagement = ReminderManagement(database=database,
+                                                                    edenData=edenData,
+                                                                    communication=communication,
+                                                                    modeDemo=modeDemo)
+
+        reminderManagement.createRemindersTimeIsUpIfNotExists(election=election,
+                                                              round=self.getRound(),
+                                                              roundEnd=datetime.fromisoformat(self.getConfigRoundEnd())) #already in setElection
 
         groupManagement.manage(round=self.getRound(),
                                numParticipants=self.getConfigNumParticipants(),
@@ -220,12 +233,6 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                                isLastRound=False,
                                height=modeDemo.currentBlockHeight if modeDemo is not None else None)
 
-        # send notification
-        reminderManagement: ReminderManagement = ReminderManagement(database=database,
-                                                                    edenData=edenData,
-                                                                    communication=communication,
-                                                                    modeDemo=modeDemo)
-        # reminderManagement.createRemindersIfNotExists(election=election) already in setElection
         reminderManagement.sendReminderTimeIsUpIfNeeded(election=election,
                                                         modeDemo=modeDemo)
 

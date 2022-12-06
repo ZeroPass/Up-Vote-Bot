@@ -58,9 +58,9 @@ class RoomName:
         else:
             # Eden - Round 1, Group 1, Delegates. Season 4, Year 2022.
             LOGroomName.debug(
-                f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, "
+                f"Eden - Round {self.round + 1}, Group {self.roomIndex+1:02d}, "
                 f"election.  Season {self.season}, Year {self.year}.")
-            return f"Eden - Round {self.round + 1}, Group {self.roomIndex:02d}, " \
+            return f"Eden - Round {self.round + 1}, Group {self.roomIndex+1:02d}, " \
                    f"election.  Season {self.season}, Year {self.year}."
 
     def nameShort(self):
@@ -70,7 +70,7 @@ class RoomName:
             return f"Eden Chief Delegates S{self.season}, {self.year}"
         else:
             # Eden R1G1 Delegates S4,2022
-            return f"Eden R{self.round + 1}G{self.roomIndex} election S{self.season},{self.year}."
+            return f"Eden R{self.round + 1}G{self.roomIndex+1} election S{self.season},{self.year}."
 
 
 class RoomAllocation:
@@ -625,7 +625,7 @@ class GroupManagement:
 
             # check if groups are already created
             if self.database.electionGroupsCreated(election=election,
-                                                   round=round) is False or True:  # TODO: remove after testing
+                                                   round=round) is False:
                 LOG.info("Groups are not created yet, creating them")
                 self.groupInitialization(election=election,
                                          round=round,

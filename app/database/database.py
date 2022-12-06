@@ -3,7 +3,7 @@ from enum import Enum
 import sqlalchemy
 from sqlalchemy.orm import sessionmaker
 
-from app.constants import CurrentElectionState
+from app.constants import CurrentElectionState, ReminderGroup
 from app.constants.electionState import ElectionStatusFromKey
 
 from app.log import *
@@ -216,7 +216,7 @@ class Database(metaclass=Singleton):
                 session.query(Election) \
                     .filter(Election.electionID == election.electionID) \
                     .update({Election.status: newElectionStatus.electionStatusID})
-                session.commit()
+
                 return ElectionStatusFromKey(value=electionStatus.status)
 
         except Exception as e:
@@ -226,7 +226,7 @@ class Database(metaclass=Singleton):
     def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus):
         assert isinstance(reminder, Reminder)
         assert isinstance(accountName, str)
-        assert isinstance(sendStatus, Enum)
+        assert isinstance(sendStatus, ReminderSendStatus)
         try:
             session = self.session
             # get election
@@ -241,15 +241,14 @@ class Database(metaclass=Singleton):
                                                         accountName=accountName,
                                                         sendStatus=sendStatus)
                 session.add(reminderSentRecordFromDB)
-                session.flush()  # commit and get id in the room object
+                session.commit()  # commit and get id in the room object
                 LOG.info("ReminderSend entrance for account " + accountName + " saved")
             else:
                 LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
                           str(reminder.dateTimeBefore) + " found, updating")
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName and
-                                                   ReminderSent.reminderID == reminder.electionID). \
-                    update({ReminderSent.sendStatus: sendStatus.value})
-                session.commit()
+                                                   ReminderSent.reminderID == reminder.electionID) \
+                                           .update({ReminderSent.sendStatus: sendStatus.value})
 
         except Exception as e:
             LOG.exception(message="Problem occurred when creating reminder sent record: " + str(e))
@@ -279,17 +278,17 @@ class Database(metaclass=Singleton):
             session = self.session
             reminderSendRecords = session.query(Reminder) \
                 .filter(Reminder.electionID == reminder.electionID,
-                        Reminder.reminderGroup == reminder.reminderGroup).first()
+                        Reminder.reminderGroup == reminder.reminderGroup,
+                        Reminder.dateTimeBefore == reminder.dateTimeBefore).first()
 
             if reminderSendRecords is None:
                 session.add(reminder)
-                session.flush()
-
-            session = self.session
-            session.add(reminder)
-            session.flush()
-            LOG.info("Reminder(timie is up) for election " + str(reminder.electionID) + " saved")
-            return reminder
+                session.commit()
+                LOG.info("Reminder(time is up) for election " + str(reminder.electionID) + " saved")
+                return reminder
+            else:
+                LOG.info("Reminder(time is up) for election " + str(reminder.electionID) + " already exists")
+                return reminderSendRecords
         except Exception as e:
             LOG.exception(message="Problem occurred when creating (time's up) reminder: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating (time's up) reminder: " + str(e))
@@ -331,10 +330,13 @@ class Database(metaclass=Singleton):
                 reminderObj = Reminder(electionID=election.electionID,
                                        dateTimeBefore=reminderTime,
                                        reminderGroup=reminder[1])
+
+                datetimeBeforeStr: str = reminderObj.dateTimeBefore.strftime('%Y-%m-%d %H:%M:%S')
                 existing_reminder = (
                     session.query(Reminder).filter(Reminder.electionID == reminderObj.electionID,
-                                                   Reminder.dateTimeBefore == reminderObj.dateTimeBefore,
-                                                   Reminder.reminderGroup == reminderObj.reminderGroup).first()
+                                                   Reminder.reminderGroup == reminderObj.reminderGroup,
+                                                   Reminder.dateTimeBefore == datetimeBeforeStr)
+                    .first()
                 )
                 if existing_reminder is None:
                     LOG.debug("Reminder (with execution time " + str(election.date) + ") for election "
@@ -348,9 +350,9 @@ class Database(metaclass=Singleton):
         except Exception as e:
             LOG.exception(message="Problem occurred when creating reminders: " + str(e))
 
-    def getReminders(self, election: Election, reminderGroup: int = None) -> list[Reminder]:
+    def getReminders(self, election: Election, reminderGroup: ReminderGroup = None) -> list[Reminder]:
         assert isinstance(election, Election), "election is not Election"
-        assert isinstance(reminderGroup, (int, type(None)), "reminderGroup is not int or None")
+        assert isinstance(reminderGroup, (ReminderGroup, type(None))), "reminderGroup is not int or None"
         try:
             session = self.session
             if reminderGroup is None:
@@ -360,7 +362,7 @@ class Database(metaclass=Singleton):
             else:
                 cs = (
                     session.query(Reminder).filter(Reminder.electionID == election.electionID,
-                                                   Reminder.reminderGroup == reminderGroup).all()
+                                                   Reminder.reminderGroup == reminderGroup.value).all()
                 )
             if cs is None:
                 return None

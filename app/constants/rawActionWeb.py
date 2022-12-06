@@ -58,7 +58,7 @@ class RawActionWeb:
                   "; voter: " + voter if voter is not None else "None" +
                   "; candidate: " + str(candidate) if candidate is not None else "None")
 
-        url = setQueryParameter(self.baseUrl, "action", "electVote")
+        url = setQueryParameter(self.baseUrl, "action", "electvote")
         url = setQueryParameter(url, "round", str(round))
         if voter is not None:
             url = setQueryParameter(url, "voter", voter)
