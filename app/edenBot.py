@@ -162,7 +162,7 @@ class EdenBot:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
 
             LOG.debug("Current election state: " + str(receivedData[0]) + " with data: ".join(
-                ['{0}={1}'.format(k, v) for k, v in receivedData[1].items()]))
+                ['{0}= {1}'.format(k, v) for k, v in receivedData[1].items()]))
 
             if election is None:
                 election = self.database.getLastElection()

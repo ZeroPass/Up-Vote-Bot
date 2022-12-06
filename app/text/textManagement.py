@@ -161,7 +161,7 @@ class GroupCommunicationTextManagement(TextManagement):
                 (timeLeftInMinutes, round + 1)
         else:
             return _("Only **%d minutes left** for voting in round %d. You already voted for **%s**. "
-                     "You can change your decision on portal or on ```bloks.io.```") % \
+                     "You can still change your decision on portal or on ```bloks.io.```") % \
                 (timeLeftInMinutes, round + 1, voteFor)
 
     def sendPhotoHowToStartVideoCallCaption(self):

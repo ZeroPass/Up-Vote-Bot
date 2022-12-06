@@ -173,11 +173,17 @@ class ReminderManagement:
                         roomsAndParticipants: list[list(Room, Participant)] = self.getMembersFromDatabaseInElection(
                                                                                             election=election,
                                                                                             reminder=reminder)
-                        votes: Response = self.edenData.getVotes()
+
+                        if roomsAndParticipants is None or len(roomsAndParticipants) == 0:
+                            LOG.warning("All participant got reminder - do nothing")
+                            return
+
+                        votes: Response = self.edenData.getVotes(
+                            height=modeDemo.currentBlockHeight if modeDemo is not None else None)
 
                         if isinstance(votes, ResponseError):
-                            LOG.error("Error when called getVotes: " +votes.error)
-                            raise ReminderManagementException("Error when called getVotes: " +votes.error)
+                            LOG.error("Error when called getVotes: " + votes.error)
+                            raise ReminderManagementException("Error when called getVotes: " + votes.error)
 
                         if len(roomsAndParticipants) == 0:
                             LOG.critical("No rooms and participants")
