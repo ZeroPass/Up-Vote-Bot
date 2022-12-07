@@ -20,12 +20,6 @@ from app.transmission import Communication, SessionType
 from multiprocessing import Process
 
 
-######## Multilanguage support in the future -= not translated yet =-
-# cn = gettext.translation('base', localedir='locales', languages=['cn'])
-# cn.install()
-# _ = cn.gettext # Chinese
-
-
 class EdenBotException(Exception):
     pass
 
@@ -33,8 +27,8 @@ class EdenBotException(Exception):
 LOG = Log(className="EdenBot")
 
 REPEAT_TIME = {
-    EdenBotMode.ELECTION: 10,  # every 10 seconds
-    EdenBotMode.NOT_ELECTION: 60 * 60  # every hour
+    EdenBotMode.ELECTION: 45,  # every 45 seconds
+    EdenBotMode.NOT_ELECTION: 60 * 10  # every half hour 60 seconds  x 10 minutes
 }
 
 
@@ -95,22 +89,6 @@ class EdenBot:
         self.currentElectionStateHandler: CurrentElectionStateHandler = None
         self.setCurrentElectionStateAndCallCustomActions(database=self.database)
 
-    def getChainHeight(self) -> int:
-        if self.mode == Mode.DEMO:
-            return self.modeDemo.getCurrentBlock()
-        else:
-            return None  # live mode
-
-    def botModeElection(self):
-        implement = 1
-
-    def botModeNotElection(self):
-        # setting up database (participants)
-        # sending alerts
-        assert (self.currentElectionStateHandler is not None), "Current election state is not set"
-        if self.currentElectionStateHandler == CurrentElectionStateHandlerRegistratrionV1:
-            todo = 7
-
     def setCurrentElectionStateAndCallCustomActions(self, database: Database):
         try:
             assert isinstance(database, Database), "database is not an instance of Database"
@@ -120,10 +98,10 @@ class EdenBot:
             if self.modeDemo is not None else None)
             if isinstance(edenData, ResponseError):
                 raise EdenBotException(
-                    "Error when called setCurrentElectionStateAndCallCustomActions; Description: " + edenData.error)
+                    "Error when called eden.getCurrentElectionState; Description: " + edenData.error)
             if isinstance(edenData.data, ResponseError):
                 raise EdenBotException(
-                    "Error when called setCurrentElectionStateAndCallCustomActions; Description: " + edenData.data.error)
+                    "Error when called eden.getCurrentElectionState; Description: " + edenData.data.error)
 
             receivedData = edenData.data.data
 
@@ -175,18 +153,11 @@ class EdenBot:
                                                                     currentElectionState=
                                                                     self.currentElectionStateHandler.
                                                                     currentElectionState)
-            LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
+            if previousElectionState is not None:
+                LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
                       + str(self.currentElectionStateHandler.currentElectionState.value))
-        except Exception as e:
-            LOG.exception("Exception: " + str(e))
-            raise EdenBotException("Exception: " + str(e))
-
-    def sendAlert(self):
-        LOG.info("Send alert")
-        try:
-            # TODO: implement
-            r = 9
-            # self.edenData.sendAlert()
+            else:
+                LOG.debug("Election state is not changed")
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             raise EdenBotException("Exception: " + str(e))
@@ -197,31 +168,26 @@ class EdenBot:
             while True:
                 # sleep time depends on bot mode
                 if self.mode == Mode.LIVE:
-                    time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode].value)
-                else:
+                    time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode])
+
+                elif self.mode == Mode.DEMO and self.modeDemo is not None:
                     # Mode.DEMO
                     LOG.debug("Demo mode: sleep time: " + str(0.1))
                     time.sleep(0.1)  # in demo mode sleep 0.1s
-
-                # increase chain height if DEMO mode
-                if self.mode == Mode.DEMO:
-                    if self.modeDemo.isNextBlock():
-                        self.modeDemo.getNextBlock()
+                    if self.modeDemo.isNextTimestampInLimit(seconds=
+                                                            REPEAT_TIME[self.currentElectionStateHandler.edenBotMode]):
+                        self.modeDemo.setNextTimestamp(seconds=
+                                                       REPEAT_TIME[self.currentElectionStateHandler.edenBotMode])
                     else:
-                        LOG.debug("No next block height (DEMO mode);")
-                        LOG.success("Demo mode finished")
+                        LOG.success("Time limit reached - Demo mode finished")
                         break
+
+                else:
+                    raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
+
 
                 # define current election state and write it to the database
                 self.setCurrentElectionStateAndCallCustomActions(database=self.database)
-
-                # call the function that corresponds to the bot mode - important because of the different sleep times
-                if self.currentElectionStateHandler.getBotMode() == EdenBotMode.ELECTION:
-                    LOG.info("ELECTION")
-                    self.botModeElection()
-                else:
-                    LOG.info("NOT_ELECTION")
-                    self.botModeNotElection()
 
         except Exception as e:
             LOG.exception("Exception: " + str(e))
@@ -240,10 +206,10 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
 
     #120 blocks per minute
-    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 13, 53), #datetime(2022, 7, 9, 13, 3),
-                        end=datetime(2022, 7, 9, 14, 5), #datetime(2022, 7, 9, 13, 30),
+    modeDemo = ModeDemo(start=datetime(2022, 7, 9, 14, 56), #datetime(2022, 7, 9, 13, 3),
+                        end=datetime(2022, 7, 9, 18, 5), #datetime(2022, 7, 9, 13, 30),
                         edenObj=edenData,
-                        step=180  # 1.5 min
+                        step=1  # 1.5 min
                         )
 
     EdenBot(edenData=edenData,

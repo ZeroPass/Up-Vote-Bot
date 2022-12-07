@@ -31,7 +31,7 @@ class EdenData:
 
         # update api key
         self.updateDfuseApiKey(database=database)
-        schedule.every(10).minutes.do(self.updateDfuseApiKey, database=database)
+        schedule.every(1000).minutes.do(self.updateDfuseApiKey, database=database)# TODO; repair this, excpetion on call
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -193,6 +193,7 @@ class EdenData:
     def updateDfuseApiKey(self, database: Database):
         try:
             assert isinstance(database, Database), "database is not of type Database"
+            #database : Database = Database()
             LOG.debug("Updating dfuse api key if necessary")
             if database.checkIfTokenExists(name="dfuse") is False:
                 LOG.debug("Token does not exist, create it")

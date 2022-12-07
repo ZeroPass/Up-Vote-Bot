@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.log import Log
 from enum import Enum
 from app.chain import EdenData
@@ -23,6 +23,17 @@ class ModeDemo:
     """Store the time of start and end of the election"""
 
     def __init__(self, start: datetime, end: datetime, edenObj: EdenData, step: int = 1):
+        #step is import only if you call getNextBlock(), not setNextTimestamp()
+        # Example 1 - with block height:
+        # if isNextBlock():
+        #    getNextBlock()
+
+        # Example 2 - with timestamp:
+        # if isNextTimestampInLimit(nextTimestamp=nextTimestamp):
+        #    setNextTimestamp(nextTimestamp=nextTimestamp)
+
+
+
         LOGModeDemo.debug("Initialization of ModeDemo with start: " + str(start) + " and end: " + str(end)
                           + " and step: " + str(step))
         assert isinstance(start, datetime), "Start is not a datetime object"
@@ -55,6 +66,19 @@ class ModeDemo:
         assert isinstance(height, int), "Height is not an integer"
         LOGModeDemo.debug("ModeDemo; Set end block height to: " + str(height))
         self.endBlockHeight = height
+
+    def isNextTimestampInLimit(self, seconds: int) -> bool:
+        assert isinstance(seconds, int), "seconds is not a int object"
+        return True if self.currentBlockTimestamp + timedelta(seconds=seconds) <= self.endDT else False
+
+    def setNextTimestamp(self, seconds: int):
+        assert isinstance(seconds, int), "seconds is not a int object"
+        self.currentBlockTimestamp = self.currentBlockTimestamp + timedelta(seconds=seconds)
+        try:
+            self.currentBlockHeight = self.edenObj.getBlockNumOfTimestamp(timestamp=self.currentBlockTimestamp).data
+        except Exception as e:
+            LOGModeDemo.exception("ModeDemo; Exception: " + str(e))
+            raise ModeDemoException("Exception: " + str(e))
 
     def isNextBlock(self):
         if self.currentBlockHeight is None:

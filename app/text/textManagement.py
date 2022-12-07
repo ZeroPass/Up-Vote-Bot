@@ -14,6 +14,12 @@ __ = gettext.ngettext
 #
 
 
+######## Multilanguage support in the future -= not translated yet =-
+# cn = gettext.translation('base', localedir='locales', languages=['cn'])
+# cn.install()
+# _ = cn.gettext # Chinese
+
+
 class Button(TypedDict):
     text: str
     value: str
@@ -129,18 +135,18 @@ class GroupCommunicationTextManagement(TextManagement):
 
         text: str = _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
                  "check the button bellow. Check the bot messages if you need to vote on bloks." + self.newLine() + self.newLine() +
-                 "Vote statistic: "+ self.newLine()  ) % \
-                (timeLeftInMinutes, round + 1)
+                 "Vote statistic: "+ self.newLine()) % \
+                 (timeLeftInMinutes, round + 1)
 
         participants: list[ExtendedParticipant] = extendedRoom.getMembers()
 
         for participant in participants:
             if participant.voteFor is None or participant.voteFor == "":
-                text += _("• **%s** votes for __%s__" + self.newLine()) % \
-                        (participant.accountName, participant.voteFor)
-            else:
                 text += _("• **%s** has not voted yet" + self.newLine()) % \
                         (participant.accountName)
+            else:
+                text += _("• **%s** votes for __%s__" + self.newLine()) % \
+                        (participant.accountName, participant.voteFor)
         return text
 
 

@@ -24,18 +24,15 @@ class ParticipantsManagement:
         """Get participants from chain and match with database. Undefined room at this step"""
         try:
             LOG.info("Get participants from chain and match with database")
-            participant: list[Participant] = self.getMembersFromChain(height=height)
             room = Room(electionID=election.electionID,
                         roomNameShort="Room p-e",
                         roomNameLong="Room pre-election",
                         round=0,
                         roomIndex=-1)
+            participants: list[Participant] = self.getMembersFromChain(room=room, height=height)
             #self.database.createParticipantsIfNotExists(participants=participant, election=election)
-            LOG.debug("Participants created")
-            for p in participant:
-                LOG.info("Participant: " + str(p))
-                #in this case we don't have real room number
-                self.database.setMemberWithElectionIDAndWithRoomID(participant=p, election=election, room=room)
+            LOG.debug("Creating participants if not exists")
+            self.database.setMemberWithElectionIDAndWithRoomID(participants=participants, election=election, room=room)
 
             LOG.info("Participants from chain: " + str(self.participants))
 
@@ -67,41 +64,41 @@ class ParticipantsManagement:
             #raise ParticipantsManagementException("Exception thrown when called getTelegramID; Description: " + str(e))
             return "-1"
 
-    def getMembersFromChain(self, height: int = None) -> list[Participant]:
+    def getMembersFromChain(self, room: Room, height: int = None) -> list[Participant]:
         """Get participants from chain"""
         try:
+            assert isinstance(room, Room), "room must be a Room object"
+
             response: Response = self.edenData.getMembers(height=height)
+
 
             aad = AtomicAssetsData(dfuse_api_key)
 
             members: list[Participant] = list()
             if isinstance(response, ResponseSuccessful):
                 for key, value in response.data.items():
-                    #{'account': '1.max', 'name': 'Yang Hao', 'status': 1, 'nft_template_id': '1440',
-                    # 'election_participation_status': 0, 'election_rank': 0, 'representative': 'zzzzzzzzzzzzj', 'encryption_key': None}
-                    LOG.debug(message="data: " + str(value))
-                    LOG.debug(message="data: " + str(value.data[1]))
-
                     try:
                         member =Participant(accountName=key,
-                                    roomID=-1, #not yet
-                                    participationStatus = True if len(value.data) == 2 and
-                                                            "election_participation_status" in value.data[1] and
-                                                            value.data[1]['election_participation_status'] == 1
-                                                                else False,
-                                    telegramID="",
-                                    nftTemplateID=int(value.data[1]['nft_template_id']) if len(value.data) == 2 and
-                                                                                        "nft_template_id" in value.data[1] and
-                                                                                           value.data[1]['nft_template_id'] is not None
-                                                                                        else -1,
-                                    participantName=value.data[1]['name'] if len(value.data) == 2 and
-                                                                                "name" in value.data[1] and
-                                                                                value.data[1]['name'] is not None
-                                                                                else "<unknownName>")
+                                            roomID=-1, #not yet
+                                            participationStatus=True if len(value.data) == 2 and
+                                                                    "election_participation_status" in value.data[1] and
+                                                                    value.data[1]['election_participation_status'] == 1
+                                                                        else False,
+                                            telegramID="",
+                                            nftTemplateID=int(value.data[1]['nft_template_id']) if len(value.data) == 2 and
+                                                                                                "nft_template_id" in value.data[1] and
+                                                                                                   value.data[1]['nft_template_id'] is not None
+                                                                                                else -1,
+                                            participantName=value.data[1]['name'] if len(value.data) == 2 and
+                                                                                        "name" in value.data[1] and
+                                                                                        value.data[1]['name'] is not None
+                                                                                        else "<unknownName>")
 
                         #set telegram id, if there is a known template id, otherwise set -1
                         # get telegram id from API only if there is no telegramID entry in database -> optimisation
-                        member.telegramID = self.getTelegramID(accountName=member.accountName, nftTemplateID=member.nftTemplateID, atomicAssetsData=aad) \
+                        member.telegramID = self.getTelegramID(accountName=member.accountName,
+                                                               nftTemplateID=member.nftTemplateID,
+                                                               atomicAssetsData=aad) \
                             if member.nftTemplateID != 0 \
                             else "-1"
 

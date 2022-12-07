@@ -625,7 +625,8 @@ class GroupManagement:
 
             # check if groups are already created
             if self.database.electionGroupsCreated(election=election,
-                                                   round=round) is False:
+                                                   round=round,
+                                                   numRooms=numGroups) is False:
                 LOG.info("Groups are not created yet, creating them")
                 self.groupInitialization(election=election,
                                          round=round,

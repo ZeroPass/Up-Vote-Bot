@@ -79,8 +79,10 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         election = database.setElection(election=election)
 
         # write participants/member in database
-        # participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=EdenData(dfuseApiKey=dfuse_api_key)) #temp comment
-        # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election) #temp comment
+        participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database)
+        participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+                                                                            height=modeDemo.currentBlockHeight
+                                                                            if modeDemo is not None else None)
 
         # send notification
         reminderManagement: ReminderManagement = ReminderManagement(database=database,
@@ -234,7 +236,8 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                                height=modeDemo.currentBlockHeight if modeDemo is not None else None)
 
         reminderManagement.sendReminderTimeIsUpIfNeeded(election=election,
-                                                        modeDemo=modeDemo)
+                                                        modeDemo=modeDemo,
+                                                        roundEnd=datetime.fromisoformat(self.getConfigRoundEnd()))
 
 
 # Data['current_election_state_final', {'seed': {'current': 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', 'start_time':
