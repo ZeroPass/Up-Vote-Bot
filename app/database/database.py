@@ -9,7 +9,7 @@ from app.constants.electionState import ElectionStatusFromKey
 from app.log import *
 from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.engine.url import URL
 
 from datetime import datetime, timedelta
@@ -23,6 +23,7 @@ from app.database.participant import Participant
 from app.database.extendedParticipant import ExtendedParticipant
 from app.database.extendedRoom import ExtendedRoom
 from app.database.room import Room
+from app.database.knownUser import KnownUser
 from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
 
 LOG = Log(className="Database")
@@ -63,11 +64,13 @@ class Database(metaclass=Singleton):
             driver = 'mysql+pymysql'
             url = URL.create(driver, database_user, database_password, database_host, database_port, database_name)
             # mysql connection
-            self._engine = create_engine(url, pool_recycle=3600, pool_pre_ping=True)
+            self._engine = create_engine(url, pool_recycle=3600, pool_pre_ping=True, echo_pool=True, echo=True)
+            self._conn = self._engine.connect()
+            #self._session = scoped_session(sessionmaker(bind=self._engine, expire_on_commit=False))
+            LOG.debug("Database initialized")
             connection = self._engine.connect()
-            self.savedConnection = connection #wtf
             self.SessionMaker = sessionmaker(bind=connection)
-            #self.session = self.SessionMaker()
+            #self.session = self.SessionMaker(autoflush=True)
             self.session = scoped_session(self.SessionMaker)
             LOG.debug("Database initialized")
 
@@ -86,9 +89,27 @@ class Database(metaclass=Singleton):
             LOG.exception("Problem occurred when creating tables: " + str(e))
             raise DatabaseExceptionConnection(str(e))
 
+    def createCsesion(self, expireOnCommit: bool = True) ->scoped_session:
+        try:
+            connection = self._engine.connect()
+            self.SessionMaker = sessionmaker(bind=connection, expire_on_commit=expireOnCommit)
+            csession = scoped_session(self.SessionMaker)
+            return csession
+        except Exception as e:
+            LOG.exception(message="Problem occurred when creating session: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when creating session: " + str(e))
+
+    def commitCcession(self, session: scoped_session):
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            LOG.exception(message="Problem occurred when commiting session: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when commiting session: " + str(e))
+
     def fillElectionStatuses(self):
         try:
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             electionStatuses = session.query(ElectionStatus).all()
             if len(electionStatuses) == 0:
                 session.add(
@@ -112,84 +133,97 @@ class Database(metaclass=Singleton):
                 session.add(ElectionStatus(electionStatusID=9,
                                            status=CurrentElectionState.CURRENT_ELECTION_STATE_INIT_VOTERS_V1))
                 session.commit()
+                session.close()
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when filling election statuses: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when filling election statuses: " + str(e))
 
     def writeToken(self, name: str, value: str, expireBy: datetime):
         try:
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             tokenService: TokenService = TokenService(name=name, value=value, expireBy=expireBy)
             if self.getToken(name) is None:
                 session.add(tokenService)
+                session.flush()
                 session.commit()
             else:
                 session.query(TokenService) \
                     .filter(TokenService.name == name) \
                     .update({TokenService.value: value, TokenService.expireBy: expireBy})
+                session.commit()
+            session.close()
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when writing token: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when writing token: " + str(e))
 
     def getToken(self, name: str) -> str:
         try:
-            session = self.session
+            session = self.createCsesion()
             tokenService = session.query(TokenService) \
                 .filter(TokenService.name == name) \
                 .first()
 
             LOG.info(message="Token: " + str(tokenService))
+            session.close()
             return tokenService.value if tokenService is not None else None
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting token: " + str(e))
             return None
 
     def checkIfTokenExists(self, name: str) -> bool:
         try:
             LOG.debug(message="Checking if token exists: " + name)
-            #SessionMaker = sessionmaker(bind=self.savedConnection)
-            #session = SessionMaker()
 
-            session = self.session
+            session = self.createCsesion()
             tokenService = session.query(TokenService) \
                 .filter(TokenService.name == name) \
                 .first()
-
+            session.close()
             return False if tokenService is None else True
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when checking if token exists: " + str(e))
             return False
 
     def checkIfTokenExpired(self, name: str, executionTime: datetime) -> bool:
         try:
             LOG.debug("Checking if token expired")
-            session = self.session
+            session = self.createCsesion()
             tokenService = session.query(TokenService) \
                 .filter(TokenService.name == name) \
                 .first()
 
             if tokenService is None:
+                session.close()
                 return True
             elif tokenService.expireBy < executionTime:
+                session.close()
                 return True
             else:
+                session.close()
                 return False
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
             return True
 
     def getElectionStatus(self, currentElectionState: CurrentElectionState) -> ElectionStatus:
         try:
-            session = self.session
+            session = self.createCsesion()
             electionStatus = session.query(ElectionStatus) \
                 .filter(ElectionStatus.status == currentElectionState.value) \
                 .first()
 
             LOG.info(message="Election status: " + str(electionStatus))
+            session.close()
             return electionStatus
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting election status: " + str(e))
             return None
 
@@ -201,13 +235,14 @@ class Database(metaclass=Singleton):
                           CurrentElectionState), "currentElectionState is not of type CurrentElectionState"
         try:
             # function return PREVIOUS election state - not current. If election state was not changed, return None
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             election, electionStatus = session.query(Election, ElectionStatus) \
                 .join(ElectionStatus, Election.status == ElectionStatus.electionStatusID) \
                 .filter(Election.electionID == election.electionID) \
                 .first()
 
-            if electionStatus.status == currentElectionState:
+            if electionStatus.status == currentElectionState.value:
+                session.close()
                 return None
             else:
                 LOG.info("Election state changed from " + str(election.status) + " to " +
@@ -225,19 +260,23 @@ class Database(metaclass=Singleton):
                 session.query(Election) \
                     .filter(Election.electionID == election.electionID) \
                     .update({Election.status: newElectionStatus.electionStatusID})
-
+                session.commit()
+                session.close()
                 return ElectionStatusFromKey(value=electionStatus.status)
 
         except Exception as e:
+            session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when updating election status in election: " + str(e))
             return None
 
-    def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus):
+    def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus,
+                                         cSession = None):
         assert isinstance(reminder, Reminder)
         assert isinstance(accountName, str)
         assert isinstance(sendStatus, ReminderSendStatus)
         try:
-            session = self.session
+            session = self.session if cSession is None else cSession
             # get election
             reminderSentRecordFromDB = (
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
@@ -251,6 +290,7 @@ class Database(metaclass=Singleton):
                                                         sendStatus=sendStatus)
                 session.add(reminderSentRecordFromDB)
                 session.flush()  # commit and get id in the room object
+                session.commit()
                 LOG.info("ReminderSend entrance for account " + accountName + " saved")
             else:
                 LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
@@ -258,9 +298,12 @@ class Database(metaclass=Singleton):
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
                                                    ReminderSent.reminderID == reminder.reminderID) \
                                            .update({ReminderSent.sendStatus: sendStatus.value})
-
+            #if cSession is None:
+            #    session.close()
         except Exception as e:
             session.rollback()
+            if cSession is not None:
+                session.close()
             LOG.exception(message="Problem occurred when creating reminder sent record: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating reminder sent record: " + str(e))
 
@@ -268,7 +311,7 @@ class Database(metaclass=Singleton):
         # returns list of tuples (accountName, telegramID, isVoter)
         assert isinstance(reminder, Reminder)
         try:
-            session = self.session
+            session = self.createCsesion()
             reminderSendRecords = session.query(ReminderSent.accountName) \
                 .filter(ReminderSent.reminderID == reminder.reminderID,
                         ReminderSent.sendStatus == ReminderSendStatus.SEND.value)
@@ -277,15 +320,17 @@ class Database(metaclass=Singleton):
                                          Participant.participationStatus) \
                 .filter(Participant.accountName.notin_(reminderSendRecords)).all()
 
+            session.close()
             return participants
         except Exception as e:
+            session.close()
             LOG.exception(
                 message="Problem occurred when getting participants without 'reminder sent record': " + str(e))
             return None
 
-    def createTimeIsUpReminder(self, reminder: Reminder) -> Reminder:
+    def createTimeIsUpReminder(self, reminder: Reminder, csession: scoped_session):
         try:
-            session = self.session
+            session = self.createCsesion()
             reminderSendRecords = session.query(Reminder) \
                 .filter(Reminder.electionID == reminder.electionID,
                         Reminder.reminderGroup == reminder.reminderGroup,
@@ -295,19 +340,21 @@ class Database(metaclass=Singleton):
                 session.add(reminder)
                 session.commit()
                 LOG.info("Reminder(time is up) for election " + str(reminder.electionID) + " saved")
+                session.close()
                 return reminder
             else:
+                session.close()
                 LOG.info("Reminder(time is up) for election " + str(reminder.electionID) + " already exists")
-                return reminderSendRecords
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when creating (time's up) reminder: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating (time's up) reminder: " + str(e))
 
     def createRemindersIfNotExists(self, election: Election):
         try:
-            session = self.session
-
+            session = self.createCsesion(expireOnCommit=False)
+            LOG.debug("createRemindersIfNotExists for election " + str(election.electionID))
             # check variables
             for item in alert_message_time_election_is_coming:
                 if len(item) != 3:
@@ -333,6 +380,7 @@ class Database(metaclass=Singleton):
 
             if self.getRemindersCount(election) == len(alert_message_time_election_is_coming):
                 LOG.debug(message="Reminders for election " + str(election.electionID) + " already exists")
+                session.close()
                 return
 
             for reminder in alert_message_time_election_is_coming:
@@ -357,16 +405,17 @@ class Database(metaclass=Singleton):
                     LOG.info("Reminder for election " + str(election.electionID) + " saved")
                 else:
                     LOG.debug("Reminder for election " + str(election.electionID) + " found. Do nothing")
-
+            session.close()
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when creating reminders: " + str(e))
 
     def getReminders(self, election: Election, reminderGroup: ReminderGroup = None) -> list[Reminder]:
         assert isinstance(election, Election), "election is not Election"
         assert isinstance(reminderGroup, (ReminderGroup, type(None))), "reminderGroup is not int or None"
         try:
-            session = self.session
+            session = self.createCsesion()
             if reminderGroup is None:
                 cs = (
                     session.query(Reminder).filter(Reminder.electionID == election.electionID).all()
@@ -377,72 +426,137 @@ class Database(metaclass=Singleton):
                                                    Reminder.reminderGroup == reminderGroup.value).all()
                 )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting reminders: " + str(e))
             return None
 
     def getRemindersCount(self, election: Election) -> int:
         assert isinstance(election, Election)
         try:
-            session = self.session
+            session = self.createCsesion()
             cs = (
                 session.query(Reminder.reminderID).filter(Reminder.electionID == election.electionID).count()
             )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting reminders: " + str(e))
             return None
 
     def getParticipant(self, accountName: str) -> Participant:
         assert isinstance(accountName, str), "accountName is not a string"
         try:
-            session = self.session
+            session = self.createCsesion()
             participant = session.query(Participant).filter(Participant.accountName == accountName).first()
+            session.close()
             return participant
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting participant: " + str(e))
             return None
 
     def getParticipantByTelegramID(self, telegramID: str) -> Participant:
         assert isinstance(telegramID, str), "telegramID is not a string"
         try:
-            session = self.session
-            participant = session.query(Participant).filter(Participant.telegramID == telegramID).first()
+            session = self.createCsesion()
+            participant = session.query(Participant).filter(func.lower(Participant.telegramID) == telegramID.lower).first()
+            session.close()
             return participant
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting participant by telegramid: " + str(e))
             return None
+
+    def getKnownUsers(self, botName: str) -> list[Participant]:
+        assert isinstance(botName, str), "botName is not a string"
+        try:
+            session = self.createCsesion()
+            participants = session.query(KnownUser).filter(KnownUser.botName == botName).all()
+            session.close()
+            return participants #if not found it returns empty array - []
+        except Exception as e:
+            session.close()
+            LOG.exception(message="Problem occurred when getting known users: " + str(e))
+            return None
+
+    def getKnownUser(self, botName: str, telegramID: str) -> KnownUser:
+        assert isinstance(botName, str), "botName is not a string"
+        assert isinstance(telegramID, str), "telegramID is not a string"
+        try:
+            session = self.createCsesion()
+            participant: KnownUser = session.query(KnownUser).filter(KnownUser.botName == botName,
+                                                           func.lower(KnownUser.userID) == telegramID.lower()).first()
+            session.close()
+            return participant #if not found it returns None
+        except Exception as e:
+            session.close()
+            LOG.exception(message="Problem occurred when getting known users: " + str(e))
+            return None
+
+    def setKnownUser(self, botName: str, telegramID: str, isKnown: bool) -> bool:
+        assert isinstance(botName, str), "botName is not a string"
+        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(isKnown, bool), "isKnown is not a bool"
+        try:
+            session = self.createCsesion()
+            knownUser: KnownUser = session.query(KnownUser).filter(KnownUser.botName == botName,
+                                                                   (KnownUser.userID) == telegramID.lower()).first()
+            if knownUser is None:
+                participant = KnownUser(botName=botName, userID=telegramID.lower(), isKnown=isKnown)
+                session.add(participant)
+                session.commit()
+                session.close()
+                return True
+            else:
+                knownUser.isKnown = isKnown
+                session.commit()
+                session.close()
+                return True
+        except Exception as e:
+            session.close()
+            LOG.exception(message="Problem occurred when getting known users: " + str(e))
+            return False
 
     def getRooms(self, election: Election, round: int, roomIndex) -> list[Room]:
         assert isinstance(election, Election)
         try:
-            session = self.session
+            session = self.createCsesion()
             cs = (
                 session.query(Room).filter(Room.electionID == election.electionID).all()
             )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting rooms: " + str(e))
             return None
 
     def getRoomPreelection(self, election: Election) -> Room:
         assert isinstance(election, Election)
         try:
-            session = self.session
+            session = self.createCsesion()
             room = session.query(Room).filter(Room.electionID == election.electionID,
                                            Room.roomIndex == -1).first()
             if room is None:
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " not found")
             else:
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
+            session.close()
             return room
         except Exception as e:
+            session = self.createCsesion()
             LOG.exception(message="Problem occurred when getting room: " + str(e))
             return None
 
@@ -450,7 +564,7 @@ class Database(metaclass=Singleton):
         assert isinstance(listOfRooms, list), "listOfRooms is not a list"
         try:
             LOG.debug("Creating rooms for election; return updated list filled with id entry")
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             for room in listOfRooms:
                 # iterate over all rooms to detect if they already exist
                 assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
@@ -461,16 +575,19 @@ class Database(metaclass=Singleton):
                 if roomFromDB is None:
                     LOG.debug("Room does not exists. Add it to database")
                     session.add(room)
+                    session.flush()
                 else:
                     LOG.debug("Room already exists. Just get the id")
                     room.roomID = roomFromDB.roomID
                     room.roomTelegramID = roomFromDB.roomTelegramID
 
             session.commit()
+            session.close()
             return listOfRooms
 
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when creating rooms: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating rooms: " + str(e))
 
@@ -478,13 +595,15 @@ class Database(metaclass=Singleton):
         assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
         try:
             LOG.debug("Updating rooms; it returns updated list filled with id entry")
-            session = self.session
-            session.query(Room).filter(Room.roomID == room.roomID). \
-                update({Room.roomTelegramID: room.roomTelegramID})
+            session = self.createCsesion(expireOnCommit=False)
+            session.query(Room).filter(Room.roomID == room.roomID) \
+                   .update({Room.roomTelegramID: room.roomTelegramID},)
             session.commit()
+            session.close()
             return True
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when updating rooms(telegramID): " + str(e))
             return False
 
@@ -493,7 +612,7 @@ class Database(metaclass=Singleton):
         try:
             assert isinstance(extendedParticipantsList, list), "extendedParticipantsList is not a list"
             LOG.debug("Delegate participant to the room = add RoomId to the participant")
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             #session.bulk_save_objects(extendedParticipantsList, return_defaults=True, update_changed_only=True)
             for participant in extendedParticipantsList:
                 assert isinstance(participant, ExtendedParticipant), "participant is not a ExtendedParticipant"
@@ -517,22 +636,25 @@ class Database(metaclass=Singleton):
                 elif len(alreadyInRoom) > 0:
                     LOG.debug("Participant is already in election room. Do nothing; participant" +
                               str(participant.accountName))
+                    session.query(Participant).filter(Participant.accountName == participant.accountName) \
+                            .update({Participant.roomID: participant.roomID})
                 else:
                     LOG.debug("Participant is in the room from previous round. Move him to current room.")
                     #TODO: Check that if there are more than one elections
                     session.query(Participant).filter(Participant.accountName == participant.accountName) \
                                               .update({Participant.roomID: participant.roomID})
 
-
             session.commit()
+            session.close()
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when updating participant to the group: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when updating participant to the group: " + str(e))
 
     def setElection(self, election: Election) -> Election:
         try:
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             # get election
             electionFromDB = (
                 session.query(Election).filter(Election.date == election.date).first()
@@ -541,7 +663,6 @@ class Database(metaclass=Singleton):
                 LOG.debug("Election for date " + str(election.date) + " not found, creating new")
                 electionFromDB = election
                 session.add(electionFromDB)
-                session.flush()
                 session.commit()# commit and get id in the room object
                 LOG.info("Election for date " + str(electionFromDB.date) + " saved")
             else:
@@ -549,23 +670,25 @@ class Database(metaclass=Singleton):
 
             # create reminders
             LOG.debug("Creating reminders for election at: " + str(electionFromDB.date))
-            self.createRemindersIfNotExists(election=electionFromDB)
-            return electionFromDB
 
+            session.close()
+            return electionFromDB
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
 
     def electionGroupsCreated(self, election: Election, round: int, numRooms: int) -> bool:
         # is group created for this election and round?
         try:
-            session = self.session
+            session = self.createCsesion()
 
             numberOfRooms: int = session.query(Room). \
                 filter(Room.electionID == election.electionID,
                        Room.round == round,
                        Room.roomIndex != -1,
                        Room.roomTelegramID != None).count()
+            session = self.createCsesion()
             return True if numberOfRooms == numRooms else False
         except Exception as e:
             LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
@@ -574,19 +697,22 @@ class Database(metaclass=Singleton):
     def getLastElection(self) -> Election:
         try:
             LOG.debug("Getting last election")
-            session = self.session
+            session = self.createCsesion()
             # get election
             electionFromDB = (
                 session.query(Election).order_by(Election.date.desc()).first()
             )
             if electionFromDB is None:
                 LOG.debug("Election not found")
+                session.close()
                 return None
             else:
                 LOG.debug("Election found.")
+                session = self.createCsesion()
                 return electionFromDB
 
         except Exception as e:
+            session = self.createCsesion()
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
 
     def setMemberWithElectionIDAndWithRoomID(self, election: Election, room: Room,
@@ -596,7 +722,7 @@ class Database(metaclass=Singleton):
         assert isinstance(room, Room), "room is not a Room"
         assert isinstance(participants, list), "participants is not a list"
         try:
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
 
             # get or create election
             electionFromDB = (
@@ -702,18 +828,20 @@ class Database(metaclass=Singleton):
                         session.query(Participant) \
                             .filter(Participant.roomID == roomFromDB.roomID,
                                     Participant.accountName == participant.accountName) \
-                            .update({Participant.participationStatus: participant.participationStatus})
-                        session.commit()
+                            .update({Participant.participationStatus: participant.participationStatus,
+                                     Participant.telegramID: participant.telegramID})
             session.commit()
+            session.close()
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred in function setMemberWithElectionIDAndWithRoomID: " + str(e))
             raise DatabaseException("Problem occurred in function setMemberWithElectionIDAndWithRoomID: " + str(e))
 
     def getMembers(self, election: Election) -> list[Participant]:
         assert isinstance(election, Election), "election is not of type Election"
         try:
-            session = self.session
+            session = self.createCsesion()
 
             roomIDs = session.query(Room.roomID).filter(Room.electionID == election.electionID).all()
             roomIDs = [i[0] for i in roomIDs]
@@ -723,9 +851,12 @@ class Database(metaclass=Singleton):
                   )
 
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting members: " + str(e))
             return None
 
@@ -733,21 +864,26 @@ class Database(metaclass=Singleton):
         assert isinstance(election, Election), "election is not of type Election"
         assert isinstance(reminder, Reminder), "remionder is not of type Reminder"
         try:
-            session = self.session
+            session = self.createCsesion()
 
             reminderSentParticipant = session.query(ReminderSent.accountName) \
-                .filter(ReminderSent.reminderID == reminder.reminderID,
-                        ReminderSent.sendStatus == ReminderSendStatus.SEND.value).all()
+                .filter(ReminderSent.reminderID == reminder.reminderID#,
+                        #ReminderSent.sendStatus == ReminderSendStatus.SEND.value #not send again, no matter of reason
+                        ).all()
             reminderSentParticipant = [i[0] for i in reminderSentParticipant]
 
             result = session.query(Room, Participant) \
                 .join(Participant, Participant.roomID == Room.roomID) \
+                .order_by(Room.roomID.desc()) \
                 .filter(Room.round == reminder.round,
                         Room.roomIndex >= 0,
-                        Participant.accountName.notin_(reminderSentParticipant)).all()
+                        Participant.accountName.notin_(reminderSentParticipant)
+                ).all()
 
+            session.close()
             return result
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting members: " + str(e))
             return None
 
@@ -755,36 +891,42 @@ class Database(metaclass=Singleton):
         assert isinstance(reminder, Reminder)
         assert isinstance(participant, Participant)
         try:
-            session = self.session
+            session = self.createCsesion()
             cs = (
                 session.query(ReminderSent).filter(ReminderSent.reminderID == reminder.id,
                                                    ReminderSent.participantID == participant.id).first()
             )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting reminder sent record: " + str(e))
             return None
 
     def getAllParticipantsReminderSentRecord(self, reminder: Reminder) -> list[ReminderSent]:
         assert isinstance(reminder, Reminder)
         try:
-            session = self.session
+            session = self.createCsesion()
             cs = (
                 session.query(ReminderSent).filter(ReminderSent.reminderID == reminder.reminderID).all()
             )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting reminder sent record: " + str(e))
             return None
 
     def getUsersInRoom(self, roomTelegramID: int) -> list[Participant]:
         assert isinstance(roomTelegramID, int), "roomTelegramID must be int"
         try:
-            session = self.session
+            session = self.createCsesion()
 
             roomIDs = session.query(Room.roomID).filter(Room.roomTelegramID == roomTelegramID).all()
             roomIDs = [i[0] for i in roomIDs]
@@ -794,16 +936,19 @@ class Database(metaclass=Singleton):
                   )
 
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting users in room: " + str(e))
             return None
 
     def saveOrUpdateAbi(self, accountName: str, abi: str):
         try:
             abiObj = Abi(accountName=accountName, contract=str.encode(abi))
-            session = self.session
+            session = self.createCsesion(expireOnCommit=False)
             existing_abi = (
                 session.query(Abi).filter(Abi.accountName == abiObj.accountName).first()
             )
@@ -815,6 +960,7 @@ class Database(metaclass=Singleton):
                 LOG.debug("ABI for contract " + accountName + " not found, creating new")
                 session.add(abiObj)
                 session.commit()
+                session.close()
                 LOG.info("ABI for contract " + accountName + " saved")
             else:
                 # saving to memory
@@ -823,9 +969,11 @@ class Database(metaclass=Singleton):
                 LOG.debug("ABI for contract " + accountName + " found, updating")
                 session.query(Abi).filter(Abi.accountName == accountName).update({Abi.contract: abiObj.contract})
                 session.commit()
+                session.close()
                 LOG.info("ABI for contract " + accountName + " updated")
         except Exception as e:
             session.rollback()
+            session.close()
             LOG.exception(message="Problem occurred when saving/updating abi: " + str(e))
 
     def getABI(self, accountName: str) -> Abi:
@@ -835,14 +983,17 @@ class Database(metaclass=Singleton):
             if accountName in self._localDict:
                 return self._localDict[accountName]
 
-            session = self.session
+            session = self.createCsesion()
             cs = (
                 session.query(Abi).filter(Abi.accountName == accountName).first()
             )
             if cs is None:
+                session.close()
                 return None
+            session.close()
             return cs
         except Exception as e:
+            session.close()
             self.__handle_exception(e)
 
 
@@ -945,34 +1096,35 @@ def main():
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
 
-    election: Election = Election(electionID=1,
-                                  status=ElectionStatus(electionStatusID=7,
-                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
-                                  date=datetime.now()
-                                  )
+    kva = database.getKnownUsers(botName="@edenBotTestBot")
+    kva1 = database.getKnownUsers(botName="@edenBotTestBot3")
+    kva3 = database.getKnownUser(botName="@edenBotTestBot", telegramID="4523523523")
+    kva4 = database.getKnownUser(botName="@edenBotTestBot", telegramID="nejcsKerjanc3")
+    kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=False)
+    kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=True)
+    neki = 8
 
-    reminder: Reminder = Reminder(reminderID=13, electionID=1, dateTimeBefore=datetime.now(), round=0)
+    #election: Election = Election(electionID=4,
+    ##                              status=ElectionStatus(electionStatusID=7,
+    #                                                   status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
+    #                              date=datetime.now()
+    #                              )
 
-    #kvaje = database.updateElectionColumnElectionStateIfChanged(election=election,
-    #                                                            currentElectionState=CurrentElectionState.
-    #                                                            CURRENT_ELECTION_STATE_SEEDING_V1)
+    #reminder: Reminder = Reminder(reminderID=224, electionID=4, dateTimeBefore=datetime.now(), round=0)
+
+
 
     # database.getMembers(election=election)
-    database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
+    roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
+
+    for room, participant in roomsAndParticipants:
+        print("Room: " + str(room.roomID))
+        #print("Participant: " + str(participant))
+
+
     # result = database.getParticipantsWithoutReminderSentRecord(reminder=reminder)
 
-    # database.saveOrUpdateAbi("test", "test1")
-    # print(database.getABI("test"))
-    # print(database.getABI("test1"))
-    # database1 = Database()
-    # print(database == database1)
 
-    # database.createTables()
-    # database.saveAbi("test", "test")
-    # r = Database.getInstance()
-
-    # print(singleton is new_singleton)
-    i = 9
 
 
 if __name__ == "__main__":

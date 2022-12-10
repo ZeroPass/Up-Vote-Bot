@@ -6,6 +6,9 @@ from app.chain.dfuse import Response, ResponseError, ResponseSuccessful
 from app.chain.eden import EdenData
 from app.database.participant import Participant
 from app.chain.atomicAssets import AtomicAssetsData
+from app.transmission import Communication
+from app.transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+
 
 class ParticipantsManagementException(Exception):
     pass
@@ -14,10 +17,11 @@ LOG = Log(className="ParticipantsManagement")
 
 class ParticipantsManagement:
 
-    def __init__(self, edenData: EdenData, database: Database):
+    def __init__(self, edenData: EdenData, database: Database, communication: Communication):
         self.edenData = edenData
         self.participants = []
         self.database = database
+        self.communication = communication
 
 
     def getParticipantsFromChainAndMatchWithDatabase(self, election: Election, height: int = None):
@@ -76,8 +80,12 @@ class ParticipantsManagement:
 
             members: list[Participant] = list()
             if isinstance(response, ResponseSuccessful):
+                counter = 0
                 for key, value in response.data.items():
                     try:
+                        #if counter > 20:
+                        #    break
+                        counter += 1
                         member =Participant(accountName=key,
                                             roomID=-1, #not yet
                                             participationStatus=True if len(value.data) == 2 and
@@ -101,6 +109,9 @@ class ParticipantsManagement:
                                                                atomicAssetsData=aad) \
                             if member.nftTemplateID != 0 \
                             else "-1"
+                        #if member.telegramID != "-1":
+                        #    if self.communication.userExists(userID=ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)) == False:
+                        #        member.telegramID = "-2"
 
                     except Exception as e:
                         LOG.exception(str(e))

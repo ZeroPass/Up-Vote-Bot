@@ -22,7 +22,7 @@ class ModeDemo:
 
     """Store the time of start and end of the election"""
 
-    def __init__(self, start: datetime, end: datetime, edenObj: EdenData, step: int = 1):
+    def __init__(self, startAndEndDatetime: list[tuple[datetime, datetime]], edenObj: EdenData, step: int = 1):
         #step is import only if you call getNextBlock(), not setNextTimestamp()
         # Example 1 - with block height:
         # if isNextBlock():
@@ -34,26 +34,37 @@ class ModeDemo:
 
 
 
-        LOGModeDemo.debug("Initialization of ModeDemo with start: " + str(start) + " and end: " + str(end)
-                          + " and step: " + str(step))
-        assert isinstance(start, datetime), "Start is not a datetime object"
-        assert isinstance(end, datetime), "End is not a datetime object"
+        LOGModeDemo.debug("Initialization of ModeDemo with startAndEndDatetime: " + str(startAndEndDatetime) +
+                          " and step: " + str(step))
+        assert isinstance(startAndEndDatetime, list), "Start is not a list object"
         assert isinstance(edenObj, EdenData), "EdenObj is not a EdenData object"
         assert isinstance(step, int), "Step is not an integer"
 
         if step < 1:
             LOGModeDemo.exception("ModeDemo; Step must be greater than 0")
             raise ModeDemoException("Step must be greater than 0")
-        self.startDT = start
-        self.endDT = end
+
+        LOGModeDemo.debug("Checking datetime list of tuples")
+        for oneTimeFrame in startAndEndDatetime:
+            if oneTimeFrame[0] > oneTimeFrame[1]:
+                LOGModeDemo.exception("ModeDemo; Start is greater than end")
+                raise ModeDemoException("Start is greater than end")
+            if isinstance(oneTimeFrame[0], datetime) is False:
+                LOGModeDemo.exception("ModeDemo; Start is not a datetime object")
+                raise ModeDemoException("Start is not a datetime object")
+            if isinstance(oneTimeFrame[1], datetime) is False:
+                LOGModeDemo.exception("ModeDemo; End is not a datetime object")
+                raise ModeDemoException("End is not a datetime object")
+
         self.edenObj = edenObj
+
+        self.startAndEndDatetime = startAndEndDatetime
+        self.currentTimeFrameIndex = 0
+        self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
+        self.setNextTimestamp(seconds=0)
+
         self.step = step
 
-    def getStart(self) -> datetime:
-        return self.startDT
-
-    def getEnd(self) -> datetime:
-        return self.endDT
 
     def setStartBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
@@ -69,11 +80,22 @@ class ModeDemo:
 
     def isNextTimestampInLimit(self, seconds: int) -> bool:
         assert isinstance(seconds, int), "seconds is not a int object"
-        return True if self.currentBlockTimestamp + timedelta(seconds=seconds) <= self.endDT else False
+        if self.currentBlockTimestamp + timedelta(seconds=seconds) <= \
+                       self.startAndEndDatetime[self.currentTimeFrameIndex][1]\
+                or \
+           self.currentTimeFrameIndex + 1 < len(self.startAndEndDatetime): #second condition if there is a next time frame
+            return True
+        else:
+            return False
 
     def setNextTimestamp(self, seconds: int):
         assert isinstance(seconds, int), "seconds is not a int object"
-        self.currentBlockTimestamp = self.currentBlockTimestamp + timedelta(seconds=seconds)
+        if self.currentBlockTimestamp + timedelta(seconds=seconds) <= \
+                self.startAndEndDatetime[self.currentTimeFrameIndex][1]:
+            self.currentBlockTimestamp = self.currentBlockTimestamp + timedelta(seconds=seconds)
+        else:
+            self.currentTimeFrameIndex = self.currentTimeFrameIndex + 1
+            self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
         try:
             self.currentBlockHeight = self.edenObj.getBlockNumOfTimestamp(timestamp=self.currentBlockTimestamp).data
         except Exception as e:

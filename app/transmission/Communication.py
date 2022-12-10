@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from enum import Enum
 
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, PeerIdInvalid
 from pyrogram.handlers import MessageHandler
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand
 
@@ -11,6 +11,7 @@ from app.constants.parameters import *
 from app.database import Database
 from app.database.participant import Participant
 from app.dateTimeManagement import DateTimeManagement
+from app.knownUserManagement import KnownUserData
 from app.log.log import Log
 
 from multiprocessing import Process
@@ -49,8 +50,11 @@ class Communication:
     sessionBot: Client = None
     isInitialized: bool = False
 
-    def __init__(self):
+    def __init__(self, database: Database):
+        assert isinstance(database, Database), "Database should be Database"
         LOG.info("Init communication")
+        self.database = database
+        self.knownUserData: KnownUserData = KnownUserData(database=database)
 
     def start(self, apiId: int, apiHash: str, botToken: str):
         assert isinstance(apiId, int), "ApiId should be int"
@@ -83,7 +87,11 @@ class Communication:
 
             self.sessionBot.add_handler(
                 MessageHandler(callback=Communication.commandResponseInfo,
-                                 filters=filters.command(commands=["info"]) & filters.private)
+                               filters=filters.command(commands=["info"]) & filters.private)
+            )
+
+            self.sessionBot.add_handler(
+                MessageHandler(callback=Communication.commandResponseHelp, filters=filters.private)
             )
 
             # self._init()
@@ -103,6 +111,20 @@ class Communication:
         @self.sessionBot.on_message(filters=filters.new_chat_members)
         def log(client, message):
             print(message)
+
+    def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
+        assert isinstance(botName, str), "BotName should be str"
+        assert isinstance(chatID, int), "chatID should be int"
+        LOG.info("Adding known user: " + str(chatID) + " for bot: " + botName)
+        self.knownUserData.setKnownUser(botName=botName, telegramID=chatID, isKnown=True)
+        self.updateKnownUserData(botName=botName)
+    def updateKnownUserData(self, botName: str) -> bool:
+        assert isinstance(botName, str), "BotName should be str"
+        try:
+            LOG.info("Updating known user data for bot: " + botName)
+            return self.knownUserData.getKnownUsersOptimizedSave(botName=botName)
+        except Exception as e:
+            LOG.exception("Communication.updateKnownUserData exception: " + str(e))
 
     def isInitialized(self) -> bool:
         return self.isInitialized
@@ -133,10 +155,16 @@ class Communication:
                   replyMarkup: InlineKeyboardMarkup = None):
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
-            assert isinstance(chatId, (str, int)), "ChatId should be str"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert isinstance(photoPath, str), " photoPath should be str"
             assert isinstance(caption, (str, type(None))), "Caption should be str or None"
             LOG.info("Sending photo to: " + str(chatId))
+
+            if isinstance(chatId, None) or \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return False
 
             if sessionType == SessionType.BOT:
                 self.sessionBot.send_photo(chat_id=chatId,
@@ -148,13 +176,18 @@ class Communication:
                                             photo=open(photoPath, 'rb'),
                                             caption=caption,
                                             reply_markup=replyMarkup)
-
+            return True
         except Exception as e:
             LOG.exception("Exception (in sendPhoto): " + str(e))
 
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
+
     def sendMessage(self,
                     sessionType: SessionType,
-                    chatId: int,
+                    chatId: (str, int),
                     text: str,
                     disableWebPagePreview=False,
                     scheduleDate: datetime = None,
@@ -166,10 +199,18 @@ class Communication:
                  + " and scheduleDate: " + str(scheduleDate) if scheduleDate is not None else "<now>")
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert (sessionType is SessionType.BOT) or \
                    (sessionType is SessionType.USER and inlineReplyMarkup is None), \
                 "when SessionType is USER there is no option to send inlineReplyMarkup!"
+
             if sessionType == SessionType.BOT:
+                if isinstance(chatId, None) or \
+                        self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                             telegramID=str(chatId)) is False:
+                    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                    return False
+
                 response = self.sessionBot.send_message(chat_id=chatId,
                                                         text=text,
                                                         schedule_date=scheduleDate,
@@ -187,8 +228,13 @@ class Communication:
             LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
             time.sleep(e.value)
             return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=inlineReplyMarkup)
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
         except Exception as e:
             LOG.exception("Exception: " + str(e))
+            return False
 
     def sendLogToAdmin(self, level: str, log: str):
         LOG.info("Sending log (level: " + level + ") to admin: " + log)
@@ -221,40 +267,62 @@ class Communication:
             LOG.exception("Exception (in createSuperGroup): " + str(e))
             return None
 
-    def getUsers(self, sessionType: SessionType) -> list:
-        if sessionType == SessionType.BOT:
-            kva = self.sessionBot.get_users(user_ids="me")
-            return self.sessionBot.get_users()
-        else:
-            kva = self.sessionUser.get_users(user_ids="me")
-            return self.sessionUser.get_users()
+    def userExists(self, userID: str) -> list:
+        assert userID is not None, "userID should not be null"
+        try:
+            # not in use
+            kva1 = self.sessionBot.resolve_peer(peer_id=userID)
+            return True
+        except Exception as e:
+            LOG.exception("Exception (in getUsers): " + str(e))
+            return False
 
-        return self.sessionUser.iter_participants(self.sessionUser.get_me())
+        # return self.sessionUser.iter_participants(self.sessionUser.get_me())
 
-    def getInvitationLink(self, sessionType: SessionType, chatId: int) -> str:
+    def getInvitationLink(self, sessionType: SessionType, chatId: (str, int)) -> str:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
-        assert isinstance(chatId, int), "ChatId should be int"
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.debug("Getting invitation link for chat: " + str(chatId) + " Make sure that user/bot is admin and keep in"
                                                                        "mind that link is valid until next call of this"
                                                                        "method. Previous link will be revoked.")
         LOG.info("Get invitation link for chat: " + str(chatId))
         try:
+            if isinstance(chatId, None) or \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return None
+
             inviteLink: str = self.sessionUser.export_chat_invite_link(chat_id=chatId) \
                 if sessionType == SessionType.USER \
                 else \
                 self.sessionBot.export_chat_invite_link(chat_id=chatId)
             LOG.debug("Invite link: " + inviteLink)
             return inviteLink
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return None
         except Exception as e:
             LOG.exception("Exception (in getInvitationLink): " + str(e))
             return None
 
-    def archiveGroup(self, chatId: int) -> bool:
+    def archiveGroup(self, chatId: (str, int)) -> bool:
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.info("Archiving group: " + str(chatId))
         try:
-            assert chatId is not None, "ChatId should not be null"
+            if isinstance(chatId, None) or \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return True
+
             self.sessionUser.archive_chat(chat_id=chatId)
             return True
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
         except Exception as e:
             LOG.exception("Exception (in archiveGroup): " + str(e))
             return False
@@ -271,34 +339,59 @@ class Communication:
         except Exception as e:
             LOG.exception("Exception (in callbackQuery): " + str(e))
 
-    def deleteGroup(self, chatId: int) -> bool:
+    def deleteGroup(self, chatId: (str, int)) -> bool:
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.info("Deleting group: " + str(chatId))
         try:
-            assert chatId is not None, "ChatId should not be null"
+            if isinstance(chatId, None) or \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return False
+
             self.sessionUser.delete_chat(chat_id=chatId)
             return True
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
         except Exception as e:
             LOG.exception("Exception (in deleteGroup): " + str(e))
             return False
 
-    def addChatMembers(self, chatId: int, participants: list) -> bool:
+    def addChatMembers(self, chatId: (str, int), participants: list) -> bool:
         LOG.info("Adding participants to group: " + str(chatId) + " with participants: " + str(participants))
         try:
-            assert chatId is not None, "ChatId should not be null"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert participants is not None, "Participants should not be null"
+
+            knownParticipants = []
+            for participant in participants:
+                if isinstance(participant.telegramID, None) == False and \
+                        self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                             telegramID=str(chatId)):
+                    knownParticipants.append(participant)
+
             self.sessionUser.add_chat_members(chat_id=chatId,
-                                              user_ids=participants)
+                                              user_ids=knownParticipants)
             return True
         except Exception as e:
             LOG.exception("Exception (in addChatMembers): " + str(e))
             return False
 
-    def promoteMembers(self, sessionType: SessionType, chatId: int, participants: list) -> bool:
-        LOG.info("Promoting participants to group: " + str(chatId) + " with participants: " + str(participants))
+    def promoteMembers(self, sessionType: SessionType, chatId: (str, int), participants: list) -> bool:
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
-            assert isinstance(chatId, int), "ChatId should be int"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert isinstance(participants, list), "Participants should be list"
+            LOG.info("Promoting participants to group: " + str(chatId) + " with participants: " + str(participants))
+
+            if sessionType == SessionType.BOT:
+                if isinstance(chatId, None) or \
+                        self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                             telegramID=str(chatId)) is False:
+                    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                    return False
 
             for participant in participants:
                 try:
@@ -319,20 +412,22 @@ class Communication:
                                                              )
 
                     else:
-                        self.sessionBot.promote_chat_member(chat_id=chatId,
-                                                            user_id=participant,
-                                                            privileges=ChatPrivileges(
-                                                                can_manage_chat=True,
-                                                                can_delete_messages=True,
-                                                                can_manage_video_chats=True,
-                                                                can_restrict_members=True,
-                                                                can_promote_members=True,
-                                                                can_change_info=True,
-                                                                can_invite_users=True,
-                                                                can_pin_messages=True,
-                                                                is_anonymous=False
-                                                            )
-                                                            )
+                        if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                                telegramID=str(participant)):
+                            self.sessionBot.promote_chat_member(chat_id=chatId,
+                                                                user_id=participant,
+                                                                privileges=ChatPrivileges(
+                                                                    can_manage_chat=True,
+                                                                    can_delete_messages=True,
+                                                                    can_manage_video_chats=True,
+                                                                    can_restrict_members=True,
+                                                                    can_promote_members=True,
+                                                                    can_change_info=True,
+                                                                    can_invite_users=True,
+                                                                    can_pin_messages=True,
+                                                                    is_anonymous=False
+                                                                )
+                                                                )
                 except Exception as e:
                     LOG.exception("Exception (in promoteMembers): " + str(e))
             return True
@@ -340,10 +435,10 @@ class Communication:
             LOG.exception("Exception (in promoteMembers): " + str(e))
             return False
 
-    def setChatDescription(self, chatId: int, description: str) -> bool:
+    def setChatDescription(self, chatId: (str, int), description: str) -> bool:
         LOG.info("Setting description to group: " + str(chatId) + " with description: " + str(description))
         try:
-            assert chatId is not None, "ChatId should not be null"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert description is not None, "Description should not be null"
             self.sessionUser.set_chat_description(chat_id=chatId,
                                                   description=description)
@@ -352,9 +447,9 @@ class Communication:
             LOG.exception("Exception (in setChatDescription): " + str(e))
             return False
 
-    def leaveChat(self, sessionType: SessionType, chatId: int) -> bool:
+    def leaveChat(self, sessionType: SessionType, chatId: (str, int)) -> bool:
         assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
-        assert isinstance(chatId, int), "ChatId should be int"
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
 
         LOG.info("Leaving group: " + str(chatId))
         LOG.info("SessionType: " + str(sessionType))
@@ -362,8 +457,16 @@ class Communication:
             if sessionType == SessionType.USER:
                 self.sessionUser.leave_chat(chat_id=chatId)
             else:
+                if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                        telegramID=str(chatId)) == False:
+                    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                    return False
                 self.sessionBot.leave_chat(chat_id=chatId)
             return True
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
         except Exception as e:
             LOG.exception("Exception (in leaveChat): " + str(e))
             return False
@@ -387,7 +490,7 @@ class Communication:
                     LOG.debug(
                         "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
 
-                    #if new member is a bot do nothing
+                    # if new member is a bot do nothing
                     if newMember.is_bot:
                         LOG.debug("...is bot. Do nothing")
                         continue
@@ -474,6 +577,9 @@ class Communication:
         except Exception as e:
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return
+
+    async def commandResponseHelp(client: Client, message):
+        kva = 9
 
     async def commandResponseInfo(client: Client, message):
         try:
@@ -562,40 +668,6 @@ def runPyrogram():
     gctm = GroupCommunicationTextManagement()
     buttons: tuple[Button] = gctm.invitationLinkToTheGroupButons(groupLink="https://t.me/+iCrYgZ_rgqxmZGE0")
 
-    comm.sendMessage(sessionType=SessionType.BOT, chatId="@EdenElectionSupport",
-                     text=gctm.invitationLinkToTheGroup(round=1),
-                     inlineReplyMarkup=InlineKeyboardMarkup(
-                         inline_keyboard=
-                         [
-                             [
-                                 InlineKeyboardButton(text=buttons[0]['text'],
-                                                      url=buttons[0]['value']),
-
-                             ]
-                         ]
-                     )
-                     )
-
-    print("chatID: " + str(chatID))
-    print(chatID)
-    print("------")
-    comm.addChatMembers(chatId=chatID, participants=["@edenElectionSupport", "@nejcSkerjanc2", botName])
-    # comm.promoteMembers(chatId=chatID, participants=[botName, "@edenElectionSupport"])
-    comm.sendMessage(sessionType=SessionType.USER,
-                     chatId=chatID,
-                     text="Hope you will get next messages in next few minutes!")
-    comm.sendMessage(sessionType=SessionType.USER,
-                     chatId=chatID,
-                     text="I am bot  - bot, i am 30 seconds ahead in the future:)",
-                     scheduleDate=DateTimeManagement.getUnixTimestampInDT() + timedelta(seconds=30))
-    comm.sendMessage(sessionType=SessionType.USER,
-                     chatId=chatID,
-                     text="I am bot  - bot, i am 60 seconds ahead in the future:)",
-                     scheduleDate=DateTimeManagement.getUnixTimestampInDT() + timedelta(seconds=60))
-
-    comm.sendMessage(sessionType=SessionType.USER,
-                     chatId=chatID,
-                     text="I am leaving now!")
 
     comm.leaveChat(sessionType=SessionType.USER, chatId=chatID)
     

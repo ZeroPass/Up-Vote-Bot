@@ -101,11 +101,17 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(inviteLink, str), "groupLink must be a str"
         return Button(text="Join the group", value=inviteLink),
 
-    def welcomeMessage(self, inviteLink: str, round: int, group: int) -> str:
+    def welcomeMessage(self, inviteLink: str, round: int, group: int, isLastRound: bool = False) -> str:
         assert isinstance(inviteLink, str), "groupLink must be a str"
         assert isinstance(round, int), "round must be an int"
         assert isinstance(group, int), "group must be an int"
-        return _("Welcome to Eden Group %d in the Round %d." + self.newLine() + self.newLine() +
+        assert isinstance(isLastRound, bool), "isLastRound must be a bool"
+
+        if isLastRound:
+            return _("Wellcome to Eden Chief Delegate group." + self.newLine() + self.newLine() +
+                     "Congratulations to everyone for making it this far! " + self.newLine())
+        else:
+            return _("Welcome to Eden Group %d in the Round %d." + self.newLine() + self.newLine() +
                  "If any participant is not joined yet (and should be), send them this invite link:" + self.newLine() +
                  "%s") % (group, round + 1, inviteLink)
 

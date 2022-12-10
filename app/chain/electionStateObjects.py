@@ -9,7 +9,7 @@ from app.log import Log
 from datetime import datetime
 from app.constants.electionState import CurrentElectionState
 
-from app.database import Election, Database, ElectionStatus
+from app.database import Election, Database, ElectionStatus, ExtendedRoom
 
 from app.participantsManagement import ParticipantsManagement
 from app.reminderManagement import ReminderManagement
@@ -77,12 +77,16 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
 
         # setting new election + creating notification records
         election = database.setElection(election=election)
+        database.createRemindersIfNotExists(election=election)
 
+
+        #commented for demo only
         # write participants/member in database
-        participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database)
-        participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
-                                                                            height=modeDemo.currentBlockHeight
-                                                                            if modeDemo is not None else None)
+        #participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+        #                                                                        communication=communication)
+        #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+        #                                                                    height=modeDemo.currentBlockHeight
+        #                                                                    if modeDemo is not None else None)
 
         # send notification
         reminderManagement: ReminderManagement = ReminderManagement(database=database,
@@ -130,6 +134,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
 
         # setting new election + creating reminder records
         election = database.setElection(election=election)
+        database.createRemindersIfNotExists(election=election)
 
         # write participants/member in database
         # participantsManagement: ParticipantsManagement = ParticipantsManagement(
@@ -208,7 +213,6 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_ACTIVE")
 
-
         electionStatusIDfromDB: ElectionStatus = database.getElectionStatus(self.currentElectionState)
         if electionStatusIDfromDB == None:
             LOG.exception("'Election status' not found in database")
@@ -224,6 +228,7 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                                                                     edenData=edenData,
                                                                     communication=communication,
                                                                     modeDemo=modeDemo)
+
 
         reminderManagement.createRemindersTimeIsUpIfNotExists(election=election,
                                                               round=self.getRound(),
@@ -244,7 +249,7 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
 #  '2022-07-09T15:02:49.000', 'end_time': '2022-07-09T17:02:49.000'}}]
 class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
     def __init__(self, data: dict):
-        super().__init__(CurrentElectionState.CurrentElectionStateHandlerFinal, data, EdenBotMode.ELECTION)
+        super().__init__(CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE, data, EdenBotMode.ELECTION)
 
     def getSeed(self):
         return self.data["seed"]
@@ -264,7 +269,7 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
         # TODO: final state does not do anything, just congrats message, no group created or anything like that
         # group management call
 
-        groupManagement.manage(round=self.getRound(),
+        groupManagement.manage(round=99,
                                numParticipants=4,
                                numGroups=1,
                                isLastRound=True,
