@@ -56,18 +56,24 @@ class BotCommunicationManagement(TextManagement):
     def __init__(self, language: Language = Language.ENGLISH):
         super().__init__(language)
 
-    def startCommandKnownTelegramID(self, telegramID: str) -> str:
-        assert isinstance(telegramID, (str, type(None))), "telegramID must be a string"
-        telegramID = str(telegramID) if telegramID is not None else "<Unknown ID>"
-        return _("Welcome __%s__ !" + self.newLine() + self.newLine() +
-                 "Now you will be reminded about next Eden election date, and guides  you through it. " + self.newLine() +
-                 "There is no spam, so keep the notifications on!") % (telegramID)
+    def startCommandKnownTelegramID(self, userID: str) -> str:
+        assert isinstance(userID, (str, type(None))), "telegramID must be a string or none"
+        userID = str(userID) if userID is not None else "<Unknown ID>"
+        return _("Welcome __%s__ " + self.newLine() + self.newLine() +
+                 "Up Vote Bot will remind you about the next Eden election date, and guide  you through it. " + self.newLine() +
+                 "There is no spam, so keep the notifications on!") % (userID)
 
     def startCommandNotKnownTelegramID(self, telegramID: str) -> str:
         assert isinstance(telegramID, (str, type(None))), "telegramID must be a string"
         telegramID = str(telegramID) if telegramID is not None else "<Unknown ID>"
         return _("Hi __%s__, " + self.newLine() + self.newLine() +
-                 "you are not yet inducted into Eden.") % (telegramID)
+                 "you are now registered with the Up Vote Bot, and can receive notifications, "
+                 "but you are not yet inducted into Eden.") % (telegramID)
+
+    def donateCommandtext(self) -> str:
+        return _("Support the development of Up Vote Bot features")
+    def donateCommandtextButon(self) -> str:
+        return _("Pomelo (Up Vote Bot)")
 
     def startCommandNotKnownTelegramIDButtonText(self):
         return _("Ask for an invite")

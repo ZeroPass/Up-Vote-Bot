@@ -1,5 +1,6 @@
 import asyncio
 import os
+import threading
 from datetime import datetime, timedelta
 from enum import Enum
 
@@ -35,6 +36,7 @@ from app.text.textManagement import GroupCommunicationTextManagement, Button, Bo
 class SessionType(Enum):
     USER = 1
     BOT = 2
+    BOT_THREAD = 3
 
 
 class CommunicationException(Exception):
@@ -44,30 +46,40 @@ class CommunicationException(Exception):
 LOG = Log(className="Communication")
 
 
-class Communication:
+class Communication(): #threading.Thread
     # sessions = {}
     sessionUser: Client = None
     sessionBot: Client = None
+    sessionBotThread: Client = None
     isInitialized: bool = False
+    pyrogram: Process = None
 
     def __init__(self, database: Database):
         assert isinstance(database, Database), "Database should be Database"
         LOG.info("Init communication")
         self.database = database
         self.knownUserData: KnownUserData = KnownUserData(database=database)
+        #threading.Thread.__init__(self, daemon=True)
 
-    def start(self, apiId: int, apiHash: str, botToken: str):
+    #def run(self):
+    #    self.idle()
+
+    def startComm(self, apiId: int, apiHash: str, botToken: str):
         assert isinstance(apiId, int), "ApiId should be int"
         assert isinstance(apiHash, str), "ApiHash should be str"
         assert isinstance(botToken, str), "BotToken should be str"
         LOG.debug("Starting communication sessions..")
         try:
+            self.startCommAsyncSession(apiId=apiId, apiHash=apiHash, botToken=botToken)
+
             LOG.debug("... user session")
             self.setSession(sessionType=SessionType.USER,
                             client=Client(name=communication_session_name_user,
                                           api_id=apiId,
                                           api_hash=apiHash))
             self.startSession(sessionType=SessionType.USER)
+
+
 
             LOG.debug("... bot session")
             self.setSession(sessionType=SessionType.BOT,
@@ -77,7 +89,7 @@ class Communication:
                                           bot_token=botToken))
 
             # client: Client = self.getSession(SessionType.BOT)
-            self.sessionBot.add_handler(
+            """self.sessionBot.add_handler(
                 MessageHandler(callback=Communication.wellcomeProcedure, filters=filters.new_chat_members))
 
             self.sessionBot.add_handler(
@@ -88,24 +100,59 @@ class Communication:
             self.sessionBot.add_handler(
                 MessageHandler(callback=Communication.commandResponseInfo,
                                filters=filters.command(commands=["info"]) & filters.private)
-            )
-
-            self.sessionBot.add_handler(
-                MessageHandler(callback=Communication.commandResponseHelp, filters=filters.private)
-            )
+            )"""
 
 
             self.startSession(sessionType=SessionType.BOT)
 
+
             self.sessionBot.set_bot_commands([
-                BotCommand("start", "Start the bot"),
-                BotCommand("info", "get info about the bot")])
+                BotCommand("start", "Register with the bot"),
+                BotCommand("status", "Check if the Up Vote Bot is running"),
+                BotCommand("donate", "Support the development of Up Vote Bot features")])
 
             self.isInitialized = True
             LOG.debug("... done!")
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             raise CommunicationException("Exception: " + str(e))
+
+    def startCommAsyncSession(self, apiId: int, apiHash: str, botToken: str):
+        LOG.info("Start async bot session - event driven actions")
+        #self.startSession(sessionType=SessionType.BOT_THREAD)
+        self.pyrogram = Process(target=self.startSessionAsync, args=(apiId, apiHash, botToken))
+        self.pyrogram.start()
+
+    def startSessionAsync(self, apiId: int, apiHash: str, botToken: str):
+        self.setSession(sessionType=SessionType.BOT_THREAD,
+                        client=Client(name=communication_session_name_async_bot,
+                                      api_id=apiId,
+                                      api_hash=apiHash,
+                                      bot_token=botToken))
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=Communication.wellcomeProcedure, filters=filters.new_chat_members))
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=Communication.commandResponseStart,
+                           filters=filters.command(commands=["start"]) & filters.private)
+        )
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=Communication.commandResponseStatus,
+                           filters=filters.command(commands=["status"]) & filters.private)
+        )
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=Communication.commandResponseDonate,
+                           filters=filters.command(commands=["donate"]) & filters.private)
+        )
+
+        #self.startSession(sessionType=SessionType.BOT_THREAD)
+        self.sessionBotThread.start()
+
+        #self.sessionBotThread.send_message("nejcskerjanc2", "Greetings from **Pyrogram**!")
+        idle()
 
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
@@ -132,6 +179,8 @@ class Communication:
         LOG.info("Set session: " + str(sessionType))
         if sessionType == SessionType.BOT:
             self.sessionBot = client
+        elif sessionType == SessionType.BOT_THREAD:
+            self.sessionBotThread = client
         else:
             self.sessionUser = client
 
@@ -139,6 +188,8 @@ class Communication:
         LOG.info("Start session: " + str(sessionType))
         if sessionType == SessionType.BOT:
             self.sessionBot.start()
+        elif sessionType == SessionType.BOT_THREAD:
+            self.sessionBotThread.start()
         else:
             self.sessionUser.start()
 
@@ -571,18 +622,15 @@ class Communication:
                 LOG.debug("Participant found in database")
                 await client.send_message(chat_id=chatid,
                                           text=botCommunicationManagement.startCommandKnownTelegramID(
-                                              telegramID=telegramID))
+                                              userID=participant.accountName))
 
         except Exception as e:
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return
 
-    async def commandResponseHelp(client: Client, message):
-        kva = 9
-
-    async def commandResponseInfo(client: Client, message):
+    async def commandResponseStatus(client: Client, message):
         try:
-            LOG.success("Response on command 'info' from user: " + str(message.chat.username) if not None else "None")
+            LOG.success("Response on command 'status' from user: " + str(message.chat.username) if not None else "None")
             chatid = message.chat.id
             LOG.success(".. in chat: " + str(chatid))
 
@@ -592,22 +640,63 @@ class Communication:
 
             participant: Participant = database.getParticipantByTelegramID(telegramID=message.chat.username)
 
+            # reply_markup=inlineReplyMarkup, disable_web_page_preview=disableWebPagePreview
+
+            #add user to known users
+            knownUserData: KnownUserData = KnownUserData(database=database)
+            knownUserData.setKnownUser(botName=telegram_bot_name, telegramID=message.chat.username, isKnown=True)
+
+            botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
+            telegramID: str = "@" + str(message.chat.username) if message.chat.username is not None else None
+            if participant is None:
+                LOG.error("Participant not found in database")
+                await client.send_message(chat_id=chatid,
+                                          text=botCommunicationManagement.startCommandNotKnownTelegramID(
+                                              telegramID=telegramID),
+                                          reply_markup=InlineKeyboardMarkup(
+                                              inline_keyboard=
+                                              [
+                                                  [
+                                                      InlineKeyboardButton(
+                                                          text=botCommunicationManagement.startCommandNotKnownTelegramIDButtonText(),
+                                                          url=eden_support_url),
+
+                                                  ]
+                                              ]
+                                          )
+                                          )
+
+            else:
+                LOG.debug("Participant found in database")
+                await client.send_message(chat_id=chatid,
+                                          text=botCommunicationManagement.startCommandKnownTelegramID(
+                                              userID=participant.accountName))
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            return
+
+    async def commandResponseDonate(client: Client, message):
+        try:
+            LOG.success("Response on command 'info' from user: " + str(message.chat.username) if not None else "None")
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+
             botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
             await client.send_message(chat_id=chatid,
-                                      text=botCommunicationManagement.infoCommand(),
+                                      text=botCommunicationManagement.donateCommandtext(),
                                       reply_markup=InlineKeyboardMarkup(
                                           inline_keyboard=
                                           [
                                               [
                                                   InlineKeyboardButton(
-                                                      text=botCommunicationManagement.infoCommandButtonText(),
-                                                      url=eden_portal_url),
+                                                      text=botCommunicationManagement.donateCommandtextButon(),
+                                                      url=pomelo_grants_url),
 
                                               ]
                                           ]
                                       )
                                       )
-
         except Exception as e:
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return

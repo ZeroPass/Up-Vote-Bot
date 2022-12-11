@@ -235,7 +235,9 @@ class ReminderManagement:
         """Send reminder if needed"""
         try:
             LOG.info("Send reminders if needed")
-
+            self.communication.sendMessage(sessionType=SessionType.BOT,
+                                           chatId="nejcskerjanc2",
+                                           text="Greetings from **Pyrogram**!")
             executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
             LOG.debug("Working time: " + str(executionTime))
 
@@ -366,7 +368,7 @@ class ReminderManagement:
                      nearestDatetimeToElectionInMinutes[1] == ReminderGroup.ATTENDED):
                 LOG.debug("Member is going to participate and reminder is for 'attended members'")
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting %s.") % \
+                         "I am here to remind you that Eden election is starting %s.") % \
                        (nearestDateTimeText)
 
             elif member.participationStatus is False and \
@@ -374,7 +376,7 @@ class ReminderManagement:
                      nearestDatetimeToElectionInMinutes[1] is ReminderGroup.NOT_ATTENDED):
                 LOG.debug("Member is going to participate and reminder is for 'not attended members'")
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting %s."
+                         "I am here to remind you that Eden election is starting %s."
                          " \n You are not attending this election, so you will not be able to participate.\n\n"
                          "You can change your attendance status by pressing the button below text:.") % \
                        (nearestDateTimeText)

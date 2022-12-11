@@ -85,12 +85,12 @@ class TransmissionManagement:
 
             if isAttended:
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting in %s.") % \
+                         "I am here to remind you that Eden election is starting in %s.") % \
                        (nearestDateTimeText)
 
             else:
                 return _("Hey! \n"
-                         "I'am here to remind you that election is starting in %s."
+                         "I am here to remind you that Eden election is starting in %s."
                          " \n You are not attending this election, so you will not be able to participate.\n\n"
                          "You can change your attendance status by pressing the button below text:.") % \
                        (nearestDateTimeText)

@@ -73,7 +73,7 @@ class EdenBot:
         # creat communication object
         LOG.debug("Initialization of telegram bot...")
         self.communication = Communication(database=database)
-        self.communication.start(apiId=telegramApiID,
+        self.communication.startComm(apiId=telegramApiID,
                                  apiHash=telegramApiHash,
                                  botToken=botToken)
 
@@ -165,8 +165,10 @@ class EdenBot:
     def start(self):
         LOG.info("Starting EdenBot")
         try:
+            i = 0
             while True:
                 # sleep time depends on bot mode
+                time.sleep(1)
                 if self.mode == Mode.LIVE:
                     time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode])
 
@@ -235,23 +237,47 @@ def main():
     breakpoint = True
 
 
-def runPyrogramTestMode():
-    comm = Communication()
-    comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
+def runPyrogramTestMode(comm: Communication):
+    #database = Database()
+    #comm = Communication(database=database)
     comm.idle()
+
 
 def mainPyrogramTestMode():
     # multiprocessing
-    pyogram = Process(target=runPyrogramTestMode)
+    database = Database()
+    comm = Communication(database=database)
+    comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
+    comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
+    pyogram = Process(target=runPyrogramTestMode, args=(comm,))
     pyogram.start()
 
-    counter = 0
+    i = 0
     while True:
+        i = i + 1
+        #if i % 3 == 0:
+        if i == 3:
+            comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="test")
         time.sleep(3)
-        counter += 1
-        if counter > 10:
-            pyrogram.
         print("main Thread")
+
+def main1():
+    database = Database()
+    comm = Communication(database=database)
+    comm.start()
+    comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
+
+    #async comm.run()
+    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
+    time.sleep(2)
+    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
+    time.sleep(2)
+    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
+    time.sleep(2)
+    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
+
+
+
 
 if __name__ == "__main__":
     #import requests
@@ -264,7 +290,6 @@ if __name__ == "__main__":
     #    if not r["result"][i]["message"]["from"]["id"] in users:
     #        users.append(r["result"][i]["message"]["from"]["id"])
 
-
-
     main()
+    #main1()
     #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file
