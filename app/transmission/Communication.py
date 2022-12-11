@@ -94,7 +94,7 @@ class Communication:
                 MessageHandler(callback=Communication.commandResponseHelp, filters=filters.private)
             )
 
-            # self._init()
+
             self.startSession(sessionType=SessionType.BOT)
 
             self.sessionBot.set_bot_commands([
@@ -107,14 +107,9 @@ class Communication:
             LOG.exception("Exception: " + str(e))
             raise CommunicationException("Exception: " + str(e))
 
-    def _init(self):
-        @self.sessionBot.on_message(filters=filters.new_chat_members)
-        def log(client, message):
-            print(message)
-
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
-        assert isinstance(chatID, int), "chatID should be int"
+        assert isinstance(chatID, (int,str)), "chatID should be int or str"
         LOG.info("Adding known user: " + str(chatID) + " for bot: " + botName)
         self.knownUserData.setKnownUser(botName=botName, telegramID=chatID, isKnown=True)
         self.updateKnownUserData(botName=botName)
@@ -205,7 +200,7 @@ class Communication:
                 "when SessionType is USER there is no option to send inlineReplyMarkup!"
 
             if sessionType == SessionType.BOT:
-                if isinstance(chatId, None) or \
+                if isinstance(chatId, type(None)) or \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)) is False:
                     LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -287,7 +282,7 @@ class Communication:
                                                                        "method. Previous link will be revoked.")
         LOG.info("Get invitation link for chat: " + str(chatId))
         try:
-            if isinstance(chatId, None) or \
+            if isinstance(chatId, type(None)) or \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
                 LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -311,7 +306,7 @@ class Communication:
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.info("Archiving group: " + str(chatId))
         try:
-            if isinstance(chatId, None) or \
+            if isinstance(chatId, type(None)) or \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
                 LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -343,7 +338,7 @@ class Communication:
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.info("Deleting group: " + str(chatId))
         try:
-            if isinstance(chatId, None) or \
+            if isinstance(chatId, type(None)) or \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
                 LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -367,7 +362,7 @@ class Communication:
 
             knownParticipants = []
             for participant in participants:
-                if isinstance(participant.telegramID, None) == False and \
+                if isinstance(participant.telegramID, type(None)) == False and \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)):
                     knownParticipants.append(participant)
@@ -387,7 +382,7 @@ class Communication:
             LOG.info("Promoting participants to group: " + str(chatId) + " with participants: " + str(participants))
 
             if sessionType == SessionType.BOT:
-                if isinstance(chatId, None) or \
+                if isinstance(chatId, type(None)) or \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)) is False:
                     LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -548,6 +543,10 @@ class Communication:
 
             # reply_markup=inlineReplyMarkup, disable_web_page_preview=disableWebPagePreview
 
+            #add user to known users
+            knownUserData: KnownUserData = KnownUserData(database=database)
+            knownUserData.setKnownUser(botName=telegram_bot_name, telegramID=message.chat.username, isKnown=True)
+
             botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
             telegramID: str = "@" + str(message.chat.username) if message.chat.username is not None else None
             if participant is None:
@@ -616,35 +615,6 @@ class Communication:
     def idle(self):
         idle()
 
-    def setFilters(self):
-        # not in  use
-        LOG.info("Set filters: " + str(filters))
-        client: Client = self.getSession(SessionType.BOT)
-        # client1: Client = self.getSession(SessionType.USER)
-
-        client.add_handler(MessageHandler(callback=Communication.wellcomeProcedure))  # """, filters=filters.text"""
-        # client.run()
-
-        idle()
-
-        ######
-
-        async def welcome(bot, message):
-            LOG.success("New chat member: " + str(message.new_chat_members))
-            chatid = message.chat.id
-            LOG.success(".. in chat: " + str(chatid))
-            await bot.send_message(text=f"Welcome {message.from_user.mention} to {message.chat.username}",
-                                   chat_id=chatid)
-            database: Database = Database()
-
-            # promote only users who supposed to be in this room
-            participants: list[Participant] = database.getUsersInRoom(roomTelegramID=chatid)
-            for participant in participants:
-                if participant.telegramID is not None and \
-                        participant.telegramID == message.chat.username:
-                    LOG.debug("User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
-                    bot.promoteMembers(chatId=chatid, participants=[message.chat.username])
-
 
 def runPyrogram():
     comm = Communication()
@@ -662,16 +632,7 @@ def runPyrogram():
     botName = "@up_vote_demo_bot"
     userID = 1
     # first intecation
-    """comm.sendMessage(sessionType=SessionType.USER, chatId=botName, text="From bot <br/> to user \n with new line"
-                                                                        "and \\n new line")
 
-    gctm = GroupCommunicationTextManagement()
-    buttons: tuple[Button] = gctm.invitationLinkToTheGroupButons(groupLink="https://t.me/+iCrYgZ_rgqxmZGE0")
-
-
-    comm.leaveChat(sessionType=SessionType.USER, chatId=chatID)
-    
-    comm.idle()"""
 
 
 def main():

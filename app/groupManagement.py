@@ -7,7 +7,6 @@ from app.chain import EdenData
 from app.chain.dfuse import Response, ResponseError
 # from app.chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
 from app.debugMode.modeDemo import Mode, ModeDemo
-from app.knownUserManagement import KnownUserData
 from app.log import Log
 from app.constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
     telegram_admins_id, CurrentElectionState, start_video_preview_path, ReminderGroup, \
@@ -325,7 +324,7 @@ class GroupManagement:
             #
 
             LOG.debug("Add participants to the room - communication part related")
-            if self.mode == Mode.LIVE and True: # always add participants to the room - not admins
+            if self.mode == Mode.LIVE or True: # always add participants to the room - not admins
                 self.communication.addChatMembers(chatId=chatID,
                                                   participants=extendedRoom.getMembersTelegramIDsIfKnown())
             else:
@@ -341,7 +340,7 @@ class GroupManagement:
 
             LOG.debug("Promote participants to admin rights")
             # make sure BOT has admin rights
-            if self.mode == Mode.LIVE and True: # always promote participants in the room - not admins
+            if self.mode == Mode.LIVE or True: # always promote participants in the room - not admins
                 self.communication.promoteMembers(sessionType=SessionType.BOT,
                                                   chatId=chatID,
                                                   participants=extendedRoom.getMembersTelegramIDsIfKnown())
@@ -369,10 +368,10 @@ class GroupManagement:
                 LOG.debug(
                     "Invitation link is valid. Send private (bot-user) message to the participants. This invitation"
                     "link is valid until next call of this function! Make sure you handle it properly!")
-                buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
+                buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink, isLastRound=isLastRound)
 
                 # send private message to the participants, in case of test mode to the admins
-                if self.mode == Mode.LIVE and True: # always send invitation link to the participants - not admins
+                if self.mode == Mode.LIVE or True: # always send invitation link to the participants - not admins
                     members = extendedRoom.getMembersTelegramIDsIfKnown()
                 else:
                     # demo mode

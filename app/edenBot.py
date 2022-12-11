@@ -72,7 +72,7 @@ class EdenBot:
 
         # creat communication object
         LOG.debug("Initialization of telegram bot...")
-        self.communication = Communication()
+        self.communication = Communication(database=database)
         self.communication.start(apiId=telegramApiID,
                                  apiHash=telegramApiHash,
                                  botToken=botToken)
@@ -203,18 +203,15 @@ def main():
     dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
     database = Database()
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
-    # (datetime(2022, 7, 9, 11, 55), datetime(2022, 7, 9, 12, 5)),
-    # (datetime(2022, 7, 9, 13, 1), datetime(2022, 7, 9, 13, 5)),
-    #(datetime(2022, 7, 9, 13, 48), datetime(2022, 7, 9, 14, 5)),
-    #(datetime(2022, 7, 9, 14, 51), datetime(2022, 7, 9, 15, 10)),
+
     startEndDatetimeList = [
-        #(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
+        #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        (datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification 24 hours before
-        (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)), # in one hour
+        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification 24 hours before
+        (datetime(2022, 10, 8, 11, 38), datetime(2022, 10, 8, 12, 2)),  # in one hour #TODO chaNGE TO 58
         (datetime(2022, 10, 8, 12, 58), datetime(2022, 10, 8, 13, 4)),  # in few minutes + start
-        (datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)), # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)), # round 1 finished, start round 2
+        (datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
         (datetime(2022, 10, 8, 14, 49), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
         (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
@@ -241,39 +238,27 @@ def main():
 def runPyrogramTestMode():
     comm = Communication()
     comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    # chatID = comm.createSuperGroup(name="test1", description="test1")
-    # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
-
-
-    #comm.sendMessage(sessionType=SessionType.BOT, chatId="nejcSkerjanc2", text="test")
-    #nekdo = comm.userExists(userID="david.gm")
-    ##ne1 = comm.userExists(userID="@Chrismak1")
-    #ne2 = comm.userExists(userID="lukapercic")
-    #kva = 8
     comm.idle()
-
-
 
 def mainPyrogramTestMode():
     # multiprocessing
     pyogram = Process(target=runPyrogramTestMode)
     pyogram.start()
 
+    counter = 0
     while True:
         time.sleep(3)
+        counter += 1
+        if counter > 10:
+            pyrogram.
         print("main Thread")
 
 if __name__ == "__main__":
-    import requests
-
-    token = "5512475717:AAGp0a451eha7X00wVJ4csCC0Mh_U1J1nxk"
-
-    #5512475717:AAGp0a451eha7X00wVJ4csCC0Mh_U1J1nxk
-    params = {"limit": 100,
-              "allowed_updates": ["my_chat_member"]}
-    r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", params=params).json()
-
-    users = []
+    #import requests
+    #token = "tkn"
+    #params = {"limit": 100,
+    #          "allowed_updates": ["my_chat_member"]}
+    #r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", params=params).json()
 
     #for i in range(0, len(r["result"])):
     #    if not r["result"][i]["message"]["from"]["id"] in users:
@@ -281,5 +266,5 @@ if __name__ == "__main__":
 
 
 
-    #main()
-    mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file
+    main()
+    #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

@@ -90,9 +90,15 @@ class GroupCommunicationTextManagement(TextManagement):
     def __init__(self, language: Language = Language.ENGLISH):
         super().__init__(language)
 
-    def invitationLinkToTheGroup(self, round: int) -> str:
+    def invitationLinkToTheGroup(self, round: int, isLastRound: bool = False) -> str:
         assert isinstance(round, int), "round must be an int"
-        return _("Hey," + self.newLine() +
+        assert isinstance(isLastRound, bool), "isLastRound must be a bool"
+        if isLastRound:
+            return _("Hey," + self.newLine() +
+                     "Congratulation for making it this far." + self.newLine() +
+                     "Please join the Eden Chief Delegate group using this link bellow:")
+        else:
+            return _("Hey," + self.newLine() +
                  "Round %d has started." + self.newLine() +
                  "Please join the group using this link bellow:") % (round + 1)
 

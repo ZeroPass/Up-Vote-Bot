@@ -619,7 +619,6 @@ class ReminderManagement:
                                                               chatId=member.telegramID,
                                                               text=text,
                                                               inlineReplyMarkup=replyMarkup)
-                sendResponse = True
 
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
                          + ". Saving to the database under electionID: " + str(election.electionID))
