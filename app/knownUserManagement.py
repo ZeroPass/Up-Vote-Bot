@@ -91,8 +91,6 @@ class KnownUserData:
                              "of performance reasons")
                 self.getKnownUsersOptimizedSave(botName=botName)
             for knownUser in self.knownUsers:
-                print(knownUser.userID.lower())
-                print(telegramID.lower())
                 if knownUser.userID.lower() == telegramID.lower():
                     return knownUser
             return None #return None if not found

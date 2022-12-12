@@ -368,7 +368,7 @@ class GroupManagement:
                 LOG.debug(
                     "Invitation link is valid. Send private (bot-user) message to the participants. This invitation"
                     "link is valid until next call of this function! Make sure you handle it properly!")
-                buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink, isLastRound=isLastRound)
+                buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
 
                 # send private message to the participants, in case of test mode to the admins
                 if self.mode == Mode.LIVE or True: # always send invitation link to the participants - not admins
@@ -382,7 +382,7 @@ class GroupManagement:
                     self.communication.sendMessage(sessionType=SessionType.BOT,
                                                    chatId=item,
                                                    text=gCtextManagement.invitationLinkToTheGroup(
-                                                       round=extendedRoom.round),
+                                                       round=extendedRoom.round, isLastRound=isLastRound),
                                                    inlineReplyMarkup=InlineKeyboardMarkup(
                                                        inline_keyboard=
                                                        [

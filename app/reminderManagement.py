@@ -235,9 +235,6 @@ class ReminderManagement:
         """Send reminder if needed"""
         try:
             LOG.info("Send reminders if needed")
-            self.communication.sendMessage(sessionType=SessionType.BOT,
-                                           chatId="nejcskerjanc2",
-                                           text="Greetings from **Pyrogram**!")
             executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
             LOG.debug("Working time: " + str(executionTime))
 
@@ -522,11 +519,15 @@ class ReminderManagement:
 
 
                 # Save the recod to the database
-                self.database.createOrUpdateReminderSentRecord(reminder=reminder,
+                response = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
                                                                accountName=member.accountName,
                                                                sendStatus=ReminderSendStatus.SEND if sendResponse is True
                                                                else ReminderSendStatus.ERROR,
                                                                cSession=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
+                    self.database.rollbackCcession(session=cSession)
 
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
                          + ". Saving to the database under electionID: " + str(election.electionID))
@@ -554,13 +555,16 @@ class ReminderManagement:
                              + ". Saving to the database under electionID: " + str(election.electionID))"""
 
                 # Save the recod to the database
-                self.database.createOrUpdateReminderSentRecord(reminder=reminder,
+                response: bool  = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
                                                                accountName=member.accountName,
                                                                sendStatus=ReminderSendStatus.SEND if sendResponse is True
                                                                else ReminderSendStatus.ERROR,
                                                                cSession=cSession)
-
-            self.database.commitCcession(session=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
+                    self.database.rollbackCcession(session=cSession)
+            cSession.close()
             return sendResponse
 
         except Exception as e:
@@ -625,10 +629,14 @@ class ReminderManagement:
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
                          + ". Saving to the database under electionID: " + str(election.electionID))
 
-                self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
+                response: bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
                                                                sendStatus=ReminderSendStatus.SEND if sendResponse is True
                                                                else ReminderSendStatus.ERROR,
                                                                cSession=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
+                    self.database.rollbackCcession(session=cSession)
 
             else:
                 # DEMO MODE
@@ -650,12 +658,17 @@ class ReminderManagement:
                     LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
                              + ". Saving to the database under electionID: " + str(election.electionID))"""
 
-                self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
+                response:bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
                                                                    sendStatus=ReminderSendStatus.SEND
                                                                    if sendResponse is True
                                                                    else ReminderSendStatus.ERROR,
                                                                    cSession=cSession)
-            self.database.commitCcession(session=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
+                    self.database.rollbackCcession(session=cSession)
+
+            cSession.close()
             return sendResponse
 
         except Exception as e:

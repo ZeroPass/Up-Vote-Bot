@@ -9,7 +9,7 @@ from app.constants.electionState import ElectionStatusFromKey
 from app.log import *
 from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
-from sqlalchemy import create_engine, func
+from sqlalchemy import create_engine, func, or_
 from sqlalchemy.engine.url import URL
 
 from datetime import datetime, timedelta
@@ -69,9 +69,9 @@ class Database(metaclass=Singleton):
             #self._session = scoped_session(sessionmaker(bind=self._engine, expire_on_commit=False))
             LOG.debug("Database initialized")
             connection = self._engine.connect()
-            self.SessionMaker = sessionmaker(bind=connection)
+            #self.SessionMaker = sessionmaker(bind=connection)
             #self.session = self.SessionMaker(autoflush=True)
-            self.session = scoped_session(self.SessionMaker)
+            #self.session = scoped_session(self.SessionMaker)
             LOG.debug("Database initialized")
 
             # create tables if not exists
@@ -93,7 +93,19 @@ class Database(metaclass=Singleton):
         try:
             connection = self._engine.connect()
             self.SessionMaker = sessionmaker(bind=connection, expire_on_commit=expireOnCommit)
+            #sessionMaker = sessionmaker(bind=self._conn, expire_on_commit=expireOnCommit)
             csession = scoped_session(self.SessionMaker)
+            return csession
+        except Exception as e:
+            LOG.exception(message="Problem occurred when creating session: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when creating session: " + str(e))
+    def createCsesionNotScoped(self, expireOnCommit: bool = True) ->scoped_session:
+        try:
+            #connection = self._engine.connect()
+            csessionMaker = sessionmaker(bind=self._conn, expire_on_commit=expireOnCommit)
+            csession = csessionMaker(autoflush=True)
+            #sessionMaker = sessionmaker(bind=connection, expire_on_commit=expireOnCommit)
+            #csession = scoped_session(sessionMaker)
             return csession
         except Exception as e:
             LOG.exception(message="Problem occurred when creating session: " + str(e))
@@ -102,6 +114,14 @@ class Database(metaclass=Singleton):
     def commitCcession(self, session: scoped_session):
         try:
             session.commit()
+        except Exception as e:
+            session.rollback()
+            LOG.exception(message="Problem occurred when commiting session: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when commiting session: " + str(e))
+
+    def rollbackCcession(self, session: scoped_session):
+        try:
+            session.rollback()
         except Exception as e:
             session.rollback()
             LOG.exception(message="Problem occurred when commiting session: " + str(e))
@@ -276,7 +296,7 @@ class Database(metaclass=Singleton):
         assert isinstance(accountName, str)
         assert isinstance(sendStatus, ReminderSendStatus)
         try:
-            session = self.session if cSession is None else cSession
+            session = cSession
             # get election
             reminderSentRecordFromDB = (
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
@@ -298,14 +318,12 @@ class Database(metaclass=Singleton):
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
                                                    ReminderSent.reminderID == reminder.reminderID) \
                                            .update({ReminderSent.sendStatus: sendStatus.value})
-            #if cSession is None:
-            #    session.close()
+                return True
         except Exception as e:
-            session.rollback()
-            if cSession is not None:
-                session.close()
+            #session.rollback()
+            return False
             LOG.exception(message="Problem occurred when creating reminder sent record: " + str(e))
-            raise DatabaseExceptionConnection("Problem occurred when creating reminder sent record: " + str(e))
+            #raise DatabaseExceptionConnection("Problem occurred when creating reminder sent record: " + str(e))
 
     def getParticipantsWithoutReminderSentRecord(self, reminder: Reminder) -> list[tuple[str, str, bool]]:
         # returns list of tuples (accountName, telegramID, isVoter)
@@ -467,8 +485,17 @@ class Database(metaclass=Singleton):
     def getParticipantByTelegramID(self, telegramID: str) -> Participant:
         assert isinstance(telegramID, str), "telegramID is not a string"
         try:
-            session = self.createCsesion()
-            participant = session.query(Participant).filter(func.lower(Participant.telegramID) == telegramID.lower).first()
+            if telegramID[0] == "@":
+                telegramIDwithAfna = telegramID
+                telegramID = telegramID[1:]
+            else:
+                telegramIDwithAfna = "@" + telegramID
+                telegramID = telegramID
+
+            session = self.createCsesionNotScoped()
+            participant = session.query(Participant).filter(or_(func.lower(Participant.telegramID) == telegramIDwithAfna.lower(),
+                                                                func.lower(Participant.telegramID) == telegramID.lower()
+                                                                )).first()
             session.close()
             return participant
         except Exception as e:
@@ -556,7 +583,7 @@ class Database(metaclass=Singleton):
             session.close()
             return room
         except Exception as e:
-            session = self.createCsesion()
+            session.close()
             LOG.exception(message="Problem occurred when getting room: " + str(e))
             return None
 
@@ -688,9 +715,10 @@ class Database(metaclass=Singleton):
                        Room.round == round,
                        Room.roomIndex != -1,
                        Room.roomTelegramID != None).count()
-            session = self.createCsesion()
+            session.close()
             return True if numberOfRooms == numRooms else False
         except Exception as e:
+            session.close()
             LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
             return None
 
@@ -708,11 +736,11 @@ class Database(metaclass=Singleton):
                 return None
             else:
                 LOG.debug("Election found.")
-                session = self.createCsesion()
+                session.close()
                 return electionFromDB
 
         except Exception as e:
-            session = self.createCsesion()
+            session.close()
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
 
     def setMemberWithElectionIDAndWithRoomID(self, election: Election, room: Room,
@@ -923,12 +951,28 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting reminder sent record: " + str(e))
             return None
 
-    def getUsersInRoom(self, roomTelegramID: int) -> list[Participant]:
-        assert isinstance(roomTelegramID, int), "roomTelegramID must be int"
+    def getUsersInRoom(self, roomTelegramID: str) -> list[Participant]:
+        assert isinstance(roomTelegramID, str), "roomTelegramID must be str"
         try:
             session = self.createCsesion()
 
-            roomIDs = session.query(Room.roomID).filter(Room.roomTelegramID == roomTelegramID).all()
+            if roomTelegramID[0] == "@":
+                roomTelegramIDwithAfna = roomTelegramID
+                roomTelegramID = roomTelegramID[1:]
+            else:
+                roomTelegramIDwithAfna = "@" + roomTelegramID
+                roomTelegramID = roomTelegramID
+
+            session = self.createCsesion()
+            participant = session.query(Participant).filter(
+                or_(func.lower(Participant.telegramID) == roomTelegramIDwithAfna.lower(),
+                    func.lower(Participant.telegramID) == roomTelegramID.lower()
+                    )).first()
+
+
+            roomIDs = session.query(Room.roomID).filter(or_(Room.roomTelegramID == str(roomTelegramID),
+                                                              Room.roomTelegramID == str(roomTelegramIDwithAfna)
+                                                            )).all()
             roomIDs = [i[0] for i in roomIDs]
 
             cs = (session.query(Participant)

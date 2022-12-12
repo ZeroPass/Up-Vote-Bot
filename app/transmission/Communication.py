@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 from pyrogram.errors import FloodWait, PeerIdInvalid
+from pyrogram.filters import new_chat_members
 from pyrogram.handlers import MessageHandler
+from pyrogram.methods.decorators import on_chat_member_updated
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand
 
 from app.constants.parameters import *
@@ -45,7 +47,7 @@ class CommunicationException(Exception):
 
 LOG = Log(className="Communication")
 
-
+DATABASE_CONST = None
 class Communication(): #threading.Thread
     # sessions = {}
     sessionUser: Client = None
@@ -58,6 +60,8 @@ class Communication(): #threading.Thread
         assert isinstance(database, Database), "Database should be Database"
         LOG.info("Init communication")
         self.database = database
+        global DATABASE_CONST
+        DATABASE_CONST = database
         self.knownUserData: KnownUserData = KnownUserData(database=database)
         #threading.Thread.__init__(self, daemon=True)
 
@@ -70,7 +74,7 @@ class Communication(): #threading.Thread
         assert isinstance(botToken, str), "BotToken should be str"
         LOG.debug("Starting communication sessions..")
         try:
-            self.startCommAsyncSession(apiId=apiId, apiHash=apiHash, botToken=botToken)
+            #self.startCommAsyncSession(apiId=apiId, apiHash=apiHash, botToken=botToken)
 
             LOG.debug("... user session")
             self.setSession(sessionType=SessionType.USER,
@@ -109,7 +113,8 @@ class Communication(): #threading.Thread
             self.sessionBot.set_bot_commands([
                 BotCommand("start", "Register with the bot"),
                 BotCommand("status", "Check if the Up Vote Bot is running"),
-                BotCommand("donate", "Support the development of Up Vote Bot features")])
+                BotCommand("donate", "Support the development of Up Vote Bot features"),
+                BotCommand("admin", "Promote yourself to admin in groups created by Up Vote Bot")])
 
             self.isInitialized = True
             LOG.debug("... done!")
@@ -122,37 +127,60 @@ class Communication(): #threading.Thread
         #self.startSession(sessionType=SessionType.BOT_THREAD)
         self.pyrogram = Process(target=self.startSessionAsync, args=(apiId, apiHash, botToken))
         self.pyrogram.start()
+        self.pyrogram.pid
+        #asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
+        #task1 = asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
+        kva = 8
 
     def startSessionAsync(self, apiId: int, apiHash: str, botToken: str):
         self.setSession(sessionType=SessionType.BOT_THREAD,
-                        client=Client(name=communication_session_name_async_bot,
+                        client=Client(name=communication_session_name_async_bot + "1",
                                       api_id=apiId,
                                       api_hash=apiHash,
                                       bot_token=botToken))
 
+        #self.setSession(sessionType=SessionType.USER,
+        #                client=Client(name=communication_session_name_user+"1",
+        #                              api_id=apiId,
+        #                              api_hash=apiHash))
+
+
         self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.wellcomeProcedure, filters=filters.new_chat_members))
+            MessageHandler(callback=Communication.wellcomeProcedure,
+                           filters=on_chat_member_updated),
+                           group=6)
+
+        #self.startSession(sessionType=SessionType.USER)
+
+        #self.sessionBotThread.add_handler(
+        #    MessageHandler(callback=Communication.wellcomeProcedure1, filters=filters.text))
 
         self.sessionBotThread.add_handler(
             MessageHandler(callback=Communication.commandResponseStart,
-                           filters=filters.command(commands=["start"]) & filters.private)
+                           filters=filters.command(commands=["start"]) & filters.private), group=5
         )
 
         self.sessionBotThread.add_handler(
             MessageHandler(callback=Communication.commandResponseStatus,
-                           filters=filters.command(commands=["status"]) & filters.private)
+                           filters=filters.command(commands=["status"]) & filters.private), group=5
         )
 
         self.sessionBotThread.add_handler(
             MessageHandler(callback=Communication.commandResponseDonate,
-                           filters=filters.command(commands=["donate"]) & filters.private)
+                           filters=filters.command(commands=["donate"]) & filters.private), group=5
+        )
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=Communication.commandResponseAdmin,
+                           filters=filters.command(commands=["admin"])), group=9
         )
 
         #self.startSession(sessionType=SessionType.BOT_THREAD)
         self.sessionBotThread.start()
-
-        #self.sessionBotThread.send_message("nejcskerjanc2", "Greetings from **Pyrogram**!")
+        #self.sessionBotThread.
         idle()
+
+        #idle()
 
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
@@ -206,7 +234,7 @@ class Communication(): #threading.Thread
             assert isinstance(caption, (str, type(None))), "Caption should be str or None"
             LOG.info("Sending photo to: " + str(chatId))
 
-            if isinstance(chatId, None) or \
+            if isinstance(chatId, type(None)) or \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
                 LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -413,7 +441,7 @@ class Communication(): #threading.Thread
 
             knownParticipants = []
             for participant in participants:
-                if isinstance(participant.telegramID, type(None)) == False and \
+                if isinstance(participant, type(None)) == False and \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)):
                     knownParticipants.append(participant)
@@ -521,12 +549,121 @@ class Communication(): #threading.Thread
     # Filters management
     #
 
+    async def wellcomeProcedure1(client: Client, message):
+        try:
+            LOG.success("New chat member: " + str(message.from_user.username))
+            member = message.from_user.username
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+            response = await client.promote_chat_member(chat_id=chatid,
+                                             user_id=member,
+                                             privileges=ChatPrivileges(
+                                                 can_manage_chat=True,
+                                                 can_delete_messages=True,
+                                                 can_manage_video_chats=True,
+                                                 can_restrict_members=True,
+                                                 can_promote_members=True,
+                                                 can_change_info=True,
+                                                 can_invite_users=True,
+                                                 can_pin_messages=True,
+                                                 is_anonymous=False
+                                             ))
+            LOG.success("Response: " + str(response))
+            LOG.success(
+                "Promoting  user to admin successfully done!")
+        except Exception as e:
+            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
+            return True
+
     async def wellcomeProcedure(client: Client, message):
+
+        if message.new_chat_members is None or len(message.new_chat_members) == 0 or message.chat.type.name != "SUPERGROUP":
+            return
+        target = message.new_chat_members[0]
+
+        LOG.success("New chat member: " + str(message.new_chat_members))
+        chatid = message.chat.id
+
+        ##############################
+        newMember = target
+        if isinstance(newMember, types.User):
+            LOG.success("Wellcome message to user: " + str(newMember.id))
+            if newMember.is_bot:
+                LOG.debug("...is bot. Do nothing")
+                return
+            result = await client.promote_chat_member(chat_id=chatid,
+                                                      user_id=newMember.username,
+                                                      privileges=ChatPrivileges(
+                                                          can_manage_chat=True,
+                                                          can_delete_messages=True,
+                                                          can_manage_video_chats=True,
+                                                          can_restrict_members=True,
+                                                          can_promote_members=True,
+                                                          can_change_info=True,
+                                                          can_invite_users=True,
+                                                          can_pin_messages=True,
+                                                          is_anonymous=False
+                                                      ))
+            LOG.success("Response (promote_chat_member): " + str(result))
+            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+            result1 = await client.send_message(chat_id=chatid,
+                                                text=wellcomeMessageObject.getWellcomeMessage(
+                                                    participantAccountName=str(newMember.username)
+                                                ))
+
+            LOG.success("Response (send_message): " + str(result1))
+
+
+    async def wellcomeProcedureOld(client: Client, message):
         try:
             LOG.success("New chat member: " + str(message.new_chat_members))
             chatid = message.chat.id
+
+            ##############################
+            for newMember in message.new_chat_members:
+                if isinstance(newMember, types.User):
+                    LOG.success("Wellcome message to user: " + str(newMember.id))
+                    LOG.debug(
+                        "... with username: " + str(newMember.username) if newMember.username is not None else "None")
+                    LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
+                    LOG.debug(
+                        "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
+
+                    # if new member is a bot do nothing
+                    if newMember.is_bot:
+                        LOG.debug("...is bot. Do nothing")
+                        continue
+                    result = await client.promote_chat_member(chat_id=chatid,
+                                                              user_id=newMember.username,
+                                                              privileges=ChatPrivileges(
+                                                                  can_manage_chat=True,
+                                                                  can_delete_messages=True,
+                                                                  can_manage_video_chats=True,
+                                                                  can_restrict_members=True,
+                                                                  can_promote_members=True,
+                                                                  can_change_info=True,
+                                                                  can_invite_users=True,
+                                                                  can_pin_messages=True,
+                                                                  is_anonymous=False
+                                                              ))
+                    LOG.success("Response (promote_chat_member): " + str(result))
+                    wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+                    result1 = await client.send_message(chat_id=chatid,
+                                            text=wellcomeMessageObject.getWellcomeMessage(
+                                                participantAccountName=str(newMember.username)
+                                            ))
+
+                    LOG.success("Response (send_message): " + str(result1))
+
+            ####################
+            return
+
+
             LOG.success(".. in chat: " + str(chatid))
-            database: Database = Database()
+            #database: Database = Database()
+            database: Database = DATABASE_CONST
             for newMember in message.new_chat_members:
                 if isinstance(newMember, types.User):
                     LOG.success("Wellcome message to user: " + str(newMember.id))
@@ -541,24 +678,31 @@ class Communication(): #threading.Thread
                         LOG.debug("...is bot. Do nothing")
                         continue
 
+
+
                     # promote only users who supposed to be in this room
-                    participants: list[Participant] = database.getUsersInRoom(roomTelegramID=chatid)
+                    participants: list[Participant] = database.getUsersInRoom(roomTelegramID=str(chatid))
+                    #participants: list[Participant] = [Participant(telegramID="123456789", username="testuser")]
                     if participants is None:
                         LOG.error("WellcomeProcedure; No participants in this room or room not found")
                         return
                     for participant in participants:
-                        if participant.telegramID is not None and participant.telegramID == newMember.username:
+                        if participant.telegramID is None:
+                            LOG.error("WellcomeProcedure; Participant telegramID is None")
+                            continue
+
+                        if participant.telegramID[0] == "@":
+                            participant.telegramID = participant.telegramID[1:]
+
+                        if newMember.username[0] == "@":
+                            newMember.username = newMember.username[1:]
+
+                        if participant.telegramID.lower() == newMember.username.lower():
                             LOG.debug(
                                 "User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
 
-                            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
 
-                            await client.send_message(chat_id=chatid,
-                                                      text=wellcomeMessageObject.getWellcomeMessage(
-                                                          participantAccountName=str(participant.accountName)
-                                                      ))
-
-                            await client.promote_chat_member(chat_id=chatid,
+                            result = await client.promote_chat_member(chat_id=chatid,
                                                              user_id=newMember.username,
                                                              privileges=ChatPrivileges(
                                                                  can_manage_chat=True,
@@ -571,6 +715,17 @@ class Communication(): #threading.Thread
                                                                  can_pin_messages=True,
                                                                  is_anonymous=False
                                                              ))
+                            LOG.success("Response (promote_chat_member): " + str(result))
+                            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+                            result1 = await client.send_message(chat_id=chatid,
+                                                      text=wellcomeMessageObject.getWellcomeMessage(
+                                                          participantAccountName=str(participant.accountName)
+                                                      ))
+
+                            LOG.success("Response (send_message): " + str(result1))
+
+
                             LOG.success(
                                 "Promoting  user " + str(participant.telegramID) + " to admin successfully done!")
                             break
@@ -586,7 +741,7 @@ class Communication(): #threading.Thread
             chatid = message.chat.id
             LOG.success(".. in chat: " + str(chatid))
 
-            database: Database = Database()
+            database: Database = DATABASE_CONST
             if isinstance(message.chat.username, str):
                 LOG.debug("Username exists: " + str(message.chat.username))
 
@@ -697,6 +852,42 @@ class Communication(): #threading.Thread
                                           ]
                                       )
                                       )
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            return
+
+
+    async def commandResponseAdmin(client: Client, message):
+        try:
+
+            LOG.success("Response on command 'Admin' from user: " + str(message.from_user.username) if not None else "None")
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+
+            # if new member is a bot do nothing
+            if message.from_user.is_bot:
+                LOG.debug("...is bot. Do nothing")
+                return
+            result = await client.promote_chat_member(chat_id=chatid,
+                                                      user_id=message.from_user.username,
+                                                      privileges=ChatPrivileges(
+                                                          can_manage_chat=True,
+                                                          can_delete_messages=True,
+                                                          can_manage_video_chats=True,
+                                                          can_restrict_members=True,
+                                                          can_promote_members=True,
+                                                          can_change_info=True,
+                                                          can_invite_users=True,
+                                                          can_pin_messages=True,
+                                                          is_anonymous=False
+                                                      ))
+            LOG.success("Response (promote_chat_member): " + str(result))
+            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+            result1 = await client.send_message(chat_id=chatid,
+                                                text=wellcomeMessageObject.getWellcomeMessage(
+                                                    participantAccountName=str(message.from_user.username)
+                                                ))
         except Exception as e:
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return
