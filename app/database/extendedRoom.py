@@ -1,24 +1,44 @@
+from datetime import datetime
+
 from app.database.room import Room
 from app.database.extendedParticipant import ExtendedParticipant
 
 
 class ExtendedRoom(Room):
-    def __init__(self, electionID: int, round: int, roomIndex: int, roomNameShort: str, roomNameLong: str,
-                 members: list[ExtendedParticipant] = None, roomID: int = None, roomTelegramID: str = None, ):
+    def __init__(self,
+                 electionID: int,
+                 round: int,
+                 roomIndex: int,
+                 roomNameShort: str,
+                 roomNameLong: str,
+                 isPredisposed: bool,
+                 predisposedBy: str,
+                 members: list[ExtendedParticipant] = None,
+                 roomID: int = None,
+                 predisposedDateTime: datetime = None,
+                 roomTelegramID: str = None,
+                 shareLink: str = None):
             assert isinstance(electionID, int), "electionID must be int"
             assert isinstance(roomNameShort, str), "roomNameShort must be str"
             assert isinstance(roomNameLong, str), "roomNameLong must be str"
+            assert isinstance(isPredisposed, bool), "isPredisposed must be int"
+            assert isinstance(predisposedBy, str), "predisposedBy must be str"
             assert isinstance(round, int), "round must be int"
             assert isinstance(roomIndex, int), "roomIndex must be int"
+            assert isinstance(predisposedDateTime, (datetime, type(None))), "predisposedDateTime should be datetime or None"
             assert isinstance(roomTelegramID, (str, type(None))), "roomTelegramID must be int or None"
             assert isinstance(roomID, (int, type(None))), "roomID must be int or None"
             assert isinstance(members, (list, type(None))), "members must be list"
+            assert isinstance(shareLink, str), "shareLink must be str"
 
             super().__init__(electionID=electionID,
                              round=round,
                              roomIndex=roomIndex,
                              roomNameShort=roomNameShort,
                              roomNameLong=roomNameLong,
+                             isPredisposed=isPredisposed,
+                             predisposedBy=predisposedBy,
+                             predisposedDateTime=predisposedDateTime,
                              roomID=roomID,
                              roomTelegramID=roomTelegramID)
             if members is None:
@@ -36,8 +56,12 @@ class ExtendedRoom(Room):
                    roomIndex=room.roomIndex,
                    roomNameShort=room.roomNameShort,
                    roomNameLong=room.roomNameLong,
+                   isPredisposed=room.isPredisposed,
+                   predisposedBy=room.predisposedBy,
                    roomID=room.roomID,
-                   roomTelegramID=room.roomTelegramID)
+                   predisposedDateTime=room.predisposedDateTime,
+                   roomTelegramID=room.roomTelegramID,
+                   shareLink=room.shareLink)
 
     def addMember(self, member: ExtendedParticipant):
         assert isinstance(member, ExtendedParticipant), "member must be an ExtendedParticipant"

@@ -23,15 +23,15 @@ class EdenData:
     # dfusConnection and database should be initialized at the beginning of the program - because of the threading
     dfuseConnection: DfuseConnection
 
-    def __init__(self, dfuseConnection: DfuseConnection, database: Database):
+    def __init__(self, dfuseConnection: DfuseConnection):
         LOG.info("Initialization of EdenChain")
         assert isinstance(dfuseConnection, DfuseConnection), "dfuseConnection is not of type DfuseConnection"
-        assert isinstance(database, Database), "database is not of type Database"
+        #assert isinstance(database, Database), "database is not of type Database"
         self.dfuseConnection = dfuseConnection
 
         # update api key
-        self.updateDfuseApiKey(database=database)
-        schedule.every(1000).minutes.do(self.updateDfuseApiKey, database=database)# TODO; repair this, excpetion on call
+        self.updateDfuseApiKey(database=dfuseConnection.database)
+        schedule.every(1000).minutes.do(self.updateDfuseApiKey, database=dfuseConnection.database)# TODO; repair this, excpetion on call
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -228,7 +228,7 @@ def main():
     print("Hello World!")
     dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
     database = Database()
-    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
+    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     test = edenData.getVotes(height=272119950 + 100)
     kva = test.data

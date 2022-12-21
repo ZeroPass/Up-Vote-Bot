@@ -9,7 +9,7 @@ from app.constants.electionState import ElectionStatusFromKey
 from app.log import *
 from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
-from sqlalchemy import create_engine, func, or_
+from sqlalchemy import create_engine, func, or_, nullslast
 from sqlalchemy.engine.url import URL
 
 from datetime import datetime, timedelta
@@ -152,6 +152,10 @@ class Database(metaclass=Singleton):
                     ElectionStatus(electionStatusID=8, status=CurrentElectionState.CURRENT_ELECTION_STATE_SEEDING_V1))
                 session.add(ElectionStatus(electionStatusID=9,
                                            status=CurrentElectionState.CURRENT_ELECTION_STATE_INIT_VOTERS_V1))
+
+                #this state is not from contract - is created to store rooms, that are waiting for new election
+                session.add(ElectionStatus(electionStatusID=10,
+                                           status=CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS))
                 session.commit()
                 session.close()
         except Exception as e:
@@ -159,6 +163,31 @@ class Database(metaclass=Singleton):
             session.close()
             LOG.exception(message="Problem occurred when filling election statuses: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when filling election statuses: " + str(e))
+
+    def createElectionForFreeRoomsIfNotExists(self) -> bool:
+        try:
+            LOG.debug("Calling createElectionForFreeRoomsIfNotExists")
+            LOG.info("Check if election exists in database")
+
+            if self.getLastElection(freeRoomElection=True):
+                LOG.debug("Election exists. Do nothing")
+                return True
+
+            electionStatusIDfromDB: ElectionStatus = \
+                self.getElectionStatus(CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS)
+            if electionStatusIDfromDB is None:
+                raise DatabaseException(message="database.createElectionForFreeRooms; election status is None")
+
+            election: Election = Election(date=datetime(2000, 1, 1), status=electionStatusIDfromDB)
+            createdElection: Election = self.setElection(election=election)
+
+            if createdElection is None:
+                raise DatabaseException(message="database.createElectionForFreeRooms; election for free room not created!")
+            LOG.debug("Election for free rooms created")
+            return True
+        except Exception as e:
+            LOG.exception(message="Problem occurred when createElectionForFreeRooms is called: " + str(e))
+            return False
 
     def writeToken(self, name: str, value: str, expireBy: datetime):
         try:
@@ -231,6 +260,7 @@ class Database(metaclass=Singleton):
             session.close()
             LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
             return True
+
 
     def getElectionStatus(self, currentElectionState: CurrentElectionState) -> ElectionStatus:
         try:
@@ -570,7 +600,31 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting rooms: " + str(e))
             return None
 
-    def getRoomPreelection(self, election: Election) -> Room:
+    def getRoomsPreelection(self, election: Election, predisposedBy: str) -> list[Room]:
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(predisposedBy, str), "prediposedBy must be type of int"
+        try:
+            session = self.createCsesion()
+            rooms = session.query(Room) \
+                .order_by(Room.predisposedDateTime.desc()) \
+                .filter(Room.electionID == election.electionID,
+                        Room.predisposedBy == predisposedBy,
+                        Room.predisposedDateTime is not None).all()
+            if rooms is None:
+                LOG.debug("Pre-election room for election " + str(election.electionID) + " not found")
+            elif len(rooms) == 0:
+                LOG.debug("Pre-election room for election " + str(election.electionID) + " found, but empty")
+                rooms = None
+            else:
+                LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
+            session.close()
+            return rooms
+        except Exception as e:
+            session.close()
+            LOG.exception(message="Problem occurred when getting room: " + str(e))
+            return None
+
+    def getRoomWithAllUsersBeforeElection(self, election: Election) -> Room:
         assert isinstance(election, Election)
         try:
             session = self.createCsesion()
@@ -617,6 +671,31 @@ class Database(metaclass=Singleton):
             session.close()
             LOG.exception(message="Problem occurred when creating rooms: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating rooms: " + str(e))
+
+    def updatePreCreatedRooms(self, listOfRooms: list[ExtendedRoom]) -> list[Room]:
+        assert isinstance(listOfRooms, list), "listOfRooms is not a list"
+        try:
+            LOG.debug("Updating pre-created rooms; return updated list")
+            session = self.createCsesion(expireOnCommit=False)
+            for room in listOfRooms:
+                # iterate over all rooms to detect if they already exist
+                assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
+                session.query(Room).filter(Room.roomID == room.roomID) \
+                    .update({Room.electionID: room.electionID,
+                             Room.roomIndex: room.roomIndex,
+                             Room.roomNameLong: room.roomNameLong,
+                             Room.roomNameShort: room.roomNameShort
+                             })
+
+            session.commit()
+            session.close()
+            return listOfRooms
+
+        except Exception as e:
+            session.rollback()
+            session.close()
+            LOG.exception(message="Problem occurred when updating pre-created room: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when updating pre-created rooms: " + str(e))
 
     def updateRoomTelegramID(self, room: ExtendedRoom) -> bool:
         assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
@@ -704,9 +783,10 @@ class Database(metaclass=Singleton):
             session.rollback()
             session.close()
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
+            return None
 
     def electionGroupsCreated(self, election: Election, round: int, numRooms: int) -> bool:
-        # is group created for this election and round?
+        # are groups created for election and round?
         try:
             session = self.createCsesion()
 
@@ -722,18 +802,53 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
             return None
 
-    def getLastElection(self) -> Election:
+    def isGroupCreated(self, election: Election, round: int, roomIndex: int) -> bool:
+        # is groups created for election and specific round + roomIndex ?
         try:
-            LOG.debug("Getting last election")
             session = self.createCsesion()
+
+            numberOfRooms: int = session.query(Room). \
+                filter(Room.electionID == election.electionID,
+                       Room.round == round,
+                       Room.roomIndex == roomIndex).count()
+            session.close()
+            return True if numberOfRooms > 1 else False
+        except Exception as e:
+            session.close()
+            LOG.exception(message="Problem occurred when getting information if group were created: " + str(e))
+            return None
+
+    def getLastElection(self, freeRoomElection: bool = False) -> Election:
+        try:
+            assert isinstance(freeRoomElection, bool), "freeRoomElection is not a bool"
+            LOG.debug("Getting last election...")
+            session = self.createCsesion()
+            # get election status
+
             # get election
-            electionFromDB = (
-                session.query(Election).order_by(Election.date.desc()).first()
-            )
+            if freeRoomElection:
+                LOG.debug("... that stores free rooms")
+                electionFromDB = (
+                    session.query(Election)
+                    .join(ElectionStatus, ElectionStatus.electionStatusID == Election.status)
+                    .order_by(Election.date.desc())
+                    .filter(ElectionStatus.status == CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS.value)
+                    .first()
+                )
+            else:
+                LOG.debug("...that is real")
+                electionFromDB = (
+                    session.query(Election)
+                    .join(ElectionStatus, ElectionStatus.electionStatusID == Election.status)
+                    .order_by(Election.date.desc())
+                    .filter(ElectionStatus.status != CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS.value)
+                    .first()
+                )
+
+
             if electionFromDB is None:
-                LOG.debug("Election not found")
-                session.close()
-                return None
+                raise DatabaseException("Election not found")
+
             else:
                 LOG.debug("Election found.")
                 session.close()
@@ -742,6 +857,7 @@ class Database(metaclass=Singleton):
         except Exception as e:
             session.close()
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
+            return None
 
     def setMemberWithElectionIDAndWithRoomID(self, election: Election, room: Room,
                                              participants: list[Participant]):
@@ -1031,9 +1147,6 @@ class Database(metaclass=Singleton):
             cs = (
                 session.query(Abi).filter(Abi.accountName == accountName).first()
             )
-            if cs is None:
-                session.close()
-                return None
             session.close()
             return cs
         except Exception as e:
@@ -1071,7 +1184,7 @@ def main():
     list: list[ExtendedParticipant] = []
 
 
-    room1 = Room(
+    """room1 = Room(
         electionID=1,
         round=7,
         roomIndex=3,
@@ -1126,7 +1239,7 @@ def main():
         roomNameLong="longlong1",
         roomNameShort="shortshort1",
         # roomID=1
-    ))
+    ))"""
     #kvaje1 = database.createRooms(listOfRooms=list1)
 
     # kvaje = database.delegateParticipantsToTheRoom(extendedParticipantsList=list)
@@ -1139,14 +1252,15 @@ def main():
                                                  roomID=2,
                                                  participantName="Sebastian Beyer"),
                                       sendStatus=1)"""
+    #database.createElectionForFreeRoomsIfNotExists()
 
-    kva = database.getKnownUsers(botName="@edenBotTestBot")
-    kva1 = database.getKnownUsers(botName="@edenBotTestBot3")
-    kva3 = database.getKnownUser(botName="@edenBotTestBot", telegramID="4523523523")
-    kva4 = database.getKnownUser(botName="@edenBotTestBot", telegramID="nejcsKerjanc3")
-    kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=False)
-    kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=True)
-    neki = 8
+    #kva = database.getKnownUsers(botName="@edenBotTestBot")
+    #kva1 = database.getKnownUsers(botName="@edenBotTestBot3")
+    #kva3 = database.getKnownUser(botName="@edenBotTestBot", telegramID="4523523523")
+    #kva4 = database.getKnownUser(botName="@edenBotTestBot", telegramID="nejcsKerjanc3")
+    #kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=False)
+    #kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=True)
+    #neki = 8
 
     #election: Election = Election(electionID=4,
     ##                              status=ElectionStatus(electionStatusID=7,
@@ -1155,8 +1269,14 @@ def main():
     #                              )
 
     #reminder: Reminder = Reminder(reminderID=224, electionID=4, dateTimeBefore=datetime.now(), round=0)
+    database.fillElectionStatuses()
+    electionStatusIDfromDB: ElectionStatus = \
+        database.getElectionStatus(CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS)
 
 
+    kva = database.getRoomsPreelection(predisposedBy="nejc", election=Election(electionID=10,
+                                                                               date=datetime(2022, 10, 5, 12, 58),
+                                                                               status=electionStatusIDfromDB))
 
     # database.getMembers(election=election)
     roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)

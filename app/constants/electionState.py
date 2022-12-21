@@ -13,6 +13,10 @@ class CurrentElectionState(enum.Enum):
     CURRENT_ELECTION_STATE_SEEDING_V1 = 'current_election_state_seeding_v1'
     CURRENT_ELECTION_STATE_INIT_VOTERS_V1 = 'current_election_state_init_voters_v1'
 
+    # next state is not form contract - it is here to store on database rooms that
+    # are waiting to be used when election is live
+    CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS = 'current_election_state_custom_free_groups'
+
 
 def ElectionStatusFromKey(value: str) -> CurrentElectionState:
     assert isinstance(value, str), "value must be a string"

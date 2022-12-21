@@ -76,11 +76,13 @@ class ResponseError(Response):
 class DfuseConnection:
     dfuseToken: str = None
 
-    def __init__(self, dfuseApiKey: str):
+    def __init__(self, dfuseApiKey: str, database: Database1):
+        assert isinstance(database, Database1), "database must be type of Database"
         if len(dfuseApiKey) == 0:
             LOG.exception("API key is null")
             raise DfuseError("API key is null")
         self.apiKeyParam = dfuseApiKey
+        self.database = database
 
         # initialize counter
         self.counter = Counter()
@@ -163,8 +165,7 @@ class DfuseConnection:
             abiHex = json.loads(result.text)
             if result.status_code == 200:
                 LOG.success("Status code:200")
-                database = Database1()
-                database.saveOrUpdateAbi(account, abiHex['abi'])
+                self.database.saveOrUpdateAbi(account, abiHex['abi'])
                 return ResponseSuccessful(abiHex['abi'])
             else:
                 LOG.error("Status code: " + str(result.status_code) + " Error: " + result.get("message") + " " +
@@ -184,10 +185,9 @@ class DfuseConnection:
                 raise DfuseError("parseHexWithAbi; Hex value is not valid")
 
             abiHex = None
-            database = Database1()
-            abi = database.getABI(accountName=account)
+            abi = self.database.getABI(accountName=account)
             if (abi is not None):
-                LOG.info("ABI exists for account: " + account)
+                LOG.debug("ABI exists for account: " + account)
                 abiObj: hex = abi.contract
                 if (len(abiObj) == 0):
                     raise ResponseException("Could not get ABi from db: " + abiObj.error)

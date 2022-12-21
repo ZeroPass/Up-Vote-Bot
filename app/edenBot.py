@@ -49,6 +49,7 @@ class EdenBot:
 
         # fill database with election status data if table is empty
         self.database.fillElectionStatuses()
+        self.database.createElectionForFreeRoomsIfNotExists()
 
         self.mode = mode
         self.modeDemo = modeDemo
@@ -212,21 +213,21 @@ def main():
     print("\nVersion: " + str(sys.version))
     print("\n\n")
     print("------>EdenBot<-------\n\n")
-
-    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
     database = Database()
-    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection, database=database)
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
+
+    edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
         #(datetime(2022, 10, 5, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
-        (datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
-        (datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        (datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        #(datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        #(datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
         (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
 

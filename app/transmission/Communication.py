@@ -139,40 +139,29 @@ class Communication(): #threading.Thread
                                       api_hash=apiHash,
                                       bot_token=botToken))
 
-        #self.setSession(sessionType=SessionType.USER,
-        #                client=Client(name=communication_session_name_user+"1",
-        #                              api_id=apiId,
-        #                              api_hash=apiHash))
-
-
         self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.wellcomeProcedure,
-                           filters=on_chat_member_updated),
-                           group=6)
-
-        #self.startSession(sessionType=SessionType.USER)
-
-        #self.sessionBotThread.add_handler(
-        #    MessageHandler(callback=Communication.wellcomeProcedure1, filters=filters.text))
-
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.commandResponseStart,
-                           filters=filters.command(commands=["start"]) & filters.private), group=5
+            MessageHandler(callback=self.wellcomeProcedure,
+                           filters=on_chat_member_updated), group=-1
         )
 
         self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.commandResponseStatus,
-                           filters=filters.command(commands=["status"]) & filters.private), group=5
+            MessageHandler(callback=self.commandResponseStart,
+                           filters=filters.command(commands=["start"]) & filters.private), group=4
         )
 
         self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.commandResponseDonate,
-                           filters=filters.command(commands=["donate"]) & filters.private), group=5
+            MessageHandler(callback=self.commandResponseStatus,
+                           filters=filters.command(commands=["status"]) & filters.private), group=3
         )
 
         self.sessionBotThread.add_handler(
-            MessageHandler(callback=Communication.commandResponseAdmin,
-                           filters=filters.command(commands=["admin"])), group=9
+            MessageHandler(callback=self.commandResponseDonate,
+                           filters=filters.command(commands=["donate"]) & filters.private), group=2
+        )
+
+        self.sessionBotThread.add_handler(
+            MessageHandler(callback=self.commandResponseAdmin,
+                           filters=filters.command(commands=["admin"])), group=1
         )
 
         #self.startSession(sessionType=SessionType.BOT_THREAD)
@@ -549,33 +538,7 @@ class Communication(): #threading.Thread
     # Filters management
     #
 
-    async def wellcomeProcedure1(client: Client, message):
-        try:
-            LOG.success("New chat member: " + str(message.from_user.username))
-            member = message.from_user.username
-            chatid = message.chat.id
-            LOG.success(".. in chat: " + str(chatid))
-            response = await client.promote_chat_member(chat_id=chatid,
-                                             user_id=member,
-                                             privileges=ChatPrivileges(
-                                                 can_manage_chat=True,
-                                                 can_delete_messages=True,
-                                                 can_manage_video_chats=True,
-                                                 can_restrict_members=True,
-                                                 can_promote_members=True,
-                                                 can_change_info=True,
-                                                 can_invite_users=True,
-                                                 can_pin_messages=True,
-                                                 is_anonymous=False
-                                             ))
-            LOG.success("Response: " + str(response))
-            LOG.success(
-                "Promoting  user to admin successfully done!")
-        except Exception as e:
-            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
-            return True
-
-    async def wellcomeProcedure(client: Client, message):
+    async def wellcomeProcedure(self, client: Client, message):
 
         if message.new_chat_members is None or len(message.new_chat_members) == 0 or message.chat.type.name != "SUPERGROUP":
             return
@@ -583,9 +546,8 @@ class Communication(): #threading.Thread
 
         LOG.success("New chat member: " + str(message.new_chat_members))
         chatid = message.chat.id
-
-        ##############################
         newMember = target
+
         if isinstance(newMember, types.User):
             LOG.success("Wellcome message to user: " + str(newMember.id))
             if newMember.is_bot:
@@ -735,7 +697,7 @@ class Communication(): #threading.Thread
             LOG.exception("Exception (in wellcomeProcedure): " + str(e))
             return
 
-    async def commandResponseStart(client: Client, message):
+    async def commandResponseStart(self, client: Client, message):
         try:
             LOG.success("Response on command 'start' from user: " + str(message.chat.username) if not None else "None")
             chatid = message.chat.id
@@ -783,7 +745,7 @@ class Communication(): #threading.Thread
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return
 
-    async def commandResponseStatus(client: Client, message):
+    async def commandResponseStatus(self, client: Client, message):
         try:
             LOG.success("Response on command 'status' from user: " + str(message.chat.username) if not None else "None")
             chatid = message.chat.id
@@ -831,7 +793,7 @@ class Communication(): #threading.Thread
             LOG.exception("Exception (in commandResponseStart): " + str(e))
             return
 
-    async def commandResponseDonate(client: Client, message):
+    async def commandResponseDonate(self, client: Client, message):
         try:
             LOG.success("Response on command 'info' from user: " + str(message.chat.username) if not None else "None")
             chatid = message.chat.id
@@ -857,7 +819,7 @@ class Communication(): #threading.Thread
             return
 
 
-    async def commandResponseAdmin(client: Client, message):
+    async def commandResponseAdmin(self, client: Client, message):
         try:
 
             LOG.success("Response on command 'Admin' from user: " + str(message.from_user.username) if not None else "None")

@@ -13,8 +13,8 @@ class Election(Base):
 
     def __init__(self, date: datetime, status: ElectionStatus,  electionID: int = None):
         """Initialization object"""
-        assert isinstance(date, datetime)
-        assert isinstance(status, ElectionStatus)
+        assert isinstance(date, datetime), "date must be type of datetime"
+        assert isinstance(status, ElectionStatus), "status must be type of ElectionStatus"
 
         self.electionID = electionID
         self.date = date

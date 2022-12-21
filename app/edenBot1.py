@@ -139,8 +139,8 @@ def main():
     print("\n\n")
     print("------>EdenBot Support<-------\n\n")
 
-    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
     database = Database()
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
 
     EdenBot1(telegramApiID=telegram_api_id,
              telegramApiHash=telegram_api_hash,

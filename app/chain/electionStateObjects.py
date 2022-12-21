@@ -1,12 +1,13 @@
 from enum import Enum
 
 from app.chain import EdenData
-from app.constants import dfuse_api_key
+from app.constants import dfuse_api_key, pre_created_groups_total, pre_created_groups_created_groups_in_one_round, \
+    pre_created_groups_how_often_creating_in_min
 from app.dateTimeManagement import DateTimeManagement
 from app.debugMode.modeDemo import ModeDemo, Mode
 from app.groupManagement import GroupManagement
 from app.log import Log
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.constants.electionState import CurrentElectionState
 
 from app.database import Election, Database, ElectionStatus, ExtendedRoom
@@ -63,7 +64,8 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def getelectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+    def customActions(self, database: Database, edenData: EdenData, communication: Communication,
+                      modeDemo: ModeDemo = None):
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_REGISTRATION_V1")
         LOG.info("Saving election datetime in database")
 
@@ -79,14 +81,25 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         election = database.setElection(election=election)
         database.createRemindersIfNotExists(election=election)
 
-
-        #commented for demo only
+        # commented for demo only
         # write participants/member in database
-        #participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+        # participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
         #                                                                        communication=communication)
-        #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+        # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
         #                                                                    height=modeDemo.currentBlockHeight
         #                                                                    if modeDemo is not None else None)
+
+        # create groups before election
+        groupManagement: GroupManagement = GroupManagement(edenData=edenData,
+                                                           database=database,
+                                                           communication=communication,
+                                                           modeDemo=modeDemo)
+        groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),
+                                                       totalGroups=pre_created_groups_total,
+                                                       numberOfGroups=pre_created_groups_created_groups_in_one_round,
+                                                       duration=
+                                                       timedelta(minutes=pre_created_groups_how_often_creating_in_min)
+                                                       )
 
         # send notification
         reminderManagement: ReminderManagement = ReminderManagement(database=database,
@@ -120,7 +133,8 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+    def customActions(self, database: Database, edenData: EdenData, communication: Communication,
+                      modeDemo: ModeDemo = None):
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_SEEDING_V1")
         LOG.info("Saving election datetime in database")
 
@@ -221,18 +235,16 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
         # setting new election + creating notification records
         election = database.setElection(election=election)
 
-
-
         # send notification
         reminderManagement: ReminderManagement = ReminderManagement(database=database,
                                                                     edenData=edenData,
                                                                     communication=communication,
                                                                     modeDemo=modeDemo)
 
-
         reminderManagement.createRemindersTimeIsUpIfNotExists(election=election,
                                                               round=self.getRound(),
-                                                              roundEnd=datetime.fromisoformat(self.getConfigRoundEnd())) #already in setElection
+                                                              roundEnd=datetime.fromisoformat(
+                                                                  self.getConfigRoundEnd()))  # already in setElection
 
         groupManagement.manage(round=self.getRound(),
                                numParticipants=self.getConfigNumParticipants(),

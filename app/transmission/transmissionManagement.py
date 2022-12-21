@@ -11,7 +11,7 @@ from app.debugMode.modeDemo import Mode
 from app.log import Log
 from app.database import Database, Election, ExtendedRoom, Reminder, ElectionStatus, ReminderSendStatus
 from app.transmission import Communication, SessionType, Communication
-from app.constants.parameters import alert_message_time_election_is_coming, alert_message_time_election_is_coming_text, \
+from app.constants.parameters import alert_message_time_election_is_coming, \
     telegram_api_id, telegram_api_hash, telegram_bot_token, eden_portal_url, telegram_admins_id
 
 import gettext
@@ -78,7 +78,7 @@ class TransmissionManagement:
             minutesToElectionInMinutes = (electionDateTime - currentTime).total_seconds() / 60
             nearestDatetimeToElectionInMinutes: int = self.nearestDateTime(alert_message_time_election_is_coming,
                                                                            minutesToElectionInMinutes)
-            nearestDateTimeText = alert_message_time_election_is_coming_text[
+            nearestDateTimeText = alert_message_time_round_end_is_coming[
                 alert_message_time_election_is_coming.index(nearestDatetimeToElectionInMinutes)]
             LOG.debug("Nearest datetime to election: " + str(
                 nearestDatetimeToElectionInMinutes) + " minutes with text '" + nearestDateTimeText + "'")
