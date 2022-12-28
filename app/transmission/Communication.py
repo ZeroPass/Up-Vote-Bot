@@ -125,9 +125,8 @@ class Communication(): #threading.Thread
     def startCommAsyncSession(self, apiId: int, apiHash: str, botToken: str):
         LOG.info("Start async bot session - event driven actions")
         #self.startSession(sessionType=SessionType.BOT_THREAD)
-        self.pyrogram = Process(target=self.startSessionAsync, args=(apiId, apiHash, botToken))
+        self.pyrogram = Process(target=self.startSessionAsync, name="Pyrogram idle", args=(apiId, apiHash, botToken))
         self.pyrogram.start()
-        self.pyrogram.pid
         #asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
         #task1 = asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
         kva = 8
@@ -169,11 +168,13 @@ class Communication(): #threading.Thread
         #self.sessionBotThread.
         idle()
 
-        #idle()
+        while True:
+            print("kvakva")
+            time.sleep(0.1)
 
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
-        assert isinstance(chatID, (int,str)), "chatID should be int or str"
+        assert isinstance(chatID, (int, str)), "chatID should be int or str"
         LOG.info("Adding known user: " + str(chatID) + " for bot: " + botName)
         self.knownUserData.setKnownUser(botName=botName, telegramID=chatID, isKnown=True)
         self.updateKnownUserData(botName=botName)
@@ -292,7 +293,7 @@ class Communication(): #threading.Thread
             time.sleep(e.value)
             return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=inlineReplyMarkup)
         except PeerIdInvalid:
-            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            LOG.exception("Exception (in sendMessage): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
         except Exception as e:
@@ -363,7 +364,7 @@ class Communication(): #threading.Thread
             LOG.debug("Invite link: " + inviteLink)
             return inviteLink
         except PeerIdInvalid:
-            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            LOG.exception("Exception (in sendInvitationLink): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return None
         except Exception as e:
@@ -383,7 +384,7 @@ class Communication(): #threading.Thread
             self.sessionUser.archive_chat(chat_id=chatId)
             return True
         except PeerIdInvalid:
-            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            LOG.exception("Exception (in archive group): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
         except Exception as e:
@@ -415,7 +416,7 @@ class Communication(): #threading.Thread
             self.sessionUser.delete_chat(chat_id=chatId)
             return True
         except PeerIdInvalid:
-            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            LOG.exception("Exception (in deleteGroup): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
         except Exception as e:
@@ -498,11 +499,22 @@ class Communication(): #threading.Thread
             LOG.exception("Exception (in promoteMembers): " + str(e))
             return False
 
-    def setChatDescription(self, chatId: (str, int), description: str) -> bool:
-        LOG.info("Setting description to group: " + str(chatId) + " with description: " + str(description))
+    def setChatTitle(self, chatId: (str, int), title: str) -> bool:
         try:
             assert isinstance(chatId, (str, int)), "ChatId should be str or int"
-            assert description is not None, "Description should not be null"
+            assert isinstance(title, str), "Title should be str"
+            LOG.info("Setting description to group: " + str(chatId) + " with description: " + str(title))
+            self.sessionUser.set_chat_title(chat_id=chatId,
+                                            title=title)
+            return True
+        except Exception as e:
+            LOG.exception("Exception (in setChatDescription): " + str(e))
+            return False
+    def setChatDescription(self, chatId: (str, int), description: str) -> bool:
+        try:
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(description, str), "Title should be str"
+            LOG.info("Setting description to group: " + str(chatId) + " with description: " + str(description))
             self.sessionUser.set_chat_description(chat_id=chatId,
                                                   description=description)
             return True
@@ -527,7 +539,7 @@ class Communication(): #threading.Thread
                 self.sessionBot.leave_chat(chat_id=chatId)
             return True
         except PeerIdInvalid:
-            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            LOG.exception("Exception (in leaveChat): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
         except Exception as e:
@@ -539,42 +551,46 @@ class Communication(): #threading.Thread
     #
 
     async def wellcomeProcedure(self, client: Client, message):
-
-        if message.new_chat_members is None or len(message.new_chat_members) == 0 or message.chat.type.name != "SUPERGROUP":
-            return
-        target = message.new_chat_members[0]
-
-        LOG.success("New chat member: " + str(message.new_chat_members))
-        chatid = message.chat.id
-        newMember = target
-
-        if isinstance(newMember, types.User):
-            LOG.success("Wellcome message to user: " + str(newMember.id))
-            if newMember.is_bot:
-                LOG.debug("...is bot. Do nothing")
+        try:
+            if message.new_chat_members is None or len(message.new_chat_members) == 0 or message.chat.type.name != "SUPERGROUP":
                 return
-            result = await client.promote_chat_member(chat_id=chatid,
-                                                      user_id=newMember.username,
-                                                      privileges=ChatPrivileges(
-                                                          can_manage_chat=True,
-                                                          can_delete_messages=True,
-                                                          can_manage_video_chats=True,
-                                                          can_restrict_members=True,
-                                                          can_promote_members=True,
-                                                          can_change_info=True,
-                                                          can_invite_users=True,
-                                                          can_pin_messages=True,
-                                                          is_anonymous=False
-                                                      ))
-            LOG.success("Response (promote_chat_member): " + str(result))
-            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+            target = message.new_chat_members[0]
 
-            result1 = await client.send_message(chat_id=chatid,
-                                                text=wellcomeMessageObject.getWellcomeMessage(
-                                                    participantAccountName=str(newMember.username)
-                                                ))
+            LOG.success("New chat member: " + str(message.new_chat_members))
+            chatid = message.chat.id
+            newMember = target
 
-            LOG.success("Response (send_message): " + str(result1))
+            if isinstance(newMember, types.User):
+                LOG.success("Wellcome message to user: " + str(newMember.id))
+                if newMember.is_bot:
+                    LOG.debug("...is bot. Do nothing")
+                    return
+                result = await client.promote_chat_member(chat_id=chatid,
+                                                          user_id=newMember.username,
+                                                          privileges=ChatPrivileges(
+                                                              can_manage_chat=True,
+                                                              can_delete_messages=True,
+                                                              can_manage_video_chats=True,
+                                                              can_restrict_members=True,
+                                                              can_promote_members=True,
+                                                              can_change_info=True,
+                                                              can_invite_users=True,
+                                                              can_pin_messages=True,
+                                                              is_anonymous=False
+                                                          ))
+                LOG.success("Response (promote_chat_member): " + str(result))
+                wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+
+                result1 = await client.send_message(chat_id=chatid,
+                                                    text=wellcomeMessageObject.getWellcomeMessage(
+                                                        participantAccountName=str(newMember.username)
+                                                    ))
+
+                LOG.success("Response (send_message): " + str(result1))
+
+        except Exception as e:
+            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
+            return
 
 
     async def wellcomeProcedureOld(client: Client, message):

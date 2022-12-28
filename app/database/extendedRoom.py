@@ -11,8 +11,8 @@ class ExtendedRoom(Room):
                  roomIndex: int,
                  roomNameShort: str,
                  roomNameLong: str,
-                 isPredisposed: bool,
-                 predisposedBy: str,
+                 isPredisposed: bool = False,
+                 predisposedBy: str = "process",
                  members: list[ExtendedParticipant] = None,
                  roomID: int = None,
                  predisposedDateTime: datetime = None,
@@ -26,10 +26,10 @@ class ExtendedRoom(Room):
             assert isinstance(round, int), "round must be int"
             assert isinstance(roomIndex, int), "roomIndex must be int"
             assert isinstance(predisposedDateTime, (datetime, type(None))), "predisposedDateTime should be datetime or None"
-            assert isinstance(roomTelegramID, (str, type(None))), "roomTelegramID must be int or None"
+            assert isinstance(roomTelegramID, (str, type(None))), "roomTelegramID must be str or None"
             assert isinstance(roomID, (int, type(None))), "roomID must be int or None"
             assert isinstance(members, (list, type(None))), "members must be list"
-            assert isinstance(shareLink, str), "shareLink must be str"
+            assert isinstance(shareLink, (str, type(None))), "shareLink must be str or None"
 
             super().__init__(electionID=electionID,
                              round=round,

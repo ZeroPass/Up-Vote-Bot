@@ -64,8 +64,8 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def getelectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, edenData: EdenData, communication: Communication,
-                      modeDemo: ModeDemo = None):
+    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData,
+                      communication: Communication, modeDemo: ModeDemo = None):
         LOG.debug("Custom actions for CURRENT_ELECTION_STATE_REGISTRATION_V1")
         LOG.info("Saving election datetime in database")
 
@@ -81,19 +81,15 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         election = database.setElection(election=election)
         database.createRemindersIfNotExists(election=election)
 
-        # commented for demo only
-        # write participants/member in database
-        # participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+        #commented for demo only
+        #write participants/member in database
+        #participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
         #                                                                        communication=communication)
-        # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+        #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
         #                                                                    height=modeDemo.currentBlockHeight
         #                                                                    if modeDemo is not None else None)
 
         # create groups before election
-        groupManagement: GroupManagement = GroupManagement(edenData=edenData,
-                                                           database=database,
-                                                           communication=communication,
-                                                           modeDemo=modeDemo)
         groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),
                                                        totalGroups=pre_created_groups_total,
                                                        numberOfGroups=pre_created_groups_created_groups_in_one_round,

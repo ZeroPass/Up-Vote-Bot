@@ -140,7 +140,7 @@ class DfuseConnection:
     def connect(self) -> ():
         # returns token and expiration date
         LOG.info("Start establishing connection on dfuse")
-        return DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3,counterObj=self.counter)
+        return DfuseConnection.retry(lambda: self.getTokenFromApiKey(), limit=3, counterObj=self.counter)
 
     def getAbiFromChain(self, account: str, height: int) ->Response:
         try:
@@ -204,12 +204,15 @@ class DfuseConnection:
 
             LOG.info("Start parsing the data from hex to json")
             tableName = s.get_type_for_table(account, table)
-            return ResponseSuccessful(data=s.hex_to_json(account, tableName, hex))
+            #return ResponseSuccessful(data=s.hex_to_json(account, tableName, hex))
+            return s.hex_to_json(account, tableName, hex)
         except Exception as e:
             LOG.exception(str(e))
-            return ResponseError("Exception thrown when called getAbi; Description: " + str(e))
+            #return ResponseError("Exception thrown when called getAbi; Description: " + str(e))
+            return None
 
-    def getTableRow(self, account: str, table: str, primaryKey: str, scope: str = None, height: int = None, dateTime: datetime = None):
+    def getTableRow(self, account: str, table: str, primaryKey: str, scope: str = None, height: int = None,
+                    dateTime: datetime = None, propagateJson: bool = False):
         try:
             path = '/v0/state/table/row'
             LOG.info("Path: " + path)
@@ -220,8 +223,10 @@ class DfuseConnection:
                      ", height: " + str(height) +
                      ", datetime: " + dateTime.isoformat() if dateTime is not None else None)
 
-            # if scope is zero we need to manually parse binary data to json
-            isJson = False if scope is None else True
+            # if scope is zero we need to manually parse binary data to json (propagateJson overrides to True)
+            isJson: bool = False
+            if propagateJson is True or scope is not None:
+                isJson = True
 
             parameters = dict({
                 'account': account,
@@ -287,7 +292,8 @@ class DfuseConnection:
             return ResponseError("Exception thrown when called getBlockHeightFromTimestamp; Description: " + str(e))
 
 
-    def getTable(self, account: str, table: str, scope: str = None, height: int = None, dateTime: datetime = None):
+    def getTable(self, account: str, table: str, scope: str = None, height: int = None, dateTime: datetime = None,
+                 propagateJson: bool = False):
         try:
             path = '/v0/state/table'
             LOG.info("Path: " + path)
@@ -297,8 +303,10 @@ class DfuseConnection:
                      ", height: " + str(height) +
                      ", datetime: " + dateTime.isoformat() if dateTime is not None else None)
 
-            # if scope is zero we need to manually parse binary data to json
-            isJson = False if scope is None else True
+            # if scope is zero we need to manually parse binary data to json (propagateJson overrides to True)
+            isJson: bool = False
+            if propagateJson is True or scope is not None:
+                isJson = True
 
             parameters = dict({
                 'account': account,
@@ -363,7 +371,8 @@ class DfuseConnection:
             LOG.exception(str(e))
 
 
-    def retry(func, counterObj: Counter, ex_type=Exception, limit=5, wait_ms=100, wait_increase_ratio=2, logger=True):
+    def retry(func, counterObj: Counter, ex_type: object = Exception, limit: object = 5, wait_ms: object = 100, wait_increase_ratio: object = 2,
+              logger: object = True) -> object:
         """
         Retry a function invocation until no exception occurs
         :param func: function to invoke

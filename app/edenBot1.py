@@ -71,7 +71,7 @@ class EdenBot1:
                 raise EdenBotException(
                     "Error when called eden.getCurrentElectionState; Description: " + edenData.data.error)
 
-            receivedData = edenData.data.data
+            receivedData = edenData.data
 
             election: Election = None
             # initialize state and call custom action if exists, otherwise there is just a comment in log

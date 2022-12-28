@@ -3,6 +3,7 @@ import threading
 # from struct import Struct
 import time
 from datetime import datetime, timedelta
+
 from app.chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
 from app.constants import eden_account, dfuse_api_key
 from app.database import Database
@@ -31,7 +32,7 @@ class EdenData:
 
         # update api key
         self.updateDfuseApiKey(database=dfuseConnection.database)
-        schedule.every(1000).minutes.do(self.updateDfuseApiKey, database=dfuseConnection.database)# TODO; repair this, excpetion on call
+        schedule.every(10).seconds.do(self.updateDfuseApiKey, database=dfuseConnection.database)# TODO; repair this, excpetion on call
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -104,7 +105,8 @@ class EdenData:
             return self.dfuseConnection.getTable(account=ACCOUNT,
                                                  table=TABLE,
                                                  scope=SCOPE,
-                                                 height=height)
+                                                 height=height,
+                                                 propagateJson=True)
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getParticipants; Description: " + str(e))
@@ -143,7 +145,10 @@ class EdenData:
             return self.dfuseConnection.getTable(account=ACCOUNT,
                                                  table=TABLE,
                                                  scope=SCOPE,
-                                                 height=height)
+                                                 height=height,
+                                                 propagateJson=True)
+
+
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getVotes; Description: " + str(e))
@@ -193,7 +198,6 @@ class EdenData:
     def updateDfuseApiKey(self, database: Database):
         try:
             assert isinstance(database, Database), "database is not of type Database"
-            #database : Database = Database()
             LOG.debug("Updating dfuse api key if necessary")
             if database.checkIfTokenExists(name="dfuse") is False:
                 LOG.debug("Token does not exist, create it")
@@ -226,28 +230,13 @@ class EdenData:
 
 def main():
     print("Hello World!")
-    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key)
     database = Database()
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
+
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     test = edenData.getVotes(height=272119950 + 100)
-    kva = test.data
-    kva1 = test.data
-
-    #for x, y in test.data.items():
-    #    print(x, y)
-
-    bula = [y.data['candidate'] for x, y in test.data.items() if x == 'bender.g3' and isinstance(y, ResponseSuccessful)]
-    b = 9
-
-    #enadvatir = edenData.getCurrentElectionState()
-
-    #resnevem = dfuseObj.getTimestampOfBlock(1312423)
-    #nodeTime = dfuseObj.getChainDatetime()
-    #kva = dfuseObj.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
-    #                                                     nodeTime=datetime.fromisoformat(nodeTime))
     ret = 9
-
 
 if __name__ == "__main__":
     main()

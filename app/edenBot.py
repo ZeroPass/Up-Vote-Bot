@@ -77,12 +77,11 @@ class EdenBot:
         LOG.debug("Initialization of telegram bot...")
         self.communication = Communication(database=database)
 
-        #self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
+        self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
 
         self.communication.startComm(apiId=telegramApiID,
                                  apiHash=telegramApiHash,
                                  botToken=botToken)
-
 
 
         LOG.debug(" ...and group management object ...")
@@ -111,7 +110,7 @@ class EdenBot:
                 raise EdenBotException(
                     "Error when called eden.getCurrentElectionState; Description: " + edenData.data.error)
 
-            receivedData = edenData.data.data
+            receivedData = edenData.data
 
             election: Election = None
             # initialize state and call custom action if exists, otherwise there is just a comment in log
@@ -119,6 +118,7 @@ class EdenBot:
             if electionState == "current_election_state_registration_v1":
                 self.currentElectionStateHandler = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
                 self.currentElectionStateHandler.customActions(database=database,
+                                                               groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
@@ -198,7 +198,7 @@ class EdenBot:
                 else:
                     raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
-
+                #continue #TODO remove this
                 # define current election state and write it to the database
                 self.setCurrentElectionStateAndCallCustomActions(database=self.database)
 
@@ -221,14 +221,14 @@ def main():
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        #(datetime(2022, 10, 5, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
+        (datetime(2022, 10, 5, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
         #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
         #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        ####(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
         #(datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
         #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
         #(datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        #(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
 
 
@@ -264,7 +264,8 @@ def mainPyrogramTestMode():
     database = Database()
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
+    #comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
+    comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
     pyogram = Process(target=runPyrogramTestMode, args=(comm,))
     pyogram.start()
 
@@ -280,9 +281,11 @@ def mainPyrogramTestMode():
 def main1():
     database = Database()
     comm = Communication(database=database)
-    comm.start()
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
+    comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.USER, text="test")
 
+    while True:
+        time.sleep(2)
     #async comm.run()
     comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
     time.sleep(2)

@@ -23,28 +23,31 @@ class KnownUserData:
         self.database = database
         self.knownUsers = None
 
-    def removeAtSignAtBeginning(self, telegramID: str) -> str:
-        assert isinstance(telegramID, str), "telegramID is not a string"
-        if telegramID[0] == "@":
-            telegramID = telegramID[1:]
+    def removeAtSignAtBeginning(self, telegramID: (str, int)) -> str:
+        assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
+        if isinstance(telegramID, int):
+            return telegramID
+        else:
+            if telegramID[0] == "@":
+                telegramID = telegramID[1:]
         return telegramID
 
-    def setKnownUser(self, botName: str, telegramID: str, isKnown: bool) -> bool:
+    def setKnownUser(self, botName: str, telegramID: (str, int), isKnown: bool) -> bool:
         assert isinstance(botName, str), "botName is not a string"
-        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
         assert isinstance(isKnown, bool), "isKnown is not a boolean"
         try:
             telegramID = self.removeAtSignAtBeginning(telegramID=telegramID)
-            isSetted: bool = self.database.setKnownUser(botName=botName, telegramID=telegramID, isKnown=isKnown)
+            isSetted: bool = self.database.setKnownUser(botName=botName, telegramID=str(telegramID), isKnown=isKnown)
             #self.getKnownUsersOptimizedSave(botName=botName)
             return isSetted
         except Exception as e:
             LOGkud.exception("Set known user failed with error" + str(e))
             return False
 
-    def removeKnownUser(self, botName: str, telegramID: str) -> bool:
+    def removeKnownUser(self, botName: str, telegramID: (str, int)) -> bool:
         assert isinstance(botName, str), "botName is not a string"
-        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
         try:
             telegramID = self.removeAtSignAtBeginning(telegramID=telegramID)
             self.database.setKnownUser(botName=botName, telegramID=telegramID, isKnown=False)
@@ -54,9 +57,9 @@ class KnownUserData:
             LOGkud.exception("Set known user failed with error" + str(e))
             return False
 
-    def getKnownUser(self, botName: str, telegramID: str) -> KnownUser:
+    def getKnownUser(self, botName: str, telegramID: (str, int)) -> KnownUser:
         assert isinstance(botName, str), "botName is not a string"
-        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
         try:
             telegramID = self.removeAtSignAtBeginning(telegramID=telegramID)
             return self.database.getKnownUser(botName=botName, telegramID=telegramID)
@@ -81,9 +84,9 @@ class KnownUserData:
             LOGkud.exception("Get known users optimized save failed with error" + str(e))
             return False
 
-    def getKnownUserFromOptimized(self, botName: str, telegramID: str) -> KnownUser:
+    def getKnownUserFromOptimized(self, botName: str, telegramID: (str, int)) -> KnownUser:
         assert isinstance(botName, str), "botName is not a string"
-        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
         try:
             telegramID = self.removeAtSignAtBeginning(telegramID=telegramID)
             if self.knownUsers is None:

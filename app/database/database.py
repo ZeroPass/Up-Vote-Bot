@@ -43,7 +43,7 @@ ABIexception = "ABIexception"
 
 class Database(metaclass=Singleton):
     _conn: sqlalchemy.engine.base.Connection
-    _localDict = {"1": "2"}
+    _localDict = {"1": Abi(accountName="1", lastUpdate=datetime.now(), contract="2")}
 
     __instance = None
 
@@ -255,7 +255,7 @@ class Database(metaclass=Singleton):
                 return True
             else:
                 session.close()
-                return False
+                return True #TODO:change it to false after test
         except Exception as e:
             session.close()
             LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
@@ -566,7 +566,7 @@ class Database(metaclass=Singleton):
         try:
             session = self.createCsesion()
             knownUser: KnownUser = session.query(KnownUser).filter(KnownUser.botName == botName,
-                                                                   (KnownUser.userID) == telegramID.lower()).first()
+                                                                   KnownUser.userID == telegramID.lower()).first()
             if knownUser is None:
                 participant = KnownUser(botName=botName, userID=telegramID.lower(), isKnown=isKnown)
                 session.add(participant)
@@ -574,7 +574,7 @@ class Database(metaclass=Singleton):
                 session.close()
                 return True
             else:
-                knownUser.isKnown = isKnown
+                knownUser.isKnown = True if isKnown is True else False #TODO: remove it, just for test
                 session.commit()
                 session.close()
                 return True
@@ -614,7 +614,6 @@ class Database(metaclass=Singleton):
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " not found")
             elif len(rooms) == 0:
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " found, but empty")
-                rooms = None
             else:
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
             session.close()
@@ -649,18 +648,8 @@ class Database(metaclass=Singleton):
             for room in listOfRooms:
                 # iterate over all rooms to detect if they already exist
                 assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
-                roomFromDB = session.query(Room).filter(Room.electionID == room.electionID,
-                                                        Room.roomIndex == room.roomIndex,
-                                                        Room.round == room.round).first()
-
-                if roomFromDB is None:
-                    LOG.debug("Room does not exists. Add it to database")
-                    session.add(room)
-                    session.flush()
-                else:
-                    LOG.debug("Room already exists. Just get the id")
-                    room.roomID = roomFromDB.roomID
-                    room.roomTelegramID = roomFromDB.roomTelegramID
+                session.add(room)
+                #session.flush()
 
             session.commit()
             session.close()
@@ -672,6 +661,30 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when creating rooms: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating rooms: " + str(e))
 
+
+    def updatePreCreatedRoom(self, room: ExtendedRoom) -> ExtendedRoom:
+        assert isinstance(room, ExtendedRoom), "room must be type of Extended Room"
+        try:
+            LOG.debug("Updating pre-created room; return updated room object")
+            session = self.createCsesion(expireOnCommit=False)
+
+            session.query(Room).filter(Room.roomID == room.roomID) \
+                .update({Room.electionID: room.electionID,
+                         Room.roomIndex: room.roomIndex,
+                         Room.roomNameLong: room.roomNameLong,
+                         Room.round: room.round,
+                         Room.roomNameShort: room.roomNameShort
+                         })
+
+            session.commit()
+            session.close()
+            return room
+
+        except Exception as e:
+            session.rollback()
+            session.close()
+            LOG.exception(message="Problem occurred when updating pre-created room: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when updating pre-created room: " + str(e))
     def updatePreCreatedRooms(self, listOfRooms: list[ExtendedRoom]) -> list[Room]:
         assert isinstance(listOfRooms, list), "listOfRooms is not a list"
         try:
@@ -684,6 +697,7 @@ class Database(metaclass=Singleton):
                     .update({Room.electionID: room.electionID,
                              Room.roomIndex: room.roomIndex,
                              Room.roomNameLong: room.roomNameLong,
+                             Room.round: room.round,
                              Room.roomNameShort: room.roomNameShort
                              })
 
@@ -694,8 +708,8 @@ class Database(metaclass=Singleton):
         except Exception as e:
             session.rollback()
             session.close()
-            LOG.exception(message="Problem occurred when updating pre-created room: " + str(e))
-            raise DatabaseExceptionConnection("Problem occurred when updating pre-created rooms: " + str(e))
+            LOG.exception(message="Problem occurred when updating pre-created rooms[list]: " + str(e))
+            raise DatabaseExceptionConnection("Problem occurred when updating pre-created rooms[list]: " + str(e))
 
     def updateRoomTelegramID(self, room: ExtendedRoom) -> bool:
         assert isinstance(room, ExtendedRoom), "room is not a ExtendedRoom"
@@ -721,6 +735,10 @@ class Database(metaclass=Singleton):
             session = self.createCsesion(expireOnCommit=False)
             #session.bulk_save_objects(extendedParticipantsList, return_defaults=True, update_changed_only=True)
             for participant in extendedParticipantsList:
+                if isinstance(participant, type(None)):
+                    LOG.warning("Participant is None. Do not add to the database")
+                    continue
+
                 assert isinstance(participant, ExtendedParticipant), "participant is not a ExtendedParticipant"
                 participantFromDBAll = session.query(Participant).filter(
                                             Participant.accountName == participant.accountName).all()
@@ -1148,6 +1166,11 @@ class Database(metaclass=Singleton):
                 session.query(Abi).filter(Abi.accountName == accountName).first()
             )
             session.close()
+            if cs is not None:
+                # deep copy - create in class deep copy in the future
+                self._localDict[accountName] = Abi(accountName=cs.accountName,
+                                                   lastUpdate=cs.lastUpdate,
+                                                   contract=cs.contract)
             return cs
         except Exception as e:
             session.close()
@@ -1269,6 +1292,11 @@ def main():
     #                              )
 
     #reminder: Reminder = Reminder(reminderID=224, electionID=4, dateTimeBefore=datetime.now(), round=0)
+
+    kva = database.getABI(accountName="genesis.eden")
+    kva1 = database.getABI(accountName="genesis.ede2")
+    kva2 = database.getABI(accountName="genesis.eden")
+
     database.fillElectionStatuses()
     electionStatusIDfromDB: ElectionStatus = \
         database.getElectionStatus(CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS)

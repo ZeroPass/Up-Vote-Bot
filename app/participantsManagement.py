@@ -32,7 +32,8 @@ class ParticipantsManagement:
                         roomNameShort="Room p-e",
                         roomNameLong="Room pre-election",
                         round=0,
-                        roomIndex=-1)
+                        roomIndex=-1,
+                        predisposedBy="")
             participants: list[Participant] = self.getMembersFromChain(room=room, height=height)
             #self.database.createParticipantsIfNotExists(participants=participant, election=election)
             LOG.debug("Creating participants if not exists")
@@ -76,7 +77,7 @@ class ParticipantsManagement:
             response: Response = self.edenData.getMembers(height=height)
 
 
-            aad = AtomicAssetsData(dfuse_api_key)
+            aad = AtomicAssetsData(dfuseApiKey=dfuse_api_key, database=self.database)
 
             members: list[Participant] = list()
             if isinstance(response, ResponseSuccessful):
@@ -88,18 +89,18 @@ class ParticipantsManagement:
                         counter += 1
                         member =Participant(accountName=key,
                                             roomID=-1, #not yet
-                                            participationStatus=True if len(value.data) == 2 and
-                                                                    "election_participation_status" in value.data[1] and
-                                                                    value.data[1]['election_participation_status'] == 1
+                                            participationStatus=True if len(value) == 2 and
+                                                                    "election_participation_status" in value[1] and
+                                                                    value[1]['election_participation_status'] == 1
                                                                         else False,
                                             telegramID="",
-                                            nftTemplateID=int(value.data[1]['nft_template_id']) if len(value.data) == 2 and
-                                                                                                "nft_template_id" in value.data[1] and
-                                                                                                   value.data[1]['nft_template_id'] is not None
+                                            nftTemplateID=int(value[1]['nft_template_id']) if len(value) == 2 and
+                                                                                                "nft_template_id" in value[1] and
+                                                                                                   value[1]['nft_template_id'] is not None
                                                                                                 else -1,
-                                            participantName=value.data[1]['name'] if len(value.data) == 2 and
-                                                                                        "name" in value.data[1] and
-                                                                                        value.data[1]['name'] is not None
+                                            participantName=value[1]['name'] if len(value) == 2 and
+                                                                                        "name" in value[1] and
+                                                                                        value[1]['name'] is not None
                                                                                         else "<unknownName>")
 
                         #set telegram id, if there is a known template id, otherwise set -1

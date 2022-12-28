@@ -3,6 +3,7 @@ import requests
 
 from app.chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
 from app.constants import atomic_assets_account, dfuse_api_key
+from app.database import Database
 from app.log.log import Log
 
 
@@ -16,9 +17,11 @@ LOG = Log(className="AtomicAssetsData")
 class AtomicAssetsData:
     dfuseConnection: DfuseConnection
 
-    def __init__(self, dfuseApiKey: str):
+    def __init__(self, dfuseApiKey: str, database: Database):
         LOG.info("Initialization of EdenChain")
-        self.dfuseConnection = DfuseConnection(dfuseApiKey=dfuseApiKey)
+        assert isinstance(dfuseApiKey, str), "dfuseApiKey must be type of str"
+        assert isinstance(database, Database), "database must be type of Database"
+        self.dfuseConnection = DfuseConnection(dfuseApiKey=dfuseApiKey, database=database)
 
     def getAssetsTemplateID(self, accountName: str, height: int = None) -> Response:
         try:

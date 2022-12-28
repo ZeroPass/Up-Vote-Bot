@@ -203,8 +203,8 @@ class ReminderManagement:
 
                             # send to participant
                             # check if participant has voted
-                            candidate = [y.data['candidate'] for x, y in votes.data.items() if
-                                         x == extendedParticipant.accountName and isinstance(y, ResponseSuccessful)]
+                            candidate = [y['candidate'] for x, y in votes.data.items() if
+                                         x == extendedParticipant.accountName and y is not None]
 
                             # set vote
                             extendedParticipant.voteFor = candidate[0] if len(candidate) > 0 else None

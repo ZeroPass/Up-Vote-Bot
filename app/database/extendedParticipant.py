@@ -17,7 +17,7 @@ class ExtendedParticipant(Participant):
 
     @classmethod
     def fromParticipant(cls, participant: Participant, index: int, voteFor: str = None):
-        assert isinstance(participant, Participant), "participant must be of type Participant"
+        assert isinstance(participant, Participant), "participant must be type of Participant"
         assert isinstance(index, int), "index must be int"
         assert isinstance(voteFor, (str, type(None))), "voteFor must be str or None"
         return cls(accountName=participant.accountName,
