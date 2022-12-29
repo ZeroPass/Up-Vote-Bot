@@ -39,7 +39,7 @@ class KnownUserData:
         try:
             telegramID = self.removeAtSignAtBeginning(telegramID=telegramID)
             isSetted: bool = self.database.setKnownUser(botName=botName, telegramID=str(telegramID), isKnown=isKnown)
-            #self.getKnownUsersOptimizedSave(botName=botName)
+            self.getKnownUsersOptimizedSave(botName=botName)
             return isSetted
         except Exception as e:
             LOGkud.exception("Set known user failed with error" + str(e))

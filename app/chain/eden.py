@@ -32,7 +32,7 @@ class EdenData:
 
         # update api key
         self.updateDfuseApiKey(database=dfuseConnection.database)
-        schedule.every(10).seconds.do(self.updateDfuseApiKey, database=dfuseConnection.database)# TODO; repair this, excpetion on call
+        schedule.every(300).seconds.do(self.updateDfuseApiKey1, database=dfuseConnection.database)# TODO; set real repat time
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -194,6 +194,13 @@ class EdenData:
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getChainDatetime; Description: " + str(e))
+    def updateDfuseApiKey1(self, database: Database):
+        LOG.debug("Update dfuse api key. Sheduled function.")
+        self.updateDfuseApiKey(database=database)
+    def updateDfuseApiKey2(self, database: Database):
+        LOG.error("FROM main thread")
+        #self.updateDfuseApiKey(database=database)
+        database.checkIfTokenExpired("dfuse", executionTime=datetime(2020, 1, 1, 12, 0))
 
     def updateDfuseApiKey(self, database: Database):
         try:

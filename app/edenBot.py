@@ -38,63 +38,66 @@ class EdenBot:
 
     def __init__(self, edenData: EdenData, telegramApiID: int, telegramApiHash: str, botToken: str, database: Database,
                  mode: Mode, modeDemo: ModeDemo = None):
-        LOG.info("Initialization of EdenBot")
-        assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
-        assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
-        assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
-        assert isinstance(botToken, str), "botToken is not a string"
-        assert isinstance(database, Database), "database is not an instance of Database"
+        try:
+            LOG.info("Initialization of EdenBot")
+            assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
+            assert isinstance(telegramApiID, int), "telegramApiID is not an integer"
+            assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
+            assert isinstance(botToken, str), "botToken is not a string"
+            assert isinstance(database, Database), "database is not an instance of Database"
 
-        self.database = database
+            self.database = database
 
-        # fill database with election status data if table is empty
-        self.database.fillElectionStatuses()
-        self.database.createElectionForFreeRoomsIfNotExists()
+            # fill database with election status data if table is empty
+            self.database.fillElectionStatuses()
+            self.database.createElectionForFreeRoomsIfNotExists()
 
-        self.mode = mode
-        self.modeDemo = modeDemo
-        # if demo mode is set, then 'modeDemo' must be set
-        if mode == Mode.DEMO:
-            assert modeDemo is not None
-        self.edenData = edenData
+            self.mode = mode
+            self.modeDemo = modeDemo
+            # if demo mode is set, then 'modeDemo' must be set
+            if mode == Mode.DEMO:
+                assert modeDemo is not None
+            self.edenData = edenData
 
-        if mode == Mode.DEMO and False:
-            responseStart: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getStart())
-            responseEnd: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getEnd())
-            if isinstance(responseStart, ResponseError) or isinstance(responseEnd, ResponseError):
-                LOG.exception("Error when called getBlockNumOfTimestamp; Description: " + responseStart.error)
-                raise EdenBotException("Error when called getBlockNumOfTimestamp. Raise exception")
+            if mode == Mode.DEMO and False:
+                responseStart: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getStart())
+                responseEnd: Response = self.edenData.getBlockNumOfTimestamp(modeDemo.getEnd())
+                if isinstance(responseStart, ResponseError) or isinstance(responseEnd, ResponseError):
+                    LOG.exception("Error when called getBlockNumOfTimestamp; Description: " + responseStart.error)
+                    raise EdenBotException("Error when called getBlockNumOfTimestamp. Raise exception")
 
-            self.modeDemo.setStartBlockHeight(responseStart.data)  # set start block height
-            self.modeDemo.setEndBlockHeight(responseEnd.data)  # set end block height
+                self.modeDemo.setStartBlockHeight(responseStart.data)  # set start block height
+                self.modeDemo.setEndBlockHeight(responseEnd.data)  # set end block height
 
-        # difference between server and node time
-        self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
-                                                                            nodeTime=self.edenData.getChainDatetime())
+            # difference between server and node time
+            self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
+                                                                                nodeTime=self.edenData.getChainDatetime())
 
-        # create communication object
-        # creat communication object
-        LOG.debug("Initialization of telegram bot...")
-        self.communication = Communication(database=database)
+            # create communication object
+            # creat communication object
+            LOG.debug("Initialization of telegram bot...")
+            self.communication = Communication(database=database)
 
-        self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
+            self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
 
-        self.communication.startComm(apiId=telegramApiID,
-                                 apiHash=telegramApiHash,
-                                 botToken=botToken)
+            self.communication.startComm(apiId=telegramApiID,
+                                     apiHash=telegramApiHash,
+                                     botToken=botToken)
 
 
-        LOG.debug(" ...and group management object ...")
-        self.groupManagement = GroupManagement(edenData=edenData,
-                                               database=self.database,
-                                               communication=self.communication,
-                                               mode=mode)
+            LOG.debug(" ...and group management object ...")
+            self.groupManagement = GroupManagement(edenData=edenData,
+                                                   database=self.database,
+                                                   communication=self.communication,
+                                                   mode=mode)
 
-        LOG.debug("... is finished")
+            LOG.debug("... is finished")
 
-        # set current election state
-        self.currentElectionStateHandler: CurrentElectionStateHandler = None
-        self.setCurrentElectionStateAndCallCustomActions(database=self.database)
+            # set current election state
+            self.currentElectionStateHandler: CurrentElectionStateHandler = None
+            self.setCurrentElectionStateAndCallCustomActions(database=self.database)
+        except Exception as e:
+            LOG.exception("Exception in EdenBot.init. Description: " + str(e))
 
     def setCurrentElectionStateAndCallCustomActions(self, database: Database):
         try:
@@ -167,8 +170,7 @@ class EdenBot:
             else:
                 LOG.debug("Election state is not changed")
         except Exception as e:
-            LOG.exception("Exception: " + str(e))
-            raise EdenBotException("Exception: " + str(e))
+            LOG.exception("Exception in setCurrentElectionStateAndCallCustomActions. Description: " + str(e))
 
     def start(self):
         LOG.info("Starting EdenBot")
@@ -176,9 +178,10 @@ class EdenBot:
             i = 0
             while True:
 
-                for thread in threading.enumerate():
-                    print(thread.name)
-                kva= 9
+                #for thread in threading.enumerate():
+                #    print(thread.name)
+
+                #self.edenData.updateDfuseApiKey2(self.database) #just test
 
                 # sleep time depends on bot mode
                 if self.mode == Mode.LIVE:
@@ -221,14 +224,14 @@ def main():
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        (datetime(2022, 10, 5, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
-        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        ####(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
-        #(datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        #(datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        #(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
+        (datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        (datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        (datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
 
 

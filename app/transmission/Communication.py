@@ -140,7 +140,7 @@ class Communication(): #threading.Thread
 
         self.sessionBotThread.add_handler(
             MessageHandler(callback=self.wellcomeProcedure,
-                           filters=on_chat_member_updated), group=-1
+                           filters=filters.new_chat_members), group=-1
         )
 
         self.sessionBotThread.add_handler(
@@ -431,6 +431,8 @@ class Communication(): #threading.Thread
 
             knownParticipants = []
             for participant in participants:
+                # here we operate with sessionUser, but we use the check if user interacted with bot - minimization of
+                # probability of being kicked
                 if isinstance(participant, type(None)) == False and \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)):
@@ -460,7 +462,7 @@ class Communication(): #threading.Thread
             for participant in participants:
                 try:
                     if sessionType == SessionType.USER:
-                        self.sessionUser.promote_chat_member(chat_id=chatId,
+                        result = self.sessionUser.promote_chat_member(chat_id=chatId,
                                                              user_id=participant,
                                                              privileges=ChatPrivileges(
                                                                  can_manage_chat=True,
@@ -474,11 +476,18 @@ class Communication(): #threading.Thread
                                                                  is_anonymous=False
                                                              )
                                                              )
+                        LOG.success("Response (promote_chat_member): " + str(result))
+                        wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+                        self.sendMessage(chatId=chatId,
+                                    sessionType=SessionType.BOT,
+                                    text=wellcomeMessageObject.getWellcomeMessage(
+                                                                participantAccountName=str(participant)),
+                                    disableWebPagePreview=True)
 
                     else:
                         if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                                 telegramID=str(participant)):
-                            self.sessionBot.promote_chat_member(chat_id=chatId,
+                            result = self.sessionBot.promote_chat_member(chat_id=chatId,
                                                                 user_id=participant,
                                                                 privileges=ChatPrivileges(
                                                                     can_manage_chat=True,
@@ -492,6 +501,13 @@ class Communication(): #threading.Thread
                                                                     is_anonymous=False
                                                                 )
                                                                 )
+                            LOG.success("Response (promote_chat_member): " + str(result))
+                            wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
+                            self.sendMessage(chatId=chatId,
+                                             sessionType=SessionType.BOT,
+                                             text=wellcomeMessageObject.getWellcomeMessage(
+                                                 participantAccountName=str(participant)),
+                                             disableWebPagePreview=True)
                 except Exception as e:
                     LOG.exception("Exception (in promoteMembers): " + str(e))
             return True
@@ -550,98 +566,16 @@ class Communication(): #threading.Thread
     # Filters management
     #
 
+
     async def wellcomeProcedure(self, client: Client, message):
         try:
-            if message.new_chat_members is None or len(message.new_chat_members) == 0 or message.chat.type.name != "SUPERGROUP":
-                return
-            target = message.new_chat_members[0]
-
-            LOG.success("New chat member: " + str(message.new_chat_members))
             chatid = message.chat.id
-            newMember = target
+            LOG.success("New chat member: " + str(message.new_chat_members) + " in group " + str(chatid))
+            database: Database = self.database
 
-            if isinstance(newMember, types.User):
-                LOG.success("Wellcome message to user: " + str(newMember.id))
-                if newMember.is_bot:
-                    LOG.debug("...is bot. Do nothing")
-                    return
-                result = await client.promote_chat_member(chat_id=chatid,
-                                                          user_id=newMember.username,
-                                                          privileges=ChatPrivileges(
-                                                              can_manage_chat=True,
-                                                              can_delete_messages=True,
-                                                              can_manage_video_chats=True,
-                                                              can_restrict_members=True,
-                                                              can_promote_members=True,
-                                                              can_change_info=True,
-                                                              can_invite_users=True,
-                                                              can_pin_messages=True,
-                                                              is_anonymous=False
-                                                          ))
-                LOG.success("Response (promote_chat_member): " + str(result))
-                wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
-
-                result1 = await client.send_message(chat_id=chatid,
-                                                    text=wellcomeMessageObject.getWellcomeMessage(
-                                                        participantAccountName=str(newMember.username)
-                                                    ))
-
-                LOG.success("Response (send_message): " + str(result1))
-
-        except Exception as e:
-            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
-            return
-
-
-    async def wellcomeProcedureOld(client: Client, message):
-        try:
-            LOG.success("New chat member: " + str(message.new_chat_members))
-            chatid = message.chat.id
-
-            ##############################
-            for newMember in message.new_chat_members:
-                if isinstance(newMember, types.User):
-                    LOG.success("Wellcome message to user: " + str(newMember.id))
-                    LOG.debug(
-                        "... with username: " + str(newMember.username) if newMember.username is not None else "None")
-                    LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
-                    LOG.debug(
-                        "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
-
-                    # if new member is a bot do nothing
-                    if newMember.is_bot:
-                        LOG.debug("...is bot. Do nothing")
-                        continue
-                    result = await client.promote_chat_member(chat_id=chatid,
-                                                              user_id=newMember.username,
-                                                              privileges=ChatPrivileges(
-                                                                  can_manage_chat=True,
-                                                                  can_delete_messages=True,
-                                                                  can_manage_video_chats=True,
-                                                                  can_restrict_members=True,
-                                                                  can_promote_members=True,
-                                                                  can_change_info=True,
-                                                                  can_invite_users=True,
-                                                                  can_pin_messages=True,
-                                                                  is_anonymous=False
-                                                              ))
-                    LOG.success("Response (promote_chat_member): " + str(result))
-                    wellcomeMessageObject: WellcomeMessageTextManagement = WellcomeMessageTextManagement()
-
-                    result1 = await client.send_message(chat_id=chatid,
-                                            text=wellcomeMessageObject.getWellcomeMessage(
-                                                participantAccountName=str(newMember.username)
-                                            ))
-
-                    LOG.success("Response (send_message): " + str(result1))
-
-            ####################
-            return
-
-
-            LOG.success(".. in chat: " + str(chatid))
-            #database: Database = Database()
-            database: Database = DATABASE_CONST
+            if self.knownUserData.getKnownUsersOptimizedOnlyBoolean \
+                (botName=telegram_bot_name, telegramID=str(chatid)) is False:
+                LOG.error("Group not known to bot!")
             for newMember in message.new_chat_members:
                 if isinstance(newMember, types.User):
                     LOG.success("Wellcome message to user: " + str(newMember.id))
@@ -681,7 +615,7 @@ class Communication(): #threading.Thread
 
 
                             result = await client.promote_chat_member(chat_id=chatid,
-                                                             user_id=newMember.username,
+                                                             user_id=newMember.id,
                                                              privileges=ChatPrivileges(
                                                                  can_manage_chat=True,
                                                                  can_delete_messages=True,
@@ -719,16 +653,19 @@ class Communication(): #threading.Thread
             chatid = message.chat.id
             LOG.success(".. in chat: " + str(chatid))
 
-            database: Database = DATABASE_CONST
+            #database: Database = DATABASE_CONST
             if isinstance(message.chat.username, str):
                 LOG.debug("Username exists: " + str(message.chat.username))
 
-            participant: Participant = database.getParticipantByTelegramID(telegramID=message.chat.username)
+            participant: Participant = self.database.getParticipantByTelegramID(telegramID=message.chat.username)
 
             # reply_markup=inlineReplyMarkup, disable_web_page_preview=disableWebPagePreview
 
             #add user to known users
-            knownUserData: KnownUserData = KnownUserData(database=database)
+            knownUserData: KnownUserData = self.knownUserData #KnownUserData(database=database)
+
+
+
             knownUserData.setKnownUser(botName=telegram_bot_name, telegramID=message.chat.username, isKnown=True)
 
             botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
@@ -767,16 +704,16 @@ class Communication(): #threading.Thread
             chatid = message.chat.id
             LOG.success(".. in chat: " + str(chatid))
 
-            database: Database = Database()
+            #database: Database = Database()
             if isinstance(message.chat.username, str):
                 LOG.debug("Username exists: " + str(message.chat.username))
 
-            participant: Participant = database.getParticipantByTelegramID(telegramID=message.chat.username)
+            participant: Participant = self.database.getParticipantByTelegramID(telegramID=message.chat.username)
 
             # reply_markup=inlineReplyMarkup, disable_web_page_preview=disableWebPagePreview
 
             #add user to known users
-            knownUserData: KnownUserData = KnownUserData(database=database)
+            knownUserData: KnownUserData = self.knownUserData #KnownUserData(database=database)
             knownUserData.setKnownUser(botName=telegram_bot_name, telegramID=message.chat.username, isKnown=True)
 
             botCommunicationManagement: BotCommunicationManagement = BotCommunicationManagement()
@@ -806,7 +743,7 @@ class Communication(): #threading.Thread
                                               userID=participant.accountName))
 
         except Exception as e:
-            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            LOG.exception("Exception (in commandResponseStatus): " + str(e))
             return
 
     async def commandResponseDonate(self, client: Client, message):
@@ -831,7 +768,7 @@ class Communication(): #threading.Thread
                                       )
                                       )
         except Exception as e:
-            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            LOG.exception("Exception (in commandResponseDonate): " + str(e))
             return
 
 
@@ -847,7 +784,7 @@ class Communication(): #threading.Thread
                 LOG.debug("...is bot. Do nothing")
                 return
             result = await client.promote_chat_member(chat_id=chatid,
-                                                      user_id=message.from_user.username,
+                                                      user_id=message.from_user.id,
                                                       privileges=ChatPrivileges(
                                                           can_manage_chat=True,
                                                           can_delete_messages=True,
@@ -867,7 +804,7 @@ class Communication(): #threading.Thread
                                                     participantAccountName=str(message.from_user.username)
                                                 ))
         except Exception as e:
-            LOG.exception("Exception (in commandResponseStart): " + str(e))
+            LOG.exception("Exception (in commandResponseAdmin): " + str(e))
             return
 
     def idle(self):

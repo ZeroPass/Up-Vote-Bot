@@ -357,7 +357,6 @@ class GroupManagement:
         """Create groups"""
         try:
             LOG.info("Create groups")
-            # TODO find the way to use already created groups
             roomArrayNewGroups: RoomArray = RoomArray()
             roomArrayPrecreatedGroups: RoomArray = RoomArray()
             for index in range(numGroups):  # from 0 to numGroups -1
@@ -482,6 +481,9 @@ class GroupManagement:
                 # create supergroup - cannot be just a simple group because of admin rights
                 chatID = self.communication.createSuperGroup(name=extendedRoom.roomNameShort,
                                                              description=extendedRoom.roomNameLong)
+                # updating telegramID in database
+                self.communication.addKnownUserAndUpdateLocal(botName=telegram_bot_name, chatID=str(chatID))
+
                 if chatID is None:
                     LOG.exception("ChatID is None")
                     raise GroupManagementException("ChatID is None")
@@ -514,7 +516,7 @@ class GroupManagement:
                       if self.database.getKnownUser(botName=telegram_bot_name, telegramID=item)]
 
             LOG.debug("Add participants to the room - communication part related")
-            if self.mode == Mode.LIVE:  # or True always add participants to the room - not admins
+            if self.mode == Mode.LIVE or True: #always add participants to the room - not admins
                 self.communication.addChatMembers(chatId=chatID,
                                                   participants=membersWithInteractionWithCurrentBot)
             else:
@@ -530,7 +532,7 @@ class GroupManagement:
 
             LOG.debug("Promote participants to admin rights")
             # make sure BOT has admin rights
-            if self.mode == Mode.LIVE:  # or True always promote participants in the room - not admins
+            if self.mode == Mode.LIVE or True: # always promote participants in the room - not admins
                 self.communication.promoteMembers(sessionType=SessionType.BOT,
                                                   chatId=chatID,
                                                   participants=membersWithInteractionWithCurrentBot)
@@ -565,7 +567,7 @@ class GroupManagement:
                 buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
 
                 # send private message to the participants, in case of test mode to the admins
-                if self.mode == Mode.LIVE:  # or True always send invitation link to the participants - not admins
+                if self.mode == Mode.LIVE or True: # always send invitation link to the participants - not admins
                     members = extendedRoom.getMembersTelegramIDsIfKnown()
                 else:
                     # demo mode
@@ -631,8 +633,8 @@ class GroupManagement:
             LOG.info("Creating room finished")
             return chatID
         except Exception as e:
-            LOG.exception(str(e))
-            raise GroupManagementException("Exception thrown when called createRoom; Description: " + str(e))
+            LOG.exception("Exception thrown when called createRoom; Description: " + str(e))
+            return None
 
     def sendInBot(self, extendedRoom: ExtendedRoom):  # not in use
         try:
@@ -804,9 +806,8 @@ class GroupManagement:
                 LOG.info("Chat with next chatID has been created: " + str(chatID) if chatID is not None
                          else "<not created>")
         except Exception as e:
-            LOG.exception(str(e))
-            raise GroupManagementException(
-                "Exception thrown when called groupInitialization; Description: " + str(e))
+            LOG.exception("Exception thrown when called groupInitialization; Description: " + str(e))
+
 
     def manage(self, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False, height: int = None):
         """Staring point of the group management code"""
@@ -842,7 +843,6 @@ class GroupManagement:
 
         except Exception as e:
             LOG.exception("Exception thrown when called manage function; Description: " + str(e))
-            raise GroupManagementException("Exception thrown when called manage function; Description: " + str(e))
 
 
 def main():
