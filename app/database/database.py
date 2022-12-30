@@ -276,7 +276,7 @@ class Database(metaclass=Singleton):
             else:
                 self.removeCcession(session=session)
                 #LOG.error(str(executionTime) +" checkIfTokenExpired. TOKEN EXPIRES:" + str(tokenService.expireBy))
-                return True #TODO:change it to false after test
+                return False
         except Exception as e:
             self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when checking if token expired: " + str(e))
@@ -1169,8 +1169,8 @@ class Database(metaclass=Singleton):
 
     def saveOrUpdateAbi(self, accountName: str, abi: str):
         try:
-            abiObj = Abi(accountName=accountName, contract=str.encode(abi))
             session = self.createCsesion(expireOnCommit=False)
+            abiObj = Abi(accountName=accountName, contract=str.encode(abi))
             existing_abi = (
                 session.query(Abi).filter(Abi.accountName == abiObj.accountName).first()
             )

@@ -32,7 +32,7 @@ class EdenData:
 
         # update api key
         self.updateDfuseApiKey(database=dfuseConnection.database)
-        schedule.every(300).seconds.do(self.updateDfuseApiKey1, database=dfuseConnection.database)# TODO; set real repat time
+        schedule.every(120).minutes.do(self.updateDfuseApiKey1, database=dfuseConnection.database)
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()
 
@@ -179,6 +179,21 @@ class EdenData:
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getTimestampOfBlock; Description: " + str(e))
+
+    def getChainHeadBlockNumber(self):
+        try:
+            path = '/v1/chain/get_info'
+            LOG.info("Path: " + path)
+
+            resultTable = requests.get(self.dfuseConnection.linkNode(path=path))
+
+            j = json.loads(resultTable.text)
+            LOG.debug("Result: " + str(j))
+            return int(j['head_block_num'])
+
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getChainDatetime; Description: " + str(e))
 
     def getChainDatetime(self):
         try:

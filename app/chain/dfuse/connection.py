@@ -191,7 +191,7 @@ class DfuseConnection:
                 abiObj: hex = abi.contract
                 if (len(abiObj) == 0):
                     raise ResponseException("Could not get ABi from db: " + abiObj.error)
-                abiHex = abiObj#.decode('utf-8')
+                abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
             else:
                 abiResponse = self.getAbiFromChain(account=account, height=height)
                 if not abiResponse.successful:
@@ -207,7 +207,7 @@ class DfuseConnection:
             #return ResponseSuccessful(data=s.hex_to_json(account, tableName, hex))
             return s.hex_to_json(account, tableName, hex)
         except Exception as e:
-            LOG.exception(str(e))
+            LOG.exception("Exception thrown when called getAbi; Description: " + str(e))
             #return ResponseError("Exception thrown when called getAbi; Description: " + str(e))
             return None
 

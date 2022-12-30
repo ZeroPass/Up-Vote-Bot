@@ -70,8 +70,8 @@ class EdenBot:
                 self.modeDemo.setEndBlockHeight(responseEnd.data)  # set end block height
 
             # difference between server and node time
-            self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
-                                                                                nodeTime=self.edenData.getChainDatetime())
+            #self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
+            #                                                                    nodeTime=self.edenData.getChainDatetime())
 
             # create communication object
             # creat communication object
@@ -178,9 +178,6 @@ class EdenBot:
             i = 0
             while True:
 
-                #for thread in threading.enumerate():
-                #    print(thread.name)
-
                 #self.edenData.updateDfuseApiKey2(self.database) #just test
 
                 # sleep time depends on bot mode
@@ -191,12 +188,16 @@ class EdenBot:
                     # Mode.DEMO
                     LOG.debug("Demo mode: sleep time: " + str(0.1))
                     time.sleep(0.1)  # in demo mode sleep 0.1s
-                    #REPEAT_TIME[self.currentElectionStateHandler.edenBotMode]
-                    if self.modeDemo.isNextTimestampInLimit(seconds=60):
-                        self.modeDemo.setNextTimestamp(seconds=60)
+
+                    if self.modeDemo.isLiveMode():
+                        self.modeDemo.setNextLiveBlockAndTimestamp()
+
                     else:
-                        LOG.success("Time limit reached - Demo mode finished")
-                        break
+                        if self.modeDemo.isNextTimestampInLimit(seconds=60):
+                            self.modeDemo.setNextTimestamp(seconds=60)
+                        else:
+                            LOG.success("Time limit reached - Demo mode finished")
+                            break
 
                 else:
                     raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
@@ -224,7 +225,7 @@ def main():
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)), #adding users
+        #(datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
         (datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
         (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
         (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
@@ -236,10 +237,14 @@ def main():
 
 
     #120 blocks per minute
-    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-                        edenObj=edenData,
-                        step=1  # 1.5 min
-                        )
+    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+    #                    edenObj=edenData,
+    #                    step=1  # 1.5 min
+    #                    )
+
+    modeDemo = ModeDemo.live(edenObj=edenData,
+                             stepBack=10)
+    kva = modeDemo.isLiveMode()
 
 
     EdenBot(edenData=edenData,

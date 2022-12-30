@@ -57,7 +57,7 @@ class ModeDemo:
                 raise ModeDemoException("End is not a datetime object")
 
         self.edenObj = edenObj
-
+        self.liveMode = False
         self.startAndEndDatetime = startAndEndDatetime
         self.currentTimeFrameIndex = 0
         self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
@@ -65,6 +65,38 @@ class ModeDemo:
 
         self.step = step
 
+    """ModeDemo has 2 mode. One is in the past when you create set of bloks. You can call it by constcutor.
+       Other mode is (half)LIVE but few blocks back (stepBack). You can call it by call constcutror live(...)
+        Whey you use second mode you can step forward by calling setNextLiveBlockAndTimestamp.
+        You can check in what mode is the ModeDemo instance by calling function isLive()
+    """
+    @classmethod
+    def live(cls, edenObj: EdenData, stepBack: int):
+        assert isinstance(edenObj, EdenData), "EdenObj is not a EdenData object"
+        assert isinstance(stepBack, int), "Step is not an integer"
+        if stepBack < 1:
+            LOGModeDemo.exception("ModeDemo; stepBack must be greater than 0")
+            raise ModeDemoException("StepBack must be greater than 0")
+        LOGModeDemo.debug("Live mode activated")
+
+        cls.liveMode = True
+        cls.edenObj = edenObj
+        cls.stepBack = stepBack
+        cls.currentBlockHeight = cls.edenObj.getChainHeadBlockNumber() - cls.stepBack
+        cls.currentBlockTimestamp = cls.edenObj.getTimestampOfBlock(blockNum=cls.currentBlockHeight)
+        return cls(startAndEndDatetime =  [(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))])
+
+        [(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))]
+
+
+    def isLiveMode(self) -> bool:
+        return self.liveMode
+
+    #works only when demoMode is called by DemoMode.live(...)
+    def setNextLiveBlockAndTimestamp(self):
+        assert (self.liveMode is True), "LiveMode should be True when you call 'ModeDemo.setNextLiveBlockAndTimestamp'"
+        self.currentBlockHeight = self.edenObj.getChainHeadBlockNumber() - self.stepBack
+        self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=self.currentBlockHeight)
 
     def setStartBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
@@ -132,3 +164,5 @@ class ModeDemo:
             LOGModeDemo.exception("ModeDemo; Current block timestamp is not available")
             raise ModeDemoException("No current block timestamp available")
         return self.currentBlockTimestamp
+
+
