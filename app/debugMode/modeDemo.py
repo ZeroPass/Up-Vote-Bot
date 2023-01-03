@@ -22,7 +22,8 @@ class ModeDemo:
 
     """Store the time of start and end of the election"""
 
-    def __init__(self, startAndEndDatetime: list[tuple[datetime, datetime]], edenObj: EdenData, step: int = 1):
+    def __init__(self, startAndEndDatetime: list[tuple[datetime, datetime]], edenObj: EdenData, step: int = 1,
+                 fromLive: bool = False):
         #step is import only if you call getNextBlock(), not setNextTimestamp()
         # Example 1 - with block height:
         # if isNextBlock():
@@ -55,15 +56,15 @@ class ModeDemo:
             if isinstance(oneTimeFrame[1], datetime) is False:
                 LOGModeDemo.exception("ModeDemo; End is not a datetime object")
                 raise ModeDemoException("End is not a datetime object")
+        if fromLive is False:
+            self.edenObj = edenObj
+            self.liveMode = False
+            self.startAndEndDatetime = startAndEndDatetime
+            self.currentTimeFrameIndex = 0
+            self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
+            self.setNextTimestamp(seconds=0)
 
-        self.edenObj = edenObj
-        self.liveMode = False
-        self.startAndEndDatetime = startAndEndDatetime
-        self.currentTimeFrameIndex = 0
-        self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
-        self.setNextTimestamp(seconds=0)
-
-        self.step = step
+            self.step = step
 
     """ModeDemo has 2 mode. One is in the past when you create set of bloks. You can call it by constcutor.
        Other mode is (half)LIVE but few blocks back (stepBack). You can call it by call constcutror live(...)
@@ -80,13 +81,17 @@ class ModeDemo:
         LOGModeDemo.debug("Live mode activated")
 
         cls.liveMode = True
+        #selfObject = cls(edenObj=edenObj,
+        #    startAndEndDatetime=[(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))])
+
         cls.edenObj = edenObj
         cls.stepBack = stepBack
         cls.currentBlockHeight = cls.edenObj.getChainHeadBlockNumber() - cls.stepBack
         cls.currentBlockTimestamp = cls.edenObj.getTimestampOfBlock(blockNum=cls.currentBlockHeight)
-        return cls(startAndEndDatetime =  [(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))])
+        return cls(edenObj=edenObj,
+                   startAndEndDatetime=[(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))],
+                   fromLive = True)
 
-        [(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3))]
 
 
     def isLiveMode(self) -> bool:

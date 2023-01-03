@@ -91,7 +91,7 @@ class ParticipantsManagement:
                                             roomID=-1, #not yet
                                             participationStatus=True if len(value) == 2 and
                                                                     "election_participation_status" in value[1] and
-                                                                    value[1]['election_participation_status'] == 1
+                                                                    value[1]['election_participation_status'] != 0
                                                                         else False,
                                             telegramID="",
                                             nftTemplateID=int(value[1]['nft_template_id']) if len(value) == 2 and

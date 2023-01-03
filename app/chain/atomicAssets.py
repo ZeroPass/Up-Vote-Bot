@@ -64,10 +64,11 @@ class AtomicAssetsData:
 
     def getTGfromTemplateID(self, templateID: int,  height: int = None) -> Response:
         try:
-            LOG.info("Get telegram ID from teplate id on height: " + str(templateID) if height is not None else "<current/live>")
+            LOG.info("Get telegram ID from template id on height: " + str(templateID) if height is not None else "<current/live>")
 
             COLLECTION_NAME = 'genesis.eden'
-            url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            #url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            url = requests.get("https://jungle-aa.edenia.cloud/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
 
             if url.status_code == 200:
                 jsonData = json.loads(url.text)

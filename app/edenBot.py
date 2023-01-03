@@ -128,6 +128,7 @@ class EdenBot:
             elif electionState == "current_election_state_seeding_v1":
                 self.currentElectionStateHandler = CurrentElectionStateHandlerSeedingV1(receivedData[1])
                 self.currentElectionStateHandler.customActions(database=database,
+                                                               groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
@@ -244,7 +245,6 @@ def main():
 
     modeDemo = ModeDemo.live(edenObj=edenData,
                              stepBack=10)
-    kva = modeDemo.isLiveMode()
 
 
     EdenBot(edenData=edenData,

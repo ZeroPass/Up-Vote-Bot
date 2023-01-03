@@ -133,7 +133,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, edenData: EdenData, communication: Communication,
+    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData, communication: Communication,
                       modeDemo: ModeDemo = None):
         try:
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_SEEDING_V1")
@@ -152,9 +152,19 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
             database.createRemindersIfNotExists(election=election)
 
             # write participants/member in database
-            # participantsManagement: ParticipantsManagement = ParticipantsManagement(
-            #    edenData=EdenData(dfuseApiKey=dfuse_api_key))
-            # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election)
+            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+                                                                                    communication=communication)
+            participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+                                                                                height=modeDemo.currentBlockHeight
+                                                                                if modeDemo is not None else None)
+            #
+            # create groups before election
+            groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),
+                                                           totalGroups=pre_created_groups_total,
+                                                           numberOfGroups=pre_created_groups_created_groups_in_one_round,
+                                                           duration=
+                                                           timedelta(minutes=pre_created_groups_how_often_creating_in_min)
+                                                           )
 
             # send notification
             reminderManagement: ReminderManagement = ReminderManagement(database=database,
