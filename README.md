@@ -2,7 +2,7 @@
 
 Read its description and donate at [pomelo.io/grants/bot4eden](https://pomelo.io/grants/bot4eden)!
 
-The bot chills in Telegram at [t.me/Up_Vote_Bot](https://t.me/Up_Vote_Bot). Between elections it might not respond due to maintanence. Use the command /status, to check if its online at the time.
+The bot chills in Telegram at [@Up_Vote_Bot](https://t.me/Up_Vote_Bot). Between elections it might not respond due to maintanence. Use the command /status, to check if its online at the time.
 
 It is a bot written in Python language which main purpose is to support [Eden](https://genesis.eden.eoscommunity.org/) elections, but might expand in the future.
 
