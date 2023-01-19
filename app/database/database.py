@@ -5,11 +5,11 @@ import sqlalchemy
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import NullPool
 
-from app.constants import CurrentElectionState, ReminderGroup
-from app.constants.electionState import ElectionStatusFromKey
+from constants import CurrentElectionState, ReminderGroup
+from constants.electionState import ElectionStatusFromKey
 
-from app.log import *
-from app.constants.parameters import database_name, database_user, database_password, database_host, database_port, \
+from log import *
+from constants.parameters import database_name, database_user, database_password, database_host, database_port, \
     alert_message_time_election_is_coming
 from sqlalchemy import create_engine, func, or_, nullslast
 from sqlalchemy.engine.url import URL
@@ -17,16 +17,16 @@ from sqlalchemy.engine.url import URL
 from datetime import datetime, timedelta
 # must be before import statements
 import app.database.base
-from app.database.abi import Abi
-from app.database.tokenService import TokenService
-from app.database.election import Election
-from app.database.electionStatus import ElectionStatus
-from app.database.participant import Participant
-from app.database.extendedParticipant import ExtendedParticipant
-from app.database.extendedRoom import ExtendedRoom
-from app.database.room import Room
-from app.database.knownUser import KnownUser
-from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
+from database.abi import Abi
+from database.tokenService import TokenService
+from database.election import Election
+from database.electionStatus import ElectionStatus
+from database.participant import Participant
+from database.extendedParticipant import ExtendedParticipant
+from database.extendedRoom import ExtendedRoom
+from database.room import Room
+from database.knownUser import KnownUser
+from database.reminder import Reminder, ReminderSent, ReminderSendStatus
 
 LOG = Log(className="Database")
 
@@ -403,6 +403,8 @@ class Database(metaclass=Singleton):
     def createTimeIsUpReminder(self, reminder: Reminder, csession: scoped_session):
         try:
             session = self.createCsesion()
+            # because of database specs we need to eliminate microseconds
+            reminder.dateTimeBefore.replace(microsecond=0)
             reminderSendRecords = session.query(Reminder) \
                 .filter(Reminder.electionID == reminder.electionID,
                         Reminder.reminderGroup == reminder.reminderGroup,
@@ -460,6 +462,9 @@ class Database(metaclass=Singleton):
                 reminderObj = Reminder(electionID=election.electionID,
                                        dateTimeBefore=reminderTime,
                                        reminderGroup=reminder[1])
+
+                # because of database specs we need to eliminate microseconds
+                reminderObj.dateTimeBefore.replace(microsecond=0)
 
                 datetimeBeforeStr: str = reminderObj.dateTimeBefore.strftime('%Y-%m-%d %H:%M:%S')
                 existing_reminder = (
@@ -1335,29 +1340,30 @@ def main():
     #kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=True)
     #neki = 8
 
-    #election: Election = Election(electionID=4,
-    ##                              status=ElectionStatus(electionStatusID=7,
-    #                                                   status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
-    #                              date=datetime.now()
-    #                              )
+    election: Election = Election(electionID=2,
+                                  status=ElectionStatus(electionStatusID=7,
+                                                       status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
+                                  date=datetime.now()
+                                  )
 
-    #reminder: Reminder = Reminder(reminderID=224, electionID=4, dateTimeBefore=datetime.now(), round=0)
+    reminder: Reminder = Reminder(reminderID=8, electionID=2, dateTimeBefore=datetime.now(), round=0)
 
-    kva = database.getABI(accountName="genesis.eden")
-    kva1 = database.getABI(accountName="genesis.ede2")
-    kva2 = database.getABI(accountName="genesis.eden")
+    #kva = database.getABI(accountName="genesis.eden")
+    #kva1 = database.getABI(accountName="genesis.ede2")
+    #kva2 = database.getABI(accountName="genesis.eden")
 
-    database.fillElectionStatuses()
-    electionStatusIDfromDB: ElectionStatus = \
-        database.getElectionStatus(CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS)
+    #database.fillElectionStatuses()
+    #electionStatusIDfromDB: ElectionStatus = \
+    #    database.getElectionStatus(CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS)
 
 
-    kva = database.getRoomsPreelection(predisposedBy="nejc", election=Election(electionID=10,
-                                                                               date=datetime(2022, 10, 5, 12, 58),
-                                                                               status=electionStatusIDfromDB))
+    #kva = database.getRoomsPreelection(predisposedBy="nejc", election=Election(electionID=10,
+    #                                                                           date=datetime(2022, 10, 5, 12, 58),
+    #                                                                           status=electionStatusIDfromDB))
 
     # database.getMembers(election=election)
-    roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election, reminder=reminder)
+    roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election,
+                                                                                                       reminder=reminder)
 
     for room, participant in roomsAndParticipants:
         print("Room: " + str(room.roomID))

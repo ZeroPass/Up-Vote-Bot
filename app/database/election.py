@@ -1,6 +1,6 @@
 from sqlalchemy import DateTime, MetaData, Table, Column, Integer, ForeignKey, BOOLEAN
-from app.database.electionStatus import ElectionStatus
-from app.database.base import Base
+from database.electionStatus import ElectionStatus
+from database.base import Base
 from datetime import datetime
 
 

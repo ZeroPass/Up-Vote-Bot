@@ -1,13 +1,13 @@
-from app.constants import dfuse_api_key
-from app.database import Database, Election
-from app.database.room import Room
-from app.log import Log
-from app.chain.dfuse import Response, ResponseError, ResponseSuccessful
-from app.chain.eden import EdenData
-from app.database.participant import Participant
-from app.chain.atomicAssets import AtomicAssetsData
-from app.transmission import Communication
-from app.transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from constants import dfuse_api_key
+from database import Database, Election
+from database.room import Room
+from log import Log
+from chain.dfuse import Response, ResponseError, ResponseSuccessful
+from chain.eden import EdenData
+from database.participant import Participant
+from chain.atomicAssets import AtomicAssetsData
+from transmission import Communication
+from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
 
 
 class ParticipantsManagementException(Exception):

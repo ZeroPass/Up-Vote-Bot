@@ -1,10 +1,10 @@
 import json
 import requests
 
-from app.chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
-from app.constants import atomic_assets_account, dfuse_api_key
-from app.database import Database
-from app.log.log import Log
+from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
+from constants import atomic_assets_account, dfuse_api_key
+from database import Database
+from log.log import Log
 
 
 class ResponseException(Exception):
@@ -67,8 +67,8 @@ class AtomicAssetsData:
             LOG.info("Get telegram ID from template id on height: " + str(templateID) if height is not None else "<current/live>")
 
             COLLECTION_NAME = 'genesis.eden'
-            #url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
-            url = requests.get("https://jungle-aa.edenia.cloud/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            #url = requests.get("https://jungle-aa.edenia.cloud/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
 
             if url.status_code == 200:
                 jsonData = json.loads(url.text)

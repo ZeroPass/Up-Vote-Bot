@@ -1,8 +1,8 @@
 import urllib.parse as urlparse
 from urllib.parse import urlencode
 
-from app.constants import blocksIoLinkToTheContract
-from app.log import Log
+from constants import blocksIoLinkToTheContract
+from log import Log
 
 
 def setQueryParameter(url: str, param_name: str, param_value: str):

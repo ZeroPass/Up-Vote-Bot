@@ -2,10 +2,10 @@ from enum import Enum
 from datetime import datetime
 from sqlalchemy import DateTime, Column, Integer, ForeignKey, CHAR
 
-from app.constants import ReminderGroup
-from app.database.participant import Participant
-from app.database.election import Election
-from app.database.base import Base
+from constants import ReminderGroup
+from database.participant import Participant
+from database.election import Election
+from database.base import Base
 
 
 class ReminderSendStatus(Enum):

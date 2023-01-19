@@ -1,22 +1,20 @@
-import threading
-from enum import Enum
-
 import time
 
-from app.chain import EdenData
-from app.chain.dfuse import *
-from app.chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
+from chain import EdenData
+from chain.dfuse import *
+from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
-from app.constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
-from app.database import Database, Election
-from app.log import Log
+from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
+from database import Database, Election
+from log import Log
 from datetime import datetime, timedelta
-from app.debugMode.modeDemo import ModeDemo, Mode
-from app.groupManagement import GroupManagement
-import gettext
+from debugMode.modeDemo import ModeDemo, Mode
+from groupManagement import GroupManagement
 
-from app.transmission import Communication, SessionType
+from random import *
+
+from transmission import Communication, SessionType
 
 from multiprocessing import Process
 
@@ -31,7 +29,6 @@ REPEAT_TIME = {
     EdenBotMode.ELECTION: 45,  # every 45 seconds
     EdenBotMode.NOT_ELECTION: 60 * 10  # every half hour 60 seconds  x 10 minutes
 }
-
 
 class EdenBot:
     botMode: EdenBotMode
@@ -69,16 +66,12 @@ class EdenBot:
                 self.modeDemo.setStartBlockHeight(responseStart.data)  # set start block height
                 self.modeDemo.setEndBlockHeight(responseEnd.data)  # set end block height
 
-            # difference between server and node time
-            #self.timeDiff = self.edenData.getDifferenceBetweenNodeAndServerTime(serverTime=datetime.now(),
-            #                                                                    nodeTime=self.edenData.getChainDatetime())
-
             # create communication object
-            # creat communication object
             LOG.debug("Initialization of telegram bot...")
             self.communication = Communication(database=database)
 
-            self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
+            # to run callback part of pyrogram library on separated thread - not as separated executable file
+            #self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
 
             self.communication.startComm(apiId=telegramApiID,
                                      apiHash=telegramApiHash,
@@ -114,6 +107,9 @@ class EdenBot:
                     "Error when called eden.getCurrentElectionState; Description: " + edenData.data.error)
 
             receivedData = edenData.data
+            self.communication.sendMessage(sessionType=SessionType.BOT,
+                                           text="Ping:" + str(randint(1, 1000)),
+                                           chatId='nejcskerjanc2')
 
             election: Election = None
             # initialize state and call custom action if exists, otherwise there is just a comment in log
@@ -188,7 +184,7 @@ class EdenBot:
                 elif self.mode == Mode.DEMO and self.modeDemo is not None:
                     # Mode.DEMO
                     LOG.debug("Demo mode: sleep time: " + str(0.1))
-                    time.sleep(0.1)  # in demo mode sleep 0.1s
+                    time.sleep(10)  # in demo mode sleep 0.1s
 
                     if self.modeDemo.isLiveMode():
                         self.modeDemo.setNextLiveBlockAndTimestamp()
@@ -227,12 +223,12 @@ def main():
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
         #(datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
-        (datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
-        (datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        (datetime(2022, 10, 8, 14, 54), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        #(datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
         (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
 
@@ -244,7 +240,7 @@ def main():
     #                    )
 
     modeDemo = ModeDemo.live(edenObj=edenData,
-                             stepBack=10)
+                             stepBack=10) #unncomeent this!!!!!!
 
 
     EdenBot(edenData=edenData,
@@ -294,29 +290,11 @@ def main1():
 
     while True:
         time.sleep(2)
-    #async comm.run()
-    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
-    time.sleep(2)
-    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
-    time.sleep(2)
-    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
-    time.sleep(2)
-    comm.sendMessage(chatId="nejcskerjanc2", sessionType=SessionType.BOT, text="test")
 
 
 
 
 if __name__ == "__main__":
-    #import requests
-    #token = "tkn"
-    #params = {"limit": 100,
-    #          "allowed_updates": ["my_chat_member"]}
-    #r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", params=params).json()
-
-    #for i in range(0, len(r["result"])):
-    #    if not r["result"][i]["message"]["from"]["id"] in users:
-    #        users.append(r["result"][i]["message"]["from"]["id"])
-
     main()
     #main1()
     #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

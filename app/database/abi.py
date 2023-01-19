@@ -1,7 +1,7 @@
 import datetime as DateTimeP
 
 from sqlalchemy import DateTime, MetaData, Table, Column, Text, CHAR, VARBINARY, VARCHAR, String
-from app.database.base import Base
+from database.base import Base
 
 class Abi(Base):
     __tablename__ = 'abi'

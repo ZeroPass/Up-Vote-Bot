@@ -1,6 +1,6 @@
-from app.database.room import Room
+from database.room import Room
 from sqlalchemy import String, Table, Column, Integer, ForeignKey, Text, CHAR, BOOLEAN
-from app.database.base import Base
+from database.base import Base
 
 
 class Participant(Base):

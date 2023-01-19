@@ -1,21 +1,21 @@
 from enum import Enum
 
-from app.chain import EdenData
-from app.constants import dfuse_api_key, pre_created_groups_total, pre_created_groups_created_groups_in_one_round, \
+from chain import EdenData
+from constants import dfuse_api_key, pre_created_groups_total, pre_created_groups_created_groups_in_one_round, \
     pre_created_groups_how_often_creating_in_min, telegram_bot_name
-from app.dateTimeManagement import DateTimeManagement
-from app.debugMode.modeDemo import ModeDemo, Mode
-from app.groupManagement import GroupManagement
-from app.knownUserManagement import KnownUserManagement, KnownUserData
-from app.log import Log
+from dateTimeManagement import DateTimeManagement
+from debugMode.modeDemo import ModeDemo, Mode
+from groupManagement import GroupManagement
+from knownUserManagement import KnownUserManagement, KnownUserData
+from log import Log
 from datetime import datetime, timedelta
-from app.constants.electionState import CurrentElectionState
+from constants.electionState import CurrentElectionState
 
-from app.database import Election, Database, ElectionStatus, ExtendedRoom, KnownUser
+from database import Election, Database, ElectionStatus, ExtendedRoom, KnownUser
 
-from app.participantsManagement import ParticipantsManagement
-from app.reminderManagement import ReminderManagement
-from app.transmission import Communication
+from participantsManagement import ParticipantsManagement
+from reminderManagement import ReminderManagement
+from transmission import Communication
 
 LOG = Log(className="CurrentElectionStateHandler")
 
@@ -85,8 +85,8 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
 
             #commented for demo only
             #write participants/member in database
-            #participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
-            #                                                                        communication=communication)
+            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+                                                                                    communication=communication)
             #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
             #                                                                    height=modeDemo.currentBlockHeight
             #                                                                    if modeDemo is not None else None)
@@ -154,9 +154,9 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
             # write participants/member in database
             participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
                                                                                     communication=communication)
-            participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
-                                                                                height=modeDemo.currentBlockHeight
-                                                                                if modeDemo is not None else None)
+            #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+            #                                                                    height=modeDemo.currentBlockHeight
+            #                                                                    if modeDemo is not None else None)
             #
             # create groups before election
             groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),

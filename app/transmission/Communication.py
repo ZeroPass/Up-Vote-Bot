@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import threading
 from datetime import datetime, timedelta
@@ -10,12 +11,12 @@ from pyrogram.handlers import MessageHandler
 from pyrogram.methods.decorators import on_chat_member_updated
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand
 
-from app.constants.parameters import *
-from app.database import Database
-from app.database.participant import Participant
-from app.dateTimeManagement import DateTimeManagement
-from app.knownUserManagement import KnownUserData
-from app.log.log import Log
+from constants.parameters import *
+from database import Database
+from database.participant import Participant
+from dateTimeManagement import DateTimeManagement
+from knownUserManagement import KnownUserData
+from log.log import Log
 
 from multiprocessing import Process
 
@@ -23,10 +24,10 @@ from pyrogram import Client, emoji, filters, types, idle
 
 import time
 
-from app.text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement, \
+from text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement, \
     WellcomeMessageTextManagement
 
-
+#logging.basicConfig(level=logging.DEBUG)
 # api_id = 48490
 # api_hash = "507315c8796f15903299b47730838c77"
 
@@ -132,45 +133,49 @@ class Communication(): #threading.Thread
         kva = 8
 
     def startSessionAsync(self, apiId: int, apiHash: str, botToken: str):
-        self.setSession(sessionType=SessionType.BOT_THREAD,
-                        client=Client(name=communication_session_name_async_bot + "1",
-                                      api_id=apiId,
-                                      api_hash=apiHash,
-                                      bot_token=botToken))
+        try:
+            self.setSession(sessionType=SessionType.BOT_THREAD,
+                            client=Client(name=communication_session_name_async_bot + "1",
+                                          api_id=apiId,
+                                          api_hash=apiHash,
+                                          bot_token=botToken),
+                                          )
 
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=self.wellcomeProcedure,
-                           filters=filters.new_chat_members), group=-1
-        )
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.wellcomeProcedure,
+                               filters=filters.new_chat_members), group=-1
+            )
 
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=self.commandResponseStart,
-                           filters=filters.command(commands=["start"]) & filters.private), group=4
-        )
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseStart,
+                               filters=filters.command(commands=["start"]) & filters.private), group=4
+            )
 
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=self.commandResponseStatus,
-                           filters=filters.command(commands=["status"]) & filters.private), group=3
-        )
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseStatus,
+                               filters=filters.command(commands=["status"]) & filters.private), group=3
+            )
 
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=self.commandResponseDonate,
-                           filters=filters.command(commands=["donate"]) & filters.private), group=2
-        )
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseDonate,
+                               filters=filters.command(commands=["donate"]) & filters.private), group=2
+            )
 
-        self.sessionBotThread.add_handler(
-            MessageHandler(callback=self.commandResponseAdmin,
-                           filters=filters.command(commands=["admin"])), group=1
-        )
+            #self.sessionBotThread.add_handler(
+            #    MessageHandler(callback=self.commandResponseAdmin,
+            #                   filters=filters.command(commands=["admin"])), group=1
+            #)
 
-        #self.startSession(sessionType=SessionType.BOT_THREAD)
-        self.sessionBotThread.start()
-        #self.sessionBotThread.
-        idle()
+            #self.startSession(sessionType=SessionType.BOT_THREAD)
+            self.sessionBotThread.start()
+            #self.sessionBotThread.
+            idle()
 
-        while True:
-            print("kvakva")
-            time.sleep(0.1)
+            while True:
+                print("kvakva")
+                time.sleep(0.1)
+        except Exception as e:
+            LOG.exception("Communication.startSessionAsync exception: " + str(e))
 
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
@@ -288,14 +293,14 @@ class Communication(): #threading.Thread
                                                          disable_web_page_preview=disableWebPagePreview)
             LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
             return True if type(response) is types.Message else False
-        except FloodWait as e:
-            LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
-            time.sleep(e.value)
-            return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=inlineReplyMarkup)
         except PeerIdInvalid:
             LOG.exception("Exception (in sendMessage): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
+        except FloodWait as e:
+            LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
+            time.sleep(e.value)
+            return self.sendMessage(sessionType=sessionType, chatId=chatId, text=text, replyMarkup=inlineReplyMarkup)
         except Exception as e:
             LOG.exception("Exception: " + str(e))
             return False
@@ -566,8 +571,58 @@ class Communication(): #threading.Thread
     # Filters management
     #
 
+    async def wellcomeProcedure1(self, client: Client, message):
+        try:
+            chatid = message.chat.id
+            LOG.success("New chat member: " + str(message.new_chat_members) + " in group " + str(chatid))
+            database: Database = self.database
 
-    async def wellcomeProcedure(self, client: Client, message):
+            if self.knownUserData.getKnownUsersOptimizedOnlyBoolean \
+                (botName=telegram_bot_name, telegramID=str(chatid)) is False:
+                LOG.error("Group not known to bot!")
+            for newMember in message.new_chat_members:
+                if isinstance(newMember, types.User):
+                    LOG.success("Wellcome message to user: " + str(newMember.id))
+                    LOG.debug(
+                        "... with username: " + str(newMember.username) if newMember.username is not None else "None")
+                    LOG.debug("...name: " + str(newMember.first_name) if newMember.first_name is not None else "None")
+                    LOG.debug(
+                        "...last name: " + str(newMember.last_name) if newMember.last_name is not None else "None")
+
+                    # if new member is a bot do nothing
+                    if newMember.is_bot:
+                        LOG.debug("...is bot. Do nothing")
+                        continue
+
+                    #if newMember.id is None or self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name, telegramID=str(newMember.username.lower())) is False:
+                    #    continue
+
+                    await client.send_message(chat_id=chatid,
+                                              text="start")
+                    result = await client.promote_chat_member(chat_id=chatid,
+                                                     user_id=newMember.id,
+                                                     privileges=ChatPrivileges(
+                                                         can_manage_chat=True,
+                                                         can_delete_messages=True,
+                                                         can_manage_video_chats=True,
+                                                         can_restrict_members=True,
+                                                         can_promote_members=True,
+                                                         can_change_info=True,
+                                                         can_invite_users=True,
+                                                         can_pin_messages=True,
+                                                         is_anonymous=False
+                                                     ))
+                    await client.send_message(chat_id=chatid,
+                                              text=str(result))
+
+                    await client.send_message(chat_id=newMember.id,
+                                              text="kva")
+                else:
+                    LOG.success("New member is not instance of 'User'")
+        except Exception as e:
+            LOG.exception("Exception (in wellcomeProcedure): " + str(e))
+            return
+    async def wellcomeProcedure(self, client: Client, message): #works on demo day
         try:
             chatid = message.chat.id
             LOG.success("New chat member: " + str(message.new_chat_members) + " in group " + str(chatid))
@@ -613,7 +668,8 @@ class Communication(): #threading.Thread
                             LOG.debug(
                                 "User supposed to be in this room: " + str(participant.telegramID) + " - promoting!")
 
-
+                            if newMember.id is None or self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name, telegramID=str(newMember.username.lower())) is False:
+                                continue
                             result = await client.promote_chat_member(chat_id=chatid,
                                                              user_id=newMember.id,
                                                              privileges=ChatPrivileges(
@@ -645,7 +701,6 @@ class Communication(): #threading.Thread
                     LOG.success("New member is not instance of 'User'")
         except Exception as e:
             LOG.exception("Exception (in wellcomeProcedure): " + str(e))
-            return
 
     async def commandResponseStart(self, client: Client, message):
         try:
@@ -696,7 +751,6 @@ class Communication(): #threading.Thread
 
         except Exception as e:
             LOG.exception("Exception (in commandResponseStart): " + str(e))
-            return
 
     async def commandResponseStatus(self, client: Client, message):
         try:
@@ -744,7 +798,6 @@ class Communication(): #threading.Thread
 
         except Exception as e:
             LOG.exception("Exception (in commandResponseStatus): " + str(e))
-            return
 
     async def commandResponseDonate(self, client: Client, message):
         try:
@@ -769,7 +822,6 @@ class Communication(): #threading.Thread
                                       )
         except Exception as e:
             LOG.exception("Exception (in commandResponseDonate): " + str(e))
-            return
 
 
     async def commandResponseAdmin(self, client: Client, message):
@@ -805,7 +857,6 @@ class Communication(): #threading.Thread
                                                 ))
         except Exception as e:
             LOG.exception("Exception (in commandResponseAdmin): " + str(e))
-            return
 
     def idle(self):
         idle()

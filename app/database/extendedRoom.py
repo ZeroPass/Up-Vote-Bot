@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from app.database.room import Room
-from app.database.extendedParticipant import ExtendedParticipant
+from database.room import Room
+from database.extendedParticipant import ExtendedParticipant
 
 
 class ExtendedRoom(Room):

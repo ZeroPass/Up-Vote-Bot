@@ -5,13 +5,13 @@ from pyrogram.raw.base import ReplyMarkup
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from twisted.web.http import responses
 
-from app.constants import CurrentElectionState
-from app.database.participant import Participant
-from app.debugMode.modeDemo import Mode
-from app.log import Log
-from app.database import Database, Election, ExtendedRoom, Reminder, ElectionStatus, ReminderSendStatus
-from app.transmission import Communication, SessionType, Communication
-from app.constants.parameters import alert_message_time_election_is_coming, \
+from constants import CurrentElectionState
+from database.participant import Participant
+from debugMode.modeDemo import Mode
+from log import Log
+from database import Database, Election, ExtendedRoom, Reminder, ElectionStatus, ReminderSendStatus
+from transmission import Communication, SessionType, Communication
+from constants.parameters import alert_message_time_election_is_coming, \
     telegram_api_id, telegram_api_hash, telegram_bot_token, eden_portal_url, telegram_admins_id
 
 import gettext
@@ -19,7 +19,7 @@ import gettext
 _ = gettext.gettext
 __ = gettext.ngettext
 
-from app.dateTimeManagement import DateTimeManagement
+from dateTimeManagement import DateTimeManagement
 
 
 class TransmissionManagementException(Exception):

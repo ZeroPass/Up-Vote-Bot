@@ -2,8 +2,8 @@ import gettext
 from datetime import datetime
 from typing import TypedDict, Tuple, Dict
 
-from app.constants.language import Language
-from app.database import ExtendedRoom, ExtendedParticipant
+from constants.language import Language
+from database import ExtendedRoom, ExtendedParticipant
 _ = gettext.gettext
 __ = gettext.ngettext
 

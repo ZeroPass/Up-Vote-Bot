@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
-from app.log import Log
+from log import Log
 from enum import Enum
-from app.chain import EdenData
+from chain import EdenData
 
 
 class Mode(Enum):

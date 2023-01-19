@@ -3,25 +3,25 @@ from datetime import datetime, timedelta
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from requests_unixsocket import Session
 
-from app.chain import EdenData
-from app.chain.dfuse import Response, ResponseError
-# from app.chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
-from app.debugMode.modeDemo import Mode, ModeDemo
-from app.log import Log
-from app.constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
+from chain import EdenData
+from chain.dfuse import Response, ResponseError
+# from chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
+from debugMode.modeDemo import Mode, ModeDemo
+from log import Log
+from constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
     telegram_admins_id, CurrentElectionState, start_video_preview_path, ReminderGroup, \
     time_span_for_notification_time_is_up, telegram_user_bot_name
-from app.database import Database, Election, ExtendedParticipant, ExtendedRoom, Reminder, ReminderSent, database
-from app.database.room import Room
-from app.database.participant import Participant
+from database import Database, Election, ExtendedParticipant, ExtendedRoom, Reminder, ReminderSent, database
+from database.room import Room
+from database.participant import Participant
 
-from app.constants.rawActionWeb import RawActionWeb
-from app.text.textManagement import GroupCommunicationTextManagement
+from constants.rawActionWeb import RawActionWeb
+from text.textManagement import GroupCommunicationTextManagement
 
-from app.dateTimeManagement.dateTimeManagement import DateTimeManagement
+from dateTimeManagement.dateTimeManagement import DateTimeManagement
 
-from app.transmission import Communication, SessionType
-from app.transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmission import Communication, SessionType
+from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
 
 import math
 
@@ -617,13 +617,18 @@ class GroupManagement:
             #    welcomeMessage += gCtextManagement.newLine()
             #    welcomeMessage += gCtextManagement.demoMessageInCreateGroup()
 
+            welcomeMessage += gCtextManagement.newLine()
+            welcomeMessage += gCtextManagement.newLine()
+            welcomeMessage += \
+                "Now join the Zoom link provided on the [Eden members portal](https://genesis.eden.eoscommunity.org/election)."
+
             self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,
                                            text=welcomeMessage,
                                            disableWebPagePreview=True)
 
             LOG.info("Show print screen how to start video call")
-            if isLastRound is False:
+            if isLastRound is False and False: #never show this message on first elections
                 self.communication.sendPhoto(chatId=chatID,
                                              sessionType=SessionType.BOT,
                                              photoPath=start_video_preview_path,

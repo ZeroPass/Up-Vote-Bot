@@ -2,29 +2,29 @@ from enum import Enum
 
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
-from app.chain.dfuse import DfuseConnection, ResponseSuccessful
-from app.constants import dfuse_api_key, time_span_for_notification, \
+from chain.dfuse import DfuseConnection, ResponseSuccessful
+from constants import dfuse_api_key, time_span_for_notification, \
     alert_message_time_election_is_coming, eden_portal_url, telegram_admins_id, ReminderGroup, \
     time_span_for_notification_time_is_up, alert_message_time_round_end_is_coming, eden_portal_url_action, \
     telegram_bot_name
-from app.constants.rawActionWeb import RawActionWeb
-from app.database import Election, Database, ExtendedParticipant, ExtendedRoom
-from app.database.room import Room
-from app.groupManagement import RoomArray
-from app.log import Log
+from constants.rawActionWeb import RawActionWeb
+from database import Election, Database, ExtendedParticipant, ExtendedRoom
+from database.room import Room
+from groupManagement import RoomArray
+from log import Log
 from datetime import datetime, timedelta
-from app.chain.eden import EdenData, Response, ResponseError
-from app.database.participant import Participant
-from app.database.reminder import Reminder, ReminderSent, ReminderSendStatus
+from chain.eden import EdenData, Response, ResponseError
+from database.participant import Participant
+from database.reminder import Reminder, ReminderSent, ReminderSendStatus
 from datetime import datetime
-from app.debugMode.modeDemo import ModeDemo
-from app.dateTimeManagement import DateTimeManagement
-from app.text.textManagement import GroupCommunicationTextManagement
-from app.transmission import SessionType, Communication
+from debugMode.modeDemo import ModeDemo
+from dateTimeManagement import DateTimeManagement
+from text.textManagement import GroupCommunicationTextManagement
+from transmission import SessionType, Communication
 
 import gettext
 
-from app.transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
 
 _ = gettext.gettext
 __ = gettext.ngettext
@@ -187,16 +187,17 @@ class ReminderManagement:
                             # only first time
                             if currentRoom is None:
                                 currentRoom = ExtendedRoom.fromRoom(room=room)
+                                roomArray.setRoom(room=currentRoom)
 
                             # if current room is not the same as previous, add it to the array
                             if currentRoom.roomID != room.roomID:
-                                roomArray.setRoom(room=currentRoom)
                                 currentRoom = ExtendedRoom.fromRoom(room=room)
+                                roomArray.setRoom(room=currentRoom)
 
-                            # create extended participant - because of votefor variable
+                            # create extended participant - because of 'votefor' variable
                             extendedParticipant: ExtendedParticipant = \
                                 ExtendedParticipant.fromParticipant(participant=participant,
-                                                                    index=0  # index doest matter here
+                                                                    index=0  # index does not matter here
                                                                     )
 
                             # send to participant
@@ -557,7 +558,7 @@ class ReminderManagement:
                         LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
                                  + ". Saving to the database under electionID: " + str(election.electionID))"""
 
-                    # Save the recod to the database
+                    # Save the record to the database
                     response: bool  = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
                                                                    accountName=member.accountName,
                                                                    sendStatus=ReminderSendStatus.SEND if sendResponse is True

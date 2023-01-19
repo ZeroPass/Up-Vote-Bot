@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import String, Table, Column, Integer, ForeignKey, Text, CHAR, BOOLEAN, DateTime
-from app.database.election import Election
-from app.database.base import Base
+from database.election import Election
+from database.base import Base
 
 
 class Room(Base):

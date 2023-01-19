@@ -1,11 +1,11 @@
 from datetime import datetime
 
-from app.chain import EdenData
-from app.database import Database, KnownUser
-from app.dateTimeManagement import DateTimeManagement
-from app.debugMode.modeDemo import ModeDemo
-from app.log import Log
-from app.transmission import Communication
+from chain import EdenData
+from database import Database, KnownUser
+from dateTimeManagement import DateTimeManagement
+from debugMode.modeDemo import ModeDemo
+from log import Log
+from transmission import Communication
 
 
 class KnownUserManagementException(Exception):

@@ -1,4 +1,4 @@
-from app.database.participant import Participant
+from database.participant import Participant
 
 
 class ExtendedParticipant(Participant):

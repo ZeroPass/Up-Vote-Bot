@@ -5,10 +5,10 @@ from http.client import HTTPSConnection
 import requests as requests
 from abieos import EosAbiSerializer
 
-from app.constants import dfuse_url, dfuse_api_key, eos_node_url
-from app.database.database import Database as Database1
+from constants import dfuse_url, dfuse_api_key, eos_node_url
+from database.database import Database as Database1
 
-from app.log import Log
+from log import Log
 import http.client
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from app.chain.eden import EdenData
-from app.log import Log
+from chain.eden import EdenData
+from log import Log
 import time
 
 LOG = Log(className="DateTimeManagement")

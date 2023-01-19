@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, Column, Text, CHAR
-from app.database.base import Base
+from database.base import Base
 
 class TokenService(Base):
     __tablename__ = 'tokenService'

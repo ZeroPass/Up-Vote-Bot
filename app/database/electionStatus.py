@@ -2,8 +2,8 @@ from typing import Optional
 
 from sqlalchemy import String, Table, Column, Integer, ForeignKey, Text
 
-from app.constants import CurrentElectionState
-from app.database.base import Base
+from constants import CurrentElectionState
+from database.base import Base
 
 """
 class StatusType():

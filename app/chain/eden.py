@@ -4,10 +4,10 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from app.chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
-from app.constants import eden_account, dfuse_api_key
-from app.database import Database
-from app.log.log import Log
+from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
+from constants import eden_account, dfuse_api_key
+from database import Database
+from log.log import Log
 import requests as requests
 import json
 import schedule
