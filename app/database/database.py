@@ -16,7 +16,7 @@ from sqlalchemy.engine.url import URL
 
 from datetime import datetime, timedelta
 # must be before import statements
-import app.database.base
+import database.base
 from database.abi import Abi
 from database.tokenService import TokenService
 from database.election import Election
@@ -87,7 +87,7 @@ class Database(metaclass=Singleton):
     def createTables(self, connection: sqlalchemy.engine.base.Connection):
         try:
             LOG.debug("Creating tables if not exists")
-            app.database.base.Base.metadata.create_all(connection, checkfirst=True)
+            database.base.Base.metadata.create_all(connection, checkfirst=True)
         except Exception as e:
             LOG.exception("Problem occurred when creating tables: " + str(e))
             raise DatabaseExceptionConnection(str(e))
