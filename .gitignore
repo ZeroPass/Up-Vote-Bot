@@ -18,3 +18,7 @@ Pipfile.lock
 app/constants/parameters.py
 
 *.session-journal
+
+Dockerfile
+
+constants/parameters.py
