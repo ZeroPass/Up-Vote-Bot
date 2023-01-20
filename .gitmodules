@@ -1,0 +1,3 @@
+[submodule "external/abieos-python"]
+	path = external/abieos-python
+	url = https://github.com/ZeroPass/abieos-python.git
