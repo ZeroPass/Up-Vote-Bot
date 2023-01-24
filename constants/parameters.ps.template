@@ -1,57 +1,206 @@
-# pip install loguru
-# psycopg2
-# abieos-python
-# dfuse
+from os import environ as env
+from log import Log
 
-# dfuse
-dfuse_api_key: str = ""
-dfuse_url: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end
+from constants.reminderGroup import ReminderGroup
+from constants.language import Language
 
-# eos node
-eos_node_url: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end
+LOG = Log(className="Parameters")
 
-# eden data
-eden_account: str = "genesis.eden"
-eden_season: int = 5
+#########################################
+# constants that are not in env variables
+#########################################
 
-# attomic assets data
-atomic_assets_account: str = "atomicassets"
-
-#blocks.io
-blocksIOlinkToTheContract: str = \
-    "https://bloks.io/account/genesis.eden?account=genesis.eden&tab=Actions&loadContract=true"
+# set default language
+default_language: Language = Language.ENGLISH
 
 # send alert message to participants for new election (in minutes)
 # warning:next two tables needs to be synchronized by yourself
 alert_message_time_election_is_coming: [(int, ReminderGroup, str)] = \
-    [(5, ReminderGroup.ATTENDED, "now"), #right now
-     (60, ReminderGroup.ATTENDED, "in one hour"),  # 1 hour before
-     (60 * 24, ReminderGroup.ATTENDED, "tomorrow at this time"),  # 1 day before
-     (60 * 25, ReminderGroup.NOT_ATTENDED, "in 25 hours from now"),  # 25 hours before
-     (60 * 24 * 7, ReminderGroup.BOTH , "next week at this time"),  # 1 week before
-     (60 * 24 * 14, ReminderGroup.BOTH, "in 2 weeks"), # 2 weeks before
-     (60 * 24 * 31, ReminderGroup.BOTH, "in 1 month") # 1 month before
+    [
+        (5, ReminderGroup.ATTENDED, "in few minutes"),  # in few minutes
+        (60, ReminderGroup.ATTENDED, "in one hour"),  # 1 hour before
+        (60 * 24, ReminderGroup.ATTENDED, "tomorrow at this time"),  # 1 day before
+        (60 * 25, ReminderGroup.NOT_ATTENDED, "in 25 hours from now"),  # 25 hours before
+        (60 * 24 * 7, ReminderGroup.BOTH, "next week at this time"),  # 1 week before
+        (60 * 24 * 14, ReminderGroup.BOTH, "in 2 weeks"),  # 2 weeks before
+        (60 * 24 * 31, ReminderGroup.BOTH, "in 1 month")  # 1 month before
+     ]
+
+# time_span for notification (in minutes) - it must be less than time of cycle in preelection mode
+time_span_for_notification: int = 5
+time_span_for_notification_time_is_up: int = 2
+
+alert_message_time_round_end_is_coming: [(int, ReminderGroup, str)] = \
+    [
+        (5, ReminderGroup.IN_ELECTION, "in 5 minutes"),  # in 5 minutes
+        (10, ReminderGroup.IN_ELECTION, "in 10 minutes"),  # in 10 minutes
     ]
 
+# Groups that are created before election
+pre_created_groups_total = 26
+pre_created_groups_created_groups_in_one_round = 4
+pre_created_groups_how_often_creating_in_min = 3  # 440  # 1 day
+
+############################################
+# default constants for system env variables
+############################################
+
+# dfuse
+dfuse_api_key_env: str = ""
+dfuse_url_env: str = ""  # must be without slash(/) at the end - dfuse server
+
+# eos node
+eos_node_url_env: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end - raw server
+
+# eden data
+eden_account_env: str = "g.e"
+eden_season_env: int = 1
+eden_year_env: int = 2023
+
+eden_support_url_env: str = "https://t.me/EdenOSinfo"  # just info if user is not registered
+
+# attomic assets data
+atomic_assets_account_env: str = "atomicassets"
+
+
+
+# blocks.io
+blocksIoLinkToTheContract_env: str = \
+    "https://bloks.io/account/genesis.eden?account=genesis.eden&tab=Actions&loadContract=true"
+
 # database
-database_name: str = ""
-database_user: str = ""
-database_password: str = "."
-database_host: str = ""
-database_port: int =
+database_name_env: str = ""  # REAL ELECTION - DO NOT CHANGE!! !
+database_user_env: str = ""
+database_password_env: str = "."
+database_host_env: str = ""
+database_port_env: int =
 
-# communication_bot
-communication_session_name_user: str = ""
-communication_session_name_bot: str = ""
+telegram_admins_id: list = ['']  # admins must start intecation with bot, unsless it wont work
 
-telegram_api_id: int =
-telegram_api_hash: str = ""
-telegram_bot_token: str = ""
-telegram_admins_id: list = [""]  # admins must start intecation with bot, unsless it wont work
+# TG Sessions
 
-telegram_phone_number: str = ""
-telegram_user_bot_name = ""
-telegram_bot_name: str = ""  # created with https://t.me/BotFather
+# Our first elections client DO NOT CHANGE ANYTHING! MAKE SURE IT IS NOT DUPLICATED!
+telegram_api_id_env: int = 0  # yes
+telegram_api_hash_env: str = ""
+telegram_bot_token_env: str = ""
+telegram_phone_number_env: str = ""
+telegram_user_bot_name_env = ""
+telegram_bot_name_env: str = "@"
+communication_session_name_user_env: str = ""
+communication_session_name_bot_env: str = ""
+communication_session_name_async_bot_env: str = ""
 
 # Eden portal
 eden_portal_url: str = "https://genesis.eden.eoscommunity.org"
+eden_portal_url_action: str = "https://genesis.eden.eoscommunity.org/election"
+
+# Pomelo grants
+pomelo_grants_url: str = "https://pomelo.io/grants/bot4eden"
+
+# assets relative paths to start script - edenBot.py
+start_video_preview_path: str = "assets/startVideoPreview.png"
+
+
+def isValidString(string: str, name: str) -> bool:
+    if isinstance(name, str) is False:
+        LOG.error("Parameters.isValidString; Name is not valid")
+        return False
+    if isinstance(string, str) is False:
+        LOG.error("Parameters.isValidString;" + name + " is not valid")
+        return False
+    if len(string) < 1:
+        LOG.error("Parameters.isValidString;" + name + " is not valid length")
+        return False
+    LOG.success("Parameters.isValidString;" + name + " is valid")
+    return True
+
+
+###############################################
+# translating *env variables to base variables
+###############################################
+
+dfuse_api_key = env.get('DFUSE_API_KEY_ENV', dfuse_api_key_env)  # must be without slash(/) at the end - dfuse server
+dfuse_url = env.get('DFUSE_URL_ENV', dfuse_url_env)
+eos_node_url = env.get('EOS_NODE_URL', eos_node_url_env)
+
+
+eden_account = env.get('EDEN_ACCOUNT_ENV', eden_account_env)
+eden_season = env.get('EDEN_SEASON_ENV', eden_season_env)
+eden_year = env.get('EDEN_YEAR_ENV', eden_year_env)
+
+eden_support_url = env.get('EDEN_SUPPORT_URL_ENV', eden_support_url_env)
+atomic_assets_account = env.get('EDEN_ASSETS_ACCOUNT_ENV', atomic_assets_account_env)
+
+blocksIoLinkToTheContract = env.get('BLOKS_IO_LINK_TO_THE_CONTRACT_ENV', blocksIoLinkToTheContract_env)
+
+database_name = env.get('DATABASE_NAME_ENV', database_name_env)
+database_user = env.get('DATABASE_USER_ENV', database_user_env)
+database_password = env.get('DATABASE_PASSWORD_ENV', database_password_env)
+database_host = env.get('DATABASE_HOST_ENV', database_host_env)
+database_port = env.get('DATABASE_PORT_ENV', database_port_env)
+
+telegram_api_id = env.get('TELEGRAM_API_ID_ENV', telegram_api_id_env)
+telegram_api_hash = env.get('TELEGRAM_API_HASH_ENV ', telegram_api_hash_env)
+telegram_bot_token = env.get('TELEGRAM_BOT_TOKEN_ENV', telegram_bot_token_env)
+telegram_phone_number = env.get('TELEGRAM_PHONE_NUMBER_ENV', telegram_phone_number_env)
+telegram_user_bot_name = env.get('TELEGRAM_USER_BOT_NAME_ENV', telegram_user_bot_name_env)
+telegram_bot_name = env.get('TELEGRAM_BOT_NAME_ENV', telegram_bot_name_env)
+communication_session_name_user = env.get('COMMUNICATION_SESSION_NAME_USER_ENV', communication_session_name_user_env)
+communication_session_name_bot = env.get('COMMUNICATION_SESSION_NAME_BOT_ENV', communication_session_name_bot_env)
+communication_session_name_async_bot = env.get('COMMUNICATION_SESSION_NAME_ASYNC_BOT_ENV', communication_session_name_async_bot_env)
+
+###############################################
+# checking if all variables are valid
+###############################################
+
+if isValidString(dfuse_api_key, "DFUSE_API_KEY_ENV") is False:
+    raise Exception("Parameters; DFUSE_API_KEY_ENV is not valid")
+if isValidString(dfuse_url, "DFUSE_URL_ENV") is False:
+    raise Exception("Parameters; DFUSE_URL_ENV is not valid")
+if isValidString(eos_node_url, "EOS_NODE_URL_ENV") is False:
+    raise Exception("Parameters; EOS_NODE_URL_ENV is not valid")
+
+if isValidString(eden_account, "EDEN_ACCOUNT_ENV") is False:
+    raise Exception("Parameters; EDEN_ACCOUNT_ENV is not valid")
+if isValidString(eden_season, "EDEN_SEASON_ENV") is False:
+    raise Exception("Parameters; EDEN_SEASON_ENV is not valid")
+if isValidString(eden_year, "EDEN_YEAR_ENV") is False:
+    raise Exception("Parameters; EDEN_YEAR_ENV is not valid")
+
+if isValidString(eden_support_url, "EDEN_SUPPORT_URL_ENV") is False:
+    raise Exception("Parameters; EDEN_SUPPORT_URL_ENV is not valid")
+if isValidString(atomic_assets_account, "EDEN_ASSETS_ACCOUNT_ENV") is False:
+    raise Exception("Parameters; EDEN_ASSETS_ACCOUNT_ENV is not valid")
+
+if isValidString(blocksIoLinkToTheContract, "BLOKS_IO_LINK_TO_THE_CONTRACT_ENV") is False:
+    raise Exception("Parameters; BLOKS_IO_LINK_TO_THE_CONTRACT_ENV is not valid")
+
+if isValidString(database_name, "DATABASE_NAME_ENV") is False:
+    raise Exception("Parameters; DATABASE_NAME_ENV is not valid")
+if isValidString(database_user, "DATABASE_USER_ENV") is False:
+    raise Exception("Parameters; DATABASE_USER_ENV is not valid")
+if isValidString(database_password, "DATABASE_PASSWORD_ENV") is False:
+    raise Exception("Parameters; DATABASE_PASSWORD_ENV is not valid")
+if isValidString(database_host, "DATABASE_HOST_ENV") is False:
+    raise Exception("Parameters; DATABASE_HOST_ENV is not valid")
+if isValidString(database_port, "DATABASE_PORT_ENV") is False:
+    raise Exception("Parameters; DATABASE_PORT_ENV is not valid")
+
+#if isValidString(telegram_api_id, "TELEGRAM_API_ID_ENV") is False:
+#    raise Exception("Parameters; TELEGRAM_API_ID_ENV is not valid")
+if isValidString(telegram_api_hash, "TELEGRAM_API_HASH_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_API_HASH_ENV is not valid")
+if isValidString(telegram_bot_token, "TELEGRAM_BOT_TOKEN_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_BOT_TOKEN_ENV is not valid")
+if isValidString(telegram_phone_number, "TELEGRAM_PHONE_NUMBER_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_PHONE_NUMBER_ENV is not valid")
+if isValidString(telegram_user_bot_name, "TELEGRAM_USER_BOT_NAME_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_USER_BOT_NAME_ENV is not valid")
+if isValidString(telegram_bot_name, "TELEGRAM_BOT_NAME_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_BOT_NAME_ENV is not valid")
+if isValidString(communication_session_name_user, "COMMUNICATION_SESSION_NAME_USER_ENV") is False:
+    raise Exception("Parameters; COMMUNICATION_SESSION_NAME_USER_ENV is not valid")
+if isValidString(communication_session_name_bot, "COMMUNICATION_SESSION_NAME_BOT_ENV") is False:
+    raise Exception("Parameters; COMMUNICATION_SESSION_NAME_BOT_ENV is not valid")
+if isValidString(communication_session_name_async_bot, "COMMUNICATION_SESSION_NAME_ASYNC_BOT_ENV") is False:
+    raise Exception("Parameters; COMMUNICATION_SESSION_NAME_ASYNC_BOT_ENV is not valid")
