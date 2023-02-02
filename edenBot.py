@@ -6,7 +6,7 @@ from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerR
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
-from database import Database, Election
+from database import Database, Election, ElectionStatus
 from log import Log
 from datetime import datetime, timedelta
 from debugMode.modeDemo import ModeDemo, Mode
@@ -222,7 +222,7 @@ def main():
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        #(datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
+        (datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
         #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
         #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
         #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
@@ -234,13 +234,13 @@ def main():
 
 
     #120 blocks per minute
-    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-    #                    edenObj=edenData,
-    #                    step=1  # 1.5 min
-    #                    )
-
-    modeDemo = ModeDemo.live(edenObj=edenData,
-                             stepBack=10) #unncomeent this!!!!!!
+    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+                        edenObj=edenData,
+                        step=1  # 1.5 min
+                        )
+    #live!
+    #modeDemo = ModeDemo.live(edenObj=edenData,
+    #                         stepBack=10)
 
 
     EdenBot(edenData=edenData,
@@ -284,6 +284,15 @@ def mainPyrogramTestMode():
 
 def main1():
     database = Database()
+    election: Election = Election(electionID=1,
+                                  status=ElectionStatus(electionStatusID=7,
+                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
+                                  date=datetime.now()
+                                  )
+    neki = database.getRoomsPreelectionFilteredByRound(election=election, predisposedBy="gluepig", round=1)
+
+    kva = 8
+
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
     comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.USER, text="test")

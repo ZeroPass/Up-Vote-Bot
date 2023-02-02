@@ -637,6 +637,78 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting rooms: " + str(e))
             return None
 
+    def getRoomWaitingRoom(self, election: Election, room: Room) -> Room:
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(room, Room), "room must be type of Room"
+
+        try:
+            session = self.createCsesion()
+            room = session.query(Room) \
+                .filter(Room.electionID == election.electionID,
+                        Room.predisposedBy == room.predisposedBy,
+                        Room.roomIndex == room.roomIndex,
+                        Room.round == room.round,
+                        Room.predisposedBy == room.predisposedBy,
+                        Room.predisposedDateTime == room.predisposedDateTime).first()
+            if room is None:
+                LOG.debug("Waiting room for election " + str(election.electionID) + " not found")
+            else:
+                LOG.debug("Waiting room for election " + str(election.electionID) + " found")
+            toReturn = room
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting waiting room: " + str(e))
+            return None
+
+    def createWaitingRoomOrGetExisting(self, election: Election, room: Room) -> Room:
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(room, Room), "room must be type of Room"
+
+        try:
+            session = self.createCsesion()
+
+            roomFromDB = (
+                session.query(Room)
+                .filter(Room.electionID == election.electionID,
+                        Room.roomNameShort == room.roomNameShort,
+                        Room.roomNameLong == room.roomNameLong,
+                        Room.round == room.round,
+                        Room.roomIndex == room.roomIndex,
+                        Room.roomTelegramID == room.roomTelegramID,
+                        Room.predisposedBy == room.predisposedBy,
+                        Room.predisposedDateTime == room.predisposedDateTime
+                        )
+                .first()
+            )
+            if roomFromDB is None:
+                LOG.debug("Room with room name long " + str(room.roomNameLong) + " not found, creating new")
+                roomFromDB = room
+                session.add(roomFromDB)
+                session.flush()  # commit and get id in the room object
+                session.commit()
+                LOG.debug("Room; ElectionID: " + str(election.electionID) +
+                          ", RoomNameShort: " + str(roomFromDB.roomNameShort) +
+                          ", RoomNameLong: " + str(roomFromDB.roomNameLong) +
+                          ", Round: " + str(roomFromDB.round) +
+                          ", RoomIndex: " + str(roomFromDB.roomIndex) +
+                          ", RoomTelegramID: " + str(roomFromDB.roomTelegramID) +
+                          ", PredisposedBy: " + str(roomFromDB.predisposedBy) +
+                          ", PredisposedDateTime: " + str(roomFromDB.predisposedDateTime) +
+                          " created.")
+            else:
+                LOG.debug("Waiting room for election " + str(election.electionID) + " found in the DB. Return it.")
+
+            toReturn = roomFromDB
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting waiting room: " + str(e))
+            return None
+
+
     def getRoomsPreelection(self, election: Election, predisposedBy: str) -> list[Room]:
         assert isinstance(election, Election), "election must be type of Election"
         assert isinstance(predisposedBy, str), "prediposedBy must be type of int"
@@ -653,6 +725,54 @@ class Database(metaclass=Singleton):
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " found, but empty")
             else:
                 LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
+            toReturn = rooms
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting room: " + str(e))
+            return None
+
+    def getLastCreatedRoom(self, election: Election, predisposedBy: str) -> list[Room]:
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(predisposedBy, str), "predisposedBy must be type of int"
+        try:
+            session = self.createCsesion()
+            room = session.query(Room) \
+                .order_by(Room.predisposedDateTime.desc()) \
+                .filter(Room.electionID == election.electionID,
+                        Room.predisposedBy == predisposedBy,
+                        Room.predisposedDateTime is not None).first()
+            if room is None:
+                LOG.debug("Pre-election last created room for election " + str(election.electionID) + " not found")
+            else:
+                LOG.debug("Pre-election last created room for election " + str(election.electionID) + " found")
+            toReturn = room
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting room: " + str(e))
+            return None
+
+    def getRoomsPreelectionFilteredByRound(self, election: Election, round: int, predisposedBy: str) -> list[Room]:
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(predisposedBy, str), "prediposedBy must be type of int"
+        assert isinstance(round, int), "round must be type of int"
+        try:
+            session = self.createCsesion()
+            rooms = session.query(Room) \
+                .order_by(Room.roomIndex.desc()) \
+                .filter(Room.electionID == election.electionID,
+                        Room.predisposedBy == predisposedBy,
+                        Room.round == round,
+                        Room.predisposedDateTime is not None).all()
+            if rooms is None:
+                LOG.debug("Pre-election room (round: " + str(round) + ") for election " + str(election.electionID) + " not found")
+            elif len(rooms) == 0:
+                LOG.debug("Pre-election room (round: " + str(round) + ") for election " + str(election.electionID) + " found, but empty")
+            else:
+                LOG.debug("Pre-election room (round: " + str(round) + ") for election " + str(election.electionID) + " found")
             toReturn = rooms
             self.removeCcession(session=session)
             return toReturn
@@ -719,7 +839,6 @@ class Database(metaclass=Singleton):
             toReturn = room
             self.removeCcession(session=session)
             return toReturn
-
         except Exception as e:
             session.rollback()
             self.removeCcession(session=session)
@@ -906,7 +1025,6 @@ class Database(metaclass=Singleton):
                     .first()
                 )
 
-
             if electionFromDB is None:
                 raise DatabaseException("Election not found")
 
@@ -921,6 +1039,30 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred in function setElection: " + str(e))
             return None
 
+
+    def getMembersWhoParticipateInElectionCount(self, room: Room) -> int:
+        try:
+            session = self.createCsesion()
+            assert isinstance(room, Room), "room is not a Room"
+            LOG.debug("Getting members who participate in election under specific room...")
+
+            # get election
+            total = (
+                session.query(Participant)
+                .filter(Participant.roomID == room.roomID,
+                        Participant.participationStatus > 0)
+                .count()
+            )
+
+            LOG.debug("Participants that participate in election has been found; total: " + str(total))
+            toReturn = total
+            self.removeCcession(session=session)
+            return toReturn
+
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred in function getMembersWhoParticipateInElectionCount: " + str(e))
+            return None
     def setMemberWithElectionIDAndWithRoomID(self, election: Election, room: Room,
                                              participants: list[Participant]):
         LOG.debug(message="Setting member with electionID and with roomID")
@@ -928,6 +1070,9 @@ class Database(metaclass=Singleton):
         assert isinstance(room, Room), "room is not a Room"
         assert isinstance(participants, list), "participants is not a list"
         try:
+            if len(participants) == 0:
+                LOG.debug("No participants to set")
+                return
             session = self.createCsesion(expireOnCommit=False)
 
             # get or create election
@@ -1035,7 +1180,8 @@ class Database(metaclass=Singleton):
                             .filter(Participant.roomID == roomFromDB.roomID,
                                     Participant.accountName == participant.accountName) \
                             .update({Participant.participationStatus: participant.participationStatus,
-                                     Participant.telegramID: participant.telegramID})
+                                     Participant.telegramID: participant.telegramID,
+                                     Participant.nftTemplateID: participant.nftTemplateID})
             session.commit()
             self.removeCcession(session=session)
         except Exception as e:
@@ -1065,6 +1211,28 @@ class Database(metaclass=Singleton):
         except Exception as e:
             self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when getting members: " + str(e))
+            return None
+
+    def getMembersInRoom(self, room: Room) -> list[Participant]:
+        assert isinstance(room, Room), "room is not of type Room"
+        try:
+            session = self.createCsesion()
+            LOG.debug("Getting members who participate in election under specific room...")
+
+            # get election
+            members = (
+                session.query(Participant)
+                .filter(Participant.roomID == room.roomID)
+                .all()
+            )
+
+            LOG.debug("Participants that participate in election has been found")
+            toReturn = members
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting members in specific rom: " + str(e))
             return None
 
     def getMembersInElectionRoundNotYetSend(self, election: Election, reminder: Reminder) -> list[Participant]:
@@ -1340,7 +1508,7 @@ def main():
     #kva5 = database.setKnownUser(botName="@edenBotTestBot", telegramID="nejcSkerjanc5", isKnown=True)
     #neki = 8
 
-    election: Election = Election(electionID=2,
+    election: Election = Election(electionID=1,
                                   status=ElectionStatus(electionStatusID=7,
                                                        status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
                                   date=datetime.now()
@@ -1362,12 +1530,14 @@ def main():
     #                                                                           status=electionStatusIDfromDB))
 
     # database.getMembers(election=election)
-    roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election,
-                                                                                                       reminder=reminder)
+    #roomsAndParticipants: list[list(Room, Participant)] = database.getMembersInElectionRoundNotYetSend(election=election,
+    #                                                                                                   reminder=reminder)
+    database.getLastCreatedRoom(election=election)
 
-    for room, participant in roomsAndParticipants:
-        print("Room: " + str(room.roomID))
-        #print("Participant: " + str(participant))
+    kva = 8
+    #for room, participant in roomsAndParticipants:
+    #    print("Room: " + str(room.roomID))
+    #    #print("Participant: " + str(participant))
 
 
     # result = database.getParticipantsWithoutReminderSentRecord(reminder=reminder)

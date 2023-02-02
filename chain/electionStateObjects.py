@@ -83,21 +83,30 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
             election = database.setElection(election=election)
             database.createRemindersIfNotExists(election=election)
 
-            #commented for demo only
-            #write participants/member in database
-            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+            # commented for demo only
+            # write participants/member in database
+            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
+                                                                                    database=database,
                                                                                     communication=communication)
-            #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+            # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
             #                                                                    height=modeDemo.currentBlockHeight
             #                                                                    if modeDemo is not None else None)
 
+            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
+                                                                                    database=database,
+                                                                                    communication=communication)
+            participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+                                                                                height=modeDemo.currentBlockHeight \
+                                                                                    if modeDemo is not None else None)
+
             # create groups before election
-            groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),
-                                                           totalGroups=pre_created_groups_total,
-                                                           numberOfGroups=pre_created_groups_created_groups_in_one_round,
-                                                           duration=
-                                                           timedelta(minutes=pre_created_groups_how_often_creating_in_min)
-                                                           )
+            groupManagement.createPredefinedGroupsIfNeeded(
+                dateTimeManagement=DateTimeManagement(edenData=edenData),
+                totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
+                newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
+                duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
+                increaseFactor=1.2
+            )
 
             # send notification
             reminderManagement: ReminderManagement = ReminderManagement(database=database,
@@ -110,6 +119,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         except Exception as e:
             LOG.exception("Exception thrown when called CurrentElectionStateHandlerRegistratrionV1.customActions; "
                           "Description: " + str(e))
+
 
 # Data['current_election_state_seeding_v1', {'seed': {'current': '0000000000000000000045AB464F6643EC69CBC24B91257A1868DF1684C8DC5C', 'start_time': '2022-07-08T13:00:00.000',
 # 'end_time': '2022-07-09T13:00:00.000'}, 'election_schedule_version': 2}]
@@ -133,7 +143,8 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData, communication: Communication,
+    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData,
+                      communication: Communication,
                       modeDemo: ModeDemo = None):
         try:
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_SEEDING_V1")
@@ -152,19 +163,21 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
             database.createRemindersIfNotExists(election=election)
 
             # write participants/member in database
-            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData, database=database,
+            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
+                                                                                    database=database,
                                                                                     communication=communication)
-            #participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+            # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
             #                                                                    height=modeDemo.currentBlockHeight
             #                                                                    if modeDemo is not None else None)
             #
             # create groups before election
-            groupManagement.createPredefinedGroupsIfNeeded(dateTimeManagement=DateTimeManagement(edenData=edenData),
-                                                           totalGroups=pre_created_groups_total,
-                                                           numberOfGroups=pre_created_groups_created_groups_in_one_round,
-                                                           duration=
-                                                           timedelta(minutes=pre_created_groups_how_often_creating_in_min)
-                                                           )
+            groupManagement.createPredefinedGroupsIfNeeded(
+                dateTimeManagement=DateTimeManagement(edenData=edenData),
+                totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
+                newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
+                duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
+                increaseFactor=1.05
+            )
 
             # send notification
             reminderManagement: ReminderManagement = ReminderManagement(database=database,

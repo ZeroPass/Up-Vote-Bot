@@ -56,4 +56,27 @@ class Participant(Base):
                self.nftTemplateID == other.nftTemplateID and \
                self.participantName == other.participantName
 
+    def isSameCustom(self, other):
+        # This is a custom function to compare two participants without comparing the roomID and participantName
+        # and TelegramID
+        if not isinstance(other, Participant):
+            # don't attempt to compare against unrelated types
+            return NotImplemented
+
+        return self.accountName == other.accountName and \
+               self.participationStatus == other.participationStatus and \
+               self.nftTemplateID == other.nftTemplateID
+
+    def overrideCustom(self, other):
+        # This is a custom function to override self values with other values without overriding the
+        # roomID, participantName and TelegramID
+        if not isinstance(other, Participant):
+            # don't attempt to compare against unrelated types
+            return NotImplemented
+
+        self.accountName = other.accountName
+        self.participationStatus = other.participationStatus
+        #self.telegramID = other.telegramID
+        self.nftTemplateID = other.nftTemplateID
+
 
