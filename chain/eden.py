@@ -4,6 +4,8 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+from chain.dfuse.graphqlApi import GraphQLApi
+
 from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
 from constants import eden_account, dfuse_api_key
 from database import Database
@@ -183,7 +185,7 @@ class EdenData:
     def getChainHeadBlockNumber(self):
         try:
             path = '/v1/chain/get_info'
-            LOG.info("Path: " + path)
+            LOG.info("Path (getChainHeadBlockNumber): " + path)
 
             resultTable = requests.get(self.dfuseConnection.linkNode(path=path))
 
@@ -198,7 +200,7 @@ class EdenData:
     def getChainDatetime(self):
         try:
             path = '/v1/chain/get_info'
-            LOG.info("Path: " + path)
+            LOG.info("Path (getChainDatetime): " + path)
 
             resultTable = requests.get(self.dfuseConnection.linkNode(path=path))
 
@@ -210,12 +212,8 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getChainDatetime; Description: " + str(e))
     def updateDfuseApiKey1(self, database: Database):
-        LOG.debug("Update dfuse api key. Sheduled function.")
+        LOG.debug("Update dfuse api key. Scheduled function.")
         self.updateDfuseApiKey(database=database)
-    def updateDfuseApiKey2(self, database: Database):
-        LOG.error("FROM main thread")
-        #self.updateDfuseApiKey(database=database)
-        database.checkIfTokenExpired("dfuse", executionTime=datetime(2020, 1, 1, 12, 0))
 
     def updateDfuseApiKey(self, database: Database):
         try:
@@ -249,6 +247,37 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called updateDfuseApiKey; Description: " + str(e))
 
+    def getActionsVideoUploaded(self, contractAccount: str, startTime: datetime, endTime: datetime, round: int):
+        assert isinstance(contractAccount, str), "contractAccount is not of type str"
+        assert isinstance(startTime, datetime), "startTime is not of type datetime"
+        assert isinstance(endTime, datetime), "endTime is not of type datetime"
+        assert isinstance(round, int), "round is not of type int"
+        try:
+            if startTime > endTime:
+                return ResponseError("Start time is after end time")
+
+            startTimeResponse = self.getBlockNumOfTimestamp(timestamp=startTime)
+            if isinstance(startTimeResponse, ResponseSuccessful):
+                startTimeBlockNum = startTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of start time:" + str(startTime))
+
+            endTimeResponse = self.getBlockNumOfTimestamp(timestamp=endTime)
+            if isinstance(endTimeResponse, ResponseSuccessful):
+                endTimeBlockNum = endTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of end time:" + str(endTime))
+
+            if isinstance(startTimeBlockNum, int) == False or isinstance(endTimeBlockNum, int) == False:
+                return ResponseError("Could not get block number of start time or end time - wrong type")
+
+            graphql: GraphQLApi = GraphQLApi(dfuseConnection=self.dfuseConnection)
+            return graphql.getActionsVideoUploaded(account=contractAccount,
+                                                   startBlockNum=startTimeBlockNum,
+                                                   endBlockNum=endTimeBlockNum)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getActionsVideoUploaded; Description: " + str(e))
 
 def main():
     print("Hello World!")
@@ -256,6 +285,16 @@ def main():
     dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
 
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
+
+    dtStart = datetime(2022, 10, 8, 13, 0, 0)
+    dtEnd = dtStart + timedelta(days=14)
+    blockNumOfStart = 272116751 #edenData.getBlockNumOfTimestamp(timestamp=dtStart)
+    blockNumOfEnd = 274534282 # edenData.getBlockNumOfTimestamp(timestamp=dtEnd)
+
+    edenData.getActionsVideoUploaded(account=eden_account,
+                                     startTime=dtStart,  # 272116751
+                                     endTime=dtEnd,  # 274534282
+                                     round=1)
 
     test = edenData.getVotes(height=272119950 + 100)
     ret = 9

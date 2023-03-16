@@ -9,7 +9,7 @@ from chain.eden import EdenData
 from database.participant import Participant
 from chain.atomicAssets import AtomicAssetsData
 from transmission import Communication
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmission.name import PARSE_TG_NAME
 
 
 class ParticipantListManagementException(Exception):
@@ -19,10 +19,8 @@ class ParticipantListManagementException(Exception):
 class ParticipantsManagementException(Exception):
     pass
 
-
 LOG = Log(className="ParticipantsManagement")
 LOGplm = Log(className="ParticipantListManagement")
-
 
 class ListItemValue(Enum):
     NONE = 0
@@ -31,17 +29,20 @@ class ListItemValue(Enum):
     BOTH = 3
 
 class WaitingRoom:
-    def __init__(self, database: Database, election: Election):
+    #because of Specific values of the roomIndex you must always use this class to get Preelection Room
+    def __init__(self, database: Database, dummyElection: Election):
+        #make sure that dummy election has correct CurrentElectionState = CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS
         assert isinstance(database, Database), "database is not a Database"
-        assert isinstance(election, Election), "election is not a Election"
+        assert isinstance(dummyElection, Election), "election is not a Election"
         self.database = database
-        self.election = election
+        self.election = dummyElection
+        self.roomFromDB = None
 
         # must be called at the end of __init__
         self.defineRoom()
 
     def defineRoom(self) -> Room:
-        #static variableForWaitingRoom
+        # like DB static variable for waiting room
         self.room = Room(electionID=self.election.electionID,
                          roomNameShort="Room p-e",
                          roomNameLong="Room pre-election",
@@ -49,12 +50,19 @@ class WaitingRoom:
                          roomIndex=-50,
                          predisposedBy="BotWaitingRoom")
 
-    def getOrCreateRoom(self) -> Room:
-        room = self.database.createWaitingRoomOrGetExisting(self.election, self.room)
-        if room is None:
-            LOG.exception("Waiting room is not defined")
-            raise ParticipantsManagementException("Waiting room is not defined")
-        return room
+    def getRoomFromDB(self) -> Room:
+        # or create if not created yet
+        if isinstance(self.roomFromDB, Room):
+            #already created
+            return self.roomFromDB
+        else:
+            #not yet created
+            room = self.database.createWaitingRoomOrGetExisting(self.election, self.room)
+            if room is None:
+                LOG.exception("Waiting room is not defined")
+                raise ParticipantsManagementException("Waiting room is not defined")
+            self.roomFromDB = room
+            return self.roomFromDB
 
     def getRoom(self) -> Room:
         #if room is not defined in DB it returns None
@@ -215,7 +223,11 @@ class ParticipantsManagement:
         """Get participants from chain and match with database. Undefined room at this step"""
         try:
             LOG.info("Get participants from chain and match with database")
-            room = WaitingRoom(database=self.database, election=election).getOrCreateRoom()
+            dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=election)
+            if dummyElectionForFreeRooms is None:
+                raise ParticipantsManagementException("No dummy election set in database")
+
+            room = WaitingRoom(database=self.database, dummyElection=dummyElectionForFreeRooms).getRoomFromDB()
 
             participantsChain: list[Participant] = self.getMembersFromChain(room=room, height=height)
             participantsDB: list[Participant] = self.getParticipantsFromDatabase(room=room)
@@ -241,7 +253,11 @@ class ParticipantsManagement:
     def getMembersFromDBTotal(self, election: Election) -> list[Participant]:
         """Get members from database"""
         try:
-            room = WaitingRoom(database=self.database, election=election).getOrCreateRoom()
+            dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=election)
+            if dummyElectionForFreeRooms is None:
+                raise ParticipantsManagementException("No dummy election set in database")
+
+            room = WaitingRoom(database=self.database, dummyElection=dummyElectionForFreeRooms).getRoomFromDB()
             total: int = self.database.getMembersWhoParticipateInElectionCount(room=room)
             LOG.info("Number of participants who participated in database: " + str(total))
             return total
@@ -267,7 +283,7 @@ class ParticipantsManagement:
             LOG.info("Get telegram id with nft template id: " + str(nftTemplateID))
             response = atomicAssetsData.getTGfromTemplateID(templateID=nftTemplateID)
             if isinstance(response, ResponseSuccessful):
-                return response.data
+                return PARSE_TG_NAME(response.data)
             else:
                 LOG.info("Error: " + str(response))
                 raise ParticipantsManagementException("Error: " + str(response.error))
@@ -291,7 +307,7 @@ class ParticipantsManagement:
                 LOG.info("Get telegram id with nft template id: " + str(participant.nftTemplateID))
                 response = atomicAssetsData.getTGfromTemplateID(templateID=participant.nftTemplateID)
                 if isinstance(response, ResponseSuccessful):
-                    participant.telegramID = response.data
+                    participant.telegramID = PARSE_TG_NAME(response.data)
                     return True
                 else:
                     LOG.info("Error: " + str(response))

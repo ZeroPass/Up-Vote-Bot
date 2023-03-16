@@ -1,12 +1,15 @@
 import time
 
+import datetime as datetime
+
 from chain import EdenData
 from chain.dfuse import *
 from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
-from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState
-from database import Database, Election, ElectionStatus
+from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
+    eden_account
+from database import Database, Election, ElectionStatus, Reminder
 from log import Log
 from datetime import datetime, timedelta
 from debugMode.modeDemo import ModeDemo, Mode
@@ -30,6 +33,7 @@ REPEAT_TIME = {
     EdenBotMode.NOT_ELECTION: 60 * 10  # every half hour 60 seconds  x 10 minutes
 }
 
+
 class EdenBot:
     botMode: EdenBotMode
 
@@ -47,7 +51,6 @@ class EdenBot:
 
             # fill database with election status data if table is empty
             self.database.fillElectionStatuses()
-            self.database.createElectionForFreeRoomsIfNotExists()
 
             self.mode = mode
             self.modeDemo = modeDemo
@@ -71,12 +74,11 @@ class EdenBot:
             self.communication = Communication(database=database)
 
             # to run callback part of pyrogram library on separated thread - not as separated executable file
-            #self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
+            # self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
 
             self.communication.startComm(apiId=telegramApiID,
-                                     apiHash=telegramApiHash,
-                                     botToken=botToken)
-
+                                         apiHash=telegramApiHash,
+                                         botToken=botToken)
 
             LOG.debug(" ...and group management object ...")
             self.groupManagement = GroupManagement(edenData=edenData,
@@ -88,12 +90,102 @@ class EdenBot:
 
             # set current election state
             self.currentElectionStateHandler: CurrentElectionStateHandler = None
-            self.setCurrentElectionStateAndCallCustomActions(database=self.database)
+            self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
         except Exception as e:
             LOG.exception("Exception in EdenBot.init. Description: " + str(e))
 
-    def setCurrentElectionStateAndCallCustomActions(self, database: Database):
+    def manageElectionInDB(self, electionsStateStr: str, data: dict, contract: str, database: Database) -> Election:
+        assert isinstance(electionsStateStr, str), "electionsStateStr is not a string"
+        assert isinstance(data, dict), "data is not a dict"
+        assert isinstance(contract, str), "contract is not a string"
+        assert isinstance(database, Database), "database is not an instance of Database"
         try:
+            electionState = electionsStateStr
+            election: Election = None
+            electionStatusIDfromDB = None
+            if electionState == "current_election_state_registration_v1":
+                self.currentElectionStateHandler = CurrentElectionStateHandlerRegistratrionV1(data)
+                # get election state from the database
+                electionStatusIDfromDB: ElectionStatus = \
+                    database.getElectionStatus(self.currentElectionStateHandler.currentElectionState)
+                if electionStatusIDfromDB == None:
+                    LOG.exception("EdenBot.manageElectionInDB; 'Election status' not found in database")
+                    raise Exception("EdenBot.manageElectionInDB; 'Election status' not found in database")
+                # set election data to save in the database
+                election: Election = Election(date=datetime.fromisoformat(
+                    self.currentElectionStateHandler.getStartTime()),
+                    status=electionStatusIDfromDB,
+                    contract=contract)
+
+            elif electionState == "current_election_state_seeding_v1":
+                self.currentElectionStateHandler = CurrentElectionStateHandlerSeedingV1(data)
+                # get election state from the database
+                electionStatusIDfromDB: ElectionStatus = \
+                    database.getElectionStatus(self.currentElectionStateHandler.currentElectionState)
+                if electionStatusIDfromDB == None:
+                    LOG.exception("EdenBot.manageElectionInDB; 'Election status' not found in database")
+                    raise Exception("EdenBot.manageElectionInDB; 'Election status' not found in database")
+                # set election data to save in the database
+                election: Election = Election(date=datetime.fromisoformat(
+                    self.currentElectionStateHandler.getSeedEndTime()),
+                    status=electionStatusIDfromDB,
+                    contract=contract)
+
+            elif electionState == "current_election_state_init_voters_v1":
+                self.currentElectionStateHandler = CurrentElectionStateHandlerInitVotersV1(data)
+            elif electionState == "current_election_state_active":
+                self.currentElectionStateHandler = CurrentElectionStateHandlerActive(data)
+            elif electionState == "current_election_state_final":
+                self.currentElectionStateHandler = CurrentElectionStateHandlerFinal(data)
+            else:
+                raise EdenBotException("Unknown current election state: " + str(electionState))
+
+            if election is not None:
+                LOG.debug("Pre-election state: " + str(election))
+                LOG.info("Save election to database ( +creating reminders) : " + str(election))
+
+                if electionStatusIDfromDB is None:
+                    LOG.exception("EdenBot.manageElectionInDB; 'Election status' is None")
+                    raise Exception("EdenBot.manageElectionInDB; 'Election status' is None")
+
+                # setting new election + creating notification records
+                election = database.setElection(election=election, electionStatus=electionStatusIDfromDB)
+                database.createRemindersIfNotExists(election=election)
+
+                # create (if not exists) dummy elections for storing free room data
+                database.createElectionForFreeRoomsIfNotExists(contract=contract, election=election)
+            else:
+                LOG.info("Election is in progress. Get it from database...")
+                election = database.getLastElection(contract=contract)
+
+            if election is None:
+                raise EdenBotException("EdenBot.manageElectionInDB: Election is None.")
+
+                #########################
+                # write current election state to database
+                previousElectionState: CurrentElectionState = \
+                    database.updateElectionColumnElectionStateIfChanged(election=election,
+                                                                        currentElectionState=
+                                                                        self.currentElectionStateHandler.
+                                                                        currentElectionState)
+                if previousElectionState is not None:
+                    LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
+                              + str(self.currentElectionStateHandler.currentElectionState.value))
+                else:
+                    LOG.debug("Election state is not changed")
+
+                ##########################
+
+            # return current election state
+            return election
+
+        except Exception as e:
+            LOG.exception("Exception in manageElectionInDB. Description: " + str(e))
+            return None
+
+    def setCurrentElectionStateAndCallCustomActions(self, contract: str, database: Database):
+        try:
+            assert isinstance(contract, str), "contract is not a string"
             assert isinstance(database, Database), "database is not an instance of Database"
             LOG.debug("Check current election state from blockchain on height: " + str(
                 self.modeDemo.getCurrentBlock()) if self.modeDemo is not None else "<current/live>")
@@ -107,42 +199,42 @@ class EdenBot:
                     "Error when called eden.getCurrentElectionState; Description: " + edenData.data.error)
 
             receivedData = edenData.data
-            self.communication.sendMessage(sessionType=SessionType.BOT,
-                                           text="Ping:" + str(randint(1, 1000)),
-                                           chatId='nejcskerjanc2')
 
-            election: Election = None
-            # initialize state and call custom action if exists, otherwise there is just a comment in log
-            electionState = receivedData[0]
-            if electionState == "current_election_state_registration_v1":
-                self.currentElectionStateHandler = CurrentElectionStateHandlerRegistratrionV1(receivedData[1])
-                self.currentElectionStateHandler.customActions(database=database,
+            # initialize state, create election(+dummy elections) and create notification rows in database
+            election: Election = self.manageElectionInDB(electionsStateStr=receivedData[0],
+                                                         data=receivedData[1],
+                                                         contract=contract,
+                                                         database=database)
+
+            # get current election state to manage business logic
+            currentElectionState = self.currentElectionStateHandler.currentElectionState
+
+            if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
+                self.currentElectionStateHandler.customActions(election=election,
+                                                               database=database,
                                                                groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
-            elif electionState == "current_election_state_seeding_v1":
-                self.currentElectionStateHandler = CurrentElectionStateHandlerSeedingV1(receivedData[1])
-                self.currentElectionStateHandler.customActions(database=database,
+            elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_SEEDING_V1:
+                self.currentElectionStateHandler.customActions(election=election,
+                                                               database=database,
                                                                groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
-            elif electionState == "current_election_state_init_voters_v1":
-                self.currentElectionStateHandler = CurrentElectionStateHandlerInitVotersV1(receivedData[1])
+            elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_INIT_VOTERS_V1:
                 self.currentElectionStateHandler.customActions()
-            elif electionState == "current_election_state_active":
-                election = self.database.getLastElection()
-                self.currentElectionStateHandler = CurrentElectionStateHandlerActive(receivedData[1])
-                self.currentElectionStateHandler.customActions(election=self.database.getLastElection(),
+            elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE:
+                self.currentElectionStateHandler.customActions(election=election,
                                                                groupManagement=self.groupManagement,
                                                                database=database,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
-            elif electionState == "current_election_state_final":
-                self.currentElectionStateHandler = CurrentElectionStateHandlerFinal(receivedData[1])
-                self.currentElectionStateHandler.customActions(groupManagement=self.groupManagement,
+            elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_FINAL:
+                self.currentElectionStateHandler.customActions(election=election,
+                                                               groupManagement=self.groupManagement,
                                                                modeDemo=self.modeDemo)
             else:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
@@ -151,21 +243,7 @@ class EdenBot:
                 ['{0}= {1}'.format(k, v) for k, v in receivedData[1].items()]))
 
             if election is None:
-                election = self.database.getLastElection()
-                if election is None:
-                    raise EdenBotException("Election is still None - not set in database")
-
-            # write current election state to database
-            previousElectionState: CurrentElectionState = \
-                database.updateElectionColumnElectionStateIfChanged(election=election,
-                                                                    currentElectionState=
-                                                                    self.currentElectionStateHandler.
-                                                                    currentElectionState)
-            if previousElectionState is not None:
-                LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
-                      + str(self.currentElectionStateHandler.currentElectionState.value))
-            else:
-                LOG.debug("Election state is not changed")
+                raise EdenBotException("Election is still None - not set in database")
         except Exception as e:
             LOG.exception("Exception in setCurrentElectionStateAndCallCustomActions. Description: " + str(e))
 
@@ -175,7 +253,7 @@ class EdenBot:
             i = 0
             while True:
 
-                #self.edenData.updateDfuseApiKey2(self.database) #just test
+                # self.edenData.updateDfuseApiKey2(self.database) #just test
 
                 # sleep time depends on bot mode
                 if self.mode == Mode.LIVE:
@@ -199,9 +277,9 @@ class EdenBot:
                 else:
                     raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
-                #continue #TODO remove this
+                # continue #TODO remove this
                 # define current election state and write it to the database
-                self.setCurrentElectionStateAndCallCustomActions(database=self.database)
+                self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
 
         except Exception as e:
             LOG.exception("Exception: " + str(e))
@@ -222,26 +300,24 @@ def main():
     startEndDatetimeList = [
         #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
         ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        (datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
-        #(datetime(2022, 10, 7, 12, 58), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        #(datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
+        #(datetime(2022, 10, 7, 12, 56), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
         #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
-        #(datetime(2022, 10, 8, 13, 49), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        # (datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        # (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        # (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 15, 1), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
     ]
 
-
-    #120 blocks per minute
+    # 120 blocks per minute
     modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
                         edenObj=edenData,
                         step=1  # 1.5 min
                         )
-    #live!
-    #modeDemo = ModeDemo.live(edenObj=edenData,
+    # live!
+    # modeDemo = ModeDemo.live(edenObj=edenData,
     #                         stepBack=10)
-
 
     EdenBot(edenData=edenData,
             telegramApiID=telegram_api_id,
@@ -258,8 +334,8 @@ def main():
 
 
 def runPyrogramTestMode(comm: Communication):
-    #database = Database()
-    #comm = Communication(database=database)
+    # database = Database()
+    # comm = Communication(database=database)
     comm.idle()
 
 
@@ -268,28 +344,41 @@ def mainPyrogramTestMode():
     database = Database()
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    #comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
-    comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
+
+    comm.sendMessage(sessionType=SessionType.BOT,
+                     chatId="@nejcskerjanc2",
+                     text="test")
+
+    # comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
+    # comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
     pyogram = Process(target=runPyrogramTestMode, args=(comm,))
     pyogram.start()
 
     i = 0
     while True:
         i = i + 1
-        #if i % 3 == 0:
+        # if i % 3 == 0:
         if i == 3:
             comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="test")
         time.sleep(3)
         print("main Thread")
 
+
 def main1():
     database = Database()
-    election: Election = Election(electionID=1,
+    election: Election = Election(electionID=10,
                                   status=ElectionStatus(electionStatusID=7,
                                                         status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V0),
-                                  date=datetime.now()
+                                  date=datetime.now(),
+                                  contract=eden_account
                                   )
-    neki = database.getRoomsPreelectionFilteredByRound(election=election, predisposedBy="gluepig", round=1)
+
+    kva = database.getMembers(election=election)
+    kva1 = kva.Room
+    kva2 = kva.Participant
+
+    reminder: Reminder = Reminder(reminderID=8, electionID=2, dateTimeBefore=datetime.now(), round=0)
+    test = database.electionGroupsCreated(election=election, round=0, numRooms=20)
 
     kva = 8
 
@@ -301,9 +390,7 @@ def main1():
         time.sleep(2)
 
 
-
-
 if __name__ == "__main__":
-    main()
-    #main1()
-    #mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file
+    #main()
+    main1()
+    # mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

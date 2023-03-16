@@ -5,6 +5,8 @@ from .connection import DfuseConnection, \
     ResponseException, \
     Response
 
+from .graphqlApi import GraphQLApi, GraphQLApiException
+
 __all__ = [
     'DfuseConnection',
     'ResponseSuccessful',
@@ -12,4 +14,7 @@ __all__ = [
     'Response',
     'DfuseError',
     'ResponseException',
+
+    'GraphQLApi',
+    'GraphQLApiException'
 ]

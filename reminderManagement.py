@@ -39,7 +39,8 @@ LOG = Log(className="RemindersManagement")
 
 class ReminderManagement:
 
-    def __init__(self, database: Database, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+    def __init__(self, election: Election, database: Database, edenData: EdenData, communication: Communication, modeDemo: ModeDemo = None):
+        assert isinstance(election, Election), "election is not instance of Election"
         assert isinstance(database, Database), "database is not instance of Database"
         assert isinstance(edenData, EdenData), "edenData is not instance of EdenData"
         assert isinstance(communication, Communication), "communication is not instance of Communication"
@@ -56,24 +57,9 @@ class ReminderManagement:
         self.datetime = self.setExecutionTime(modeDemo=modeDemo)
 
         # basic workflow
-        self.election: Election = self.getLastElection()
+        self.election: Election = election
         # if self.database.electionGroupsCreated(election= self.election, round= 999) #TODO: check in the future
         #    self.createRemindersIfNotExists(election=self.election)
-
-    def getLastElection(self) -> Election:
-        """Get last election"""
-        try:
-            LOG.info("Get last election")
-            election: Election = self.database.getLastElection()
-            if election is not None:
-                LOG.debug("Last election: " + str(election))
-                return election
-            else:
-                raise Exception("Last election is not set in the database. Something went wrong.")
-                return None
-        except Exception as e:
-            LOG.exception("Exception thrown when called getLastElection; Description: " + str(e))
-            return None
 
     def createRemindersTimeIsUpIfNotExists(self, election: Election, round: int, roundEnd: datetime):
         """Create round end reminders if not exists"""
@@ -84,19 +70,19 @@ class ReminderManagement:
                 if len(item) != 3:
                     raise ReminderManagementException("alert_message_time_round_end_is_coming is not in correct size")
                 if isinstance(item[0], int) is False:
-                    LOG.exception("alert_message_time_election_is_coming tuple[0]: "
+                    LOG.exception("alert_message_time_round_end_is_coming tuple[0]: "
                                   "element is not int")
 
                     raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[0]: "
                                                       "element is not int")
                 if isinstance(item[1], Enum) is False:
-                    LOG.exception("alert_message_time_election_is_coming tuple[1]: "
+                    LOG.exception("alert_message_time_round_end_is_coming tuple[1]: "
                                   "element is not ReminderGroup")
 
                     raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[1]: "
                                                       "element is not ReminderGroup")
                 if isinstance(item[2], str) is False:
-                    LOG.exception("alert_message_time_election_is_coming tuple[2]: "
+                    LOG.exception("alert_message_time_round_end_is_coming tuple[2]: "
                                   "element is not str")
 
                     raise ReminderManagementException("alert_message_time_round_end_is_coming tuple[2]: "
@@ -106,7 +92,7 @@ class ReminderManagement:
                                     round=round,
                                     reminderGroup=item[1],
                                     dateTimeBefore=roundEnd - timedelta(minutes=item[0]))
-                self.database.createTimeIsUpReminder(reminder=reminder, csession=session)
+                self.database.createReminder(reminder=reminder, csession=session)
 
             session.close()
             LOG.debug("Reminders created")
@@ -252,11 +238,11 @@ class ReminderManagement:
                                 minutes=time_span_for_notification):
                             LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
-                            members: list[Participant] = self.getMembersFromDatabase(election=election)
+                            members: list[(Room, Participant)] = self.getMembersFromDatabase(election=election)
                             reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
                                 reminder=reminder)
                             self.communication.updateKnownUserData(botName=telegram_bot_name)
-                            for member in members:
+                            for room, member in members:
                                 if member.telegramID is None or len(member.telegramID) < 3:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue
@@ -296,9 +282,9 @@ class ReminderManagement:
         """Get participants from database"""
         try:
             LOG.info("Get members from database")
-            participants = self.database.getMembers(election=election)
-            if participants is not None:
-                return participants
+            roomsAndParticipants = self.database.getMembers(election=election)
+            if roomsAndParticipants is not None:
+                return roomsAndParticipants
             else:
                 raise Exception("Participants are not set in the database. Something went wrong.")
                 return None

@@ -5,12 +5,6 @@ from sqlalchemy import String, Table, Column, Integer, ForeignKey, Text
 from constants import CurrentElectionState
 from database.base import Base
 
-"""
-class StatusType():
-    def __init__(self, status: str, description: Optional[str] = None):
-        self.status = status
-        self.description = description"""
-
 
 class ElectionStatus(Base):
     __tablename__ = 'electionStatus'

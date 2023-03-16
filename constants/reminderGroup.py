@@ -6,3 +6,4 @@ class ReminderGroup(Enum):
     ATTENDED = 1
     BOTH = 2
     IN_ELECTION = 3
+    UPLOAD_VIDEO = 4

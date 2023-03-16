@@ -18,6 +18,7 @@ class Room(Base):
     roomIndex = Column(Integer, nullable=False)
     roomTelegramID = Column(CHAR(128))
     shareLink = Column(CHAR(128))
+    isArchived = Column(BOOLEAN, nullable=False)
 
     def __init__(self,
                  electionID: int,
@@ -30,20 +31,22 @@ class Room(Base):
                  predisposedDateTime: datetime = None,
                  roomID: int = None,
                  roomTelegramID: str = None,
-                 shareLink: str = None
+                 shareLink: str = None,
+                 isArchived: bool = False
                  ):
         """Initialization object"""
-        assert isinstance(roomID, (int, type(None)))
-        assert isinstance(electionID, int)
-        assert isinstance(roomNameShort, str)
-        assert isinstance(roomNameLong, str)
-        assert isinstance(isPredisposed, bool)
-        assert isinstance(predisposedBy, str)
-        assert isinstance(round, int)
-        assert isinstance(roomIndex, int)
-        assert isinstance(predisposedDateTime, (datetime, type(None)))
-        assert isinstance(roomTelegramID, (str, type(None)))
-        assert isinstance(shareLink, (str, type(None)))
+        assert isinstance(roomID, (int, type(None))), "roomID is not an integer or None"
+        assert isinstance(electionID, int), "electionID is not an integer"
+        assert isinstance(roomNameShort, str), "roomNameShort is not a string"
+        assert isinstance(roomNameLong, str), "roomNameLong is not a string"
+        assert isinstance(isPredisposed, bool), "isPredisposed is not a boolean"
+        assert isinstance(predisposedBy, str), "predisposedBy is not a string"
+        assert isinstance(round, int), "round is not an integer"
+        assert isinstance(roomIndex, int), "roomIndex is not an integer"
+        assert isinstance(predisposedDateTime, (datetime, type(None))), "predisposedDateTime is not a datetime or None"
+        assert isinstance(roomTelegramID, (str, type(None))), "roomTelegramID is not a string or None"
+        assert isinstance(shareLink, (str, type(None))), "shareLink is not a string or None"
+        assert isinstance(isArchived, bool), "isArchived is not a boolean"
 
         self.roomID = roomID
         self.electionID = electionID
@@ -56,3 +59,4 @@ class Room(Base):
         self.predisposedDateTime = predisposedDateTime
         self.roomTelegramID = roomTelegramID
         self.shareLink = shareLink
+        self.isArchived = isArchived

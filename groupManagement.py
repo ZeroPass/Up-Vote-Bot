@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+from operator import attrgetter
 
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from requests_unixsocket import Session
 
+from additionalActionsManagement import FinalRoundAdditionalActions
 from chain import EdenData
 from chain.dfuse import Response, ResponseError
 # from chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
@@ -16,6 +18,7 @@ from database.room import Room
 from database.participant import Participant
 
 from constants.rawActionWeb import RawActionWeb
+from participantsManagement import WaitingRoom
 from text.textManagement import GroupCommunicationTextManagement
 
 from dateTimeManagement.dateTimeManagement import DateTimeManagement
@@ -128,9 +131,13 @@ class GroupCalculation:
         for i in range(len(sizes) - 1, 0, -1):
             idx = i
             participants = nextParticipants * sizes[idx]
-            result[idx] = {"participants": participants, "groups": nextParticipants}
+            result[idx] = {"participants": participants,
+                           "groups": nextParticipants,
+                           "isLastRound": True if len(sizes) - 1 == i else False
+                           # first iteration is the last (Chief delegate) round
+                           }
             nextParticipants = participants
-        result[0] = {"participants": numParticipants, "groups": nextParticipants}
+        result[0] = {"participants": numParticipants, "groups": nextParticipants, "isLastRound": False}
         return result
 
     def roundExists(self, round: int) -> bool:
@@ -142,13 +149,13 @@ class GroupCalculation:
         else:
             raise GroupManagementException("Group calculation is not calculated yet.")
 
-    def getNumberOfGroups(self, round: int) -> int:
+    def getNumberOfGroups(self, round: int) -> dict:
         """Get number of groups for given round"""
         assert isinstance(round, int), "round is not an integer"
         assert round >= 0, "round is not greater than 0"
         if not self.isCalculated:
             raise GroupManagementException("Group calculation is not calculated yet.")
-        if round not in self.groups:
+        if round not in self.calculated:
             raise GroupManagementException("Round " + str(round) + " does not exist.")
         LOGgroupCalculation.debug("Get number of groups for round " + str(round))
         return self.calculated[round]
@@ -303,31 +310,41 @@ class GroupManagement:
         # LOG.debug("Get number of groups from participants number; number of groups: " + str(numberOfGroups))
         return None
 
-    def createPredefinedGroupsIfNeeded(self, dateTimeManagement: DateTimeManagement,
+    def createPredefinedGroupsIfNeeded(self,
+                                       election: Election,
+                                       dateTimeManagement: DateTimeManagement,
                                        duration: timedelta,
                                        newRoomsInIteration: int,
                                        totalParticipants: int,
-                                       increaseFactor: float = 1.0):
+                                       increaseFactor: float = 1.0,
+                                       createChiefDelegateGroup: bool = False):
         """Create groups that will be ready when election is in progress
+            - election: election object (needed for getting number of participants)
             - numberOfParticipants: to calculate how many groups should be created
             - duration: time between creating new groups , probably the best would be every 24 hours
             - newRoomsInIteration: how many maximal groups should be created in one iteration
             - increaseFactor: how much participants (in %) should be added to calculation of number of groups
+            - createAlsoChiefDelegateGroup: if True, also create group for chief delegates
             """
 
         try:
+            assert isinstance(election, Election), "election must be an Election object"
             assert isinstance(dateTimeManagement,
                               DateTimeManagement), "dateTimeManagement must be an DateTimeManagementObject"
             assert isinstance(duration, timedelta), "duration variable must be timedelta"
             assert isinstance(newRoomsInIteration, int), "newRoomsInIteration variable must be an int"
             assert isinstance(totalParticipants, int), "totalGroups variable must be an int"
             assert isinstance(increaseFactor, float), "increaseFactor variable must be a float"
+            assert isinstance(createChiefDelegateGroup, bool), "createChiefDelegateGroup variable must be a bool"
 
-            totalGroups = 1  # just temp!
-            LOG.debug("Create predefined groups; total participants: " + str(totalParticipants) +
-                      ", duration: " + str(duration))
+            LOG.debug("Create predefined groups; election: " + str(election) +
+                      ", total participants: " + str(totalParticipants) +
+                      ", duration: " + str(duration) +
+                      ", new rooms in iteration: " + str(newRoomsInIteration) +
+                      ", increase factor: " + str(increaseFactor) +
+                      ", create chief delegate group: " + str(createChiefDelegateGroup))
 
-            dummyElectionForFreeRooms: Election = self.database.getLastElection(freeRoomElection=True)
+            dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=election)
             if dummyElectionForFreeRooms is None:
                 raise GroupManagementException("No dummy election set in database")
 
@@ -338,7 +355,7 @@ class GroupManagement:
             currentDT: datetime = dateTimeManagement.getTime()
             if lastPredefinedRoom is None or \
                     lastPredefinedRoom.predisposedDateTime + duration < currentDT:
-                LOG.debug("No predefined groups OR enough time has passed since last creation. Start creating new "
+                LOG.debug("No predefined groups OR not enough time has passed since last creation. Start creating new "
                           "groups if needed.")
 
                 groupCalculation: GroupCalculation = GroupCalculation(numberOfParticipants=totalParticipants)
@@ -346,35 +363,54 @@ class GroupManagement:
                 if groupCalculation.isCalculated is False:
                     raise GroupManagementException("Group calculation failed")
 
-                #how many rooms left (to create) that bot can use in this iteration
+                # how many rooms left (to create) that bot can use in this iteration
                 newRoomsLeft: int = newRoomsInIteration
 
                 for round in rounds:
                     assert isinstance(round, int), "round must be an int object"
                     LOG.debug("Round: " + str(round))
+
                     if groupCalculation.roundExists(round=round) is False:
                         LOG.error("Round does not exist")
                         continue
-                    data: dict = groupCalculation.getRoundData(round=round)
+                    data: dict = groupCalculation.getNumberOfGroups(round=round)
                     assert isinstance(data, dict), "data must be a dict object"
                     assert "participants" in data, "data must contain participants"
                     assert "groups" in data, "data must contain groups"
+                    assert "isLastRound" in data, "data must contain isLastRound"
+
+                    isLastRound: bool = data['isLastRound']
+
+                    if createChiefDelegateGroup is False and isLastRound is True:
+                        LOG.info("Chief delegate group should not be created in this round. Skip it.")
+                        continue
 
                     alreadyCreatedRooms: list[Room] = self.database.getRoomsPreelectionFilteredByRound(
-                                                                    election=dummyElectionForFreeRooms,
-                                                                    round=round,
-                                                                    predisposedBy=telegram_user_bot_name)
-                    if len(alreadyCreatedRooms) < round['groups']:
+                        election=dummyElectionForFreeRooms,
+                        round=round if isLastRound is False else 99,
+                        predisposedBy=telegram_user_bot_name)
+
+                    # get the highest room index
+                    roomIndexToCreate = max(alreadyCreatedRooms, key=attrgetter('roomIndex')).roomIndex + 1 if \
+                        len(alreadyCreatedRooms) > 0 else 0
+
+                    if len(alreadyCreatedRooms) < data['groups']:
                         LOG.debug("Not enough rooms created for this round. Create new rooms.")
-                        numOfGroupsToCreate = round['groups'] - len(alreadyCreatedRooms)
+                        numOfGroupsToCreate = data['groups'] - len(alreadyCreatedRooms)
 
                         extendedRooms: list[ExtendedRoom] = []
                         total = min(numOfGroupsToCreate, newRoomsLeft)
                         for i in range(total):
                             try:
-                                shortName: str = "Up Vote Election Bot - " + currentDT.isoformat()
-                                longName: str = "Pre-created group for upcoming Election; Up Vote Election Bot - " + \
-                                                currentDT.isoformat()
+                                # get the name of the group
+                                roomName: RoomName = RoomName(round=round,
+                                                              roomIndex=roomIndexToCreate,
+                                                              season=eden_season,
+                                                              year=eden_year,
+                                                              isLastRound=isLastRound)
+
+                                shortName: str = roomName.nameShort()
+                                longName: str = roomName.nameLong()
                                 # create supergroup - cannot be just a simple group because of admin rights
                                 chatID = self.communication.createSuperGroup(name=shortName,
                                                                              description=longName)
@@ -404,20 +440,23 @@ class GroupManagement:
                                                                   isPredisposed=True,
                                                                   predisposedDateTime=currentDT,
                                                                   predisposedBy=telegram_user_bot_name,
-                                                                  roomIndex=-1,
+                                                                  roomIndex=roomIndexToCreate,
                                                                   roomNameShort=shortName,
                                                                   roomNameLong=longName,
-                                                                  round=-1,
+                                                                  round=round if data['isLastRound'] is False else 99,
                                                                   roomTelegramID=str(chatID),
                                                                   shareLink=inviteLink
                                                                   )
                                 extendedRooms.append(room)
-                                #decrease number of rooms left - important for next round
+                                # decrease number of rooms left - important for next round
                                 newRoomsLeft -= 1
+                                # increase room index
+                                roomIndexToCreate += 1
 
                             except Exception as e:
-                                LOG.exception("Exception thrown when called GroupManagement.createPredefinedGroups.forLoop"
-                                              " Description: " + str(e))
+                                LOG.exception(
+                                    "Exception thrown when called GroupManagement.createPredefinedGroups.forLoop"
+                                    " Description: " + str(e))
 
                         if len(extendedRooms) > 0:
                             self.database.createRooms(listOfRooms=extendedRooms)
@@ -450,6 +489,7 @@ class GroupManagement:
                             LOG.error("Participant not found in db (Skip it); name:" + str(key))
                             members.append(None)
                             continue
+                        # conversation to the child class because of additional fields that need to stored in it
                         extendedParticipant: extendedParticipant = ExtendedParticipant.fromParticipant(
                             participant=participant,
                             index=value['index'],
@@ -466,30 +506,34 @@ class GroupManagement:
             raise GroupManagementException(
                 "Exception thrown when called GroupManagement.getParticipantsFromChain; Description: " + str(e))
 
-    def getFreePreelectionRoom(self, predisposedBy: str):
+    def getFreePreelectionRoom(self, election: Election, round: int, index: int, predisposedBy: str):
+        assert isinstance(election, Election), "election must be Election"
+        assert isinstance(round, int), "round must be int"
+        assert isinstance(index, int), "index must be int"
+        assert isinstance(predisposedBy, str), "predisposedBy must be str"
         try:
-            assert isinstance(predisposedBy, str), "predisposedBy must be str"
-            # get pre-election
-            election: Election = self.database.getLastElection(freeRoomElection=True)
-            if election is None:
-                raise GroupManagementException("getFreePreelectionRoom; Pre-election not found")
+            # real election object has also its own duplicate (where prepared rooms from time before election
+            # are stored) in database
+            LOG.debug("Get free room for election: " + str(election) + " round: " + str(round) + " index: " + str(index))
+            dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=election)
+            if dummyElectionForFreeRooms is None:
+                raise GroupManagementException("GroupManagement.getFreePreelectionRoom; "
+                                               "No dummy election found for election: " + str(election))
 
-            rooms: list[Room] = self.database.getRoomsPreelection(election=election,
-                                                                  predisposedBy=predisposedBy)
-            if rooms is None or len(rooms) == 0:
+            room: Room = self.database.getRoomPreelectionFilteredByRoundAndIndex(
+                election=dummyElectionForFreeRooms,
+                round=round,
+                index=index,
+                predisposedBy=telegram_user_bot_name)
+            if isinstance(room, Room) is False:
                 LOG.error("getFreePreelectionRoom; No free room found under username: " + predisposedBy +
+                          " and round: " + str(round) + " and index: " + str(index) +
                           " You need to create new room live.")
                 return None
-
-            # return the oldest group/name if it is correct format
-            if isinstance(rooms[0], Room):
-                return rooms[0]
-            else:
-                LOG.error("getFreePreelectionRoom; First element is not type of Room")
-                return None
+            return room
         except Exception as e:
             raise GroupManagementException(
-                "Exception thrown when called GroupManagement.getParticipantsFromChain; Description: " + str(e))
+                "Exception thrown when called GroupManagement.getFreePreelectionRoom; Description: " + str(e))
 
     def createOfflineGroupsWithParticipants(self, election: Election, round: int, numParticipants: int, numGroups: int,
                                             isLastRound: bool = False,
@@ -514,31 +558,32 @@ class GroupManagement:
                     continue
 
                 else:
-                    room: Room = self.getFreePreelectionRoom(predisposedBy=telegram_user_bot_name)
-
-                    # get the name of the group
-                    roomName: RoomName = RoomName(round=round,
-                                                  roomIndex=index,
-                                                  season=eden_season,
-                                                  year=eden_year,
-                                                  isLastRound=isLastRound)
+                    LOG.debug("Room with electionID: " + str(election.electionID) + ", round:" + str(round) +
+                              ", room index:" + str(index) + "does not exist. Create new one")
+                    room: Room = self.getFreePreelectionRoom(
+                        election=election,
+                        round=round,
+                        index=index,
+                        predisposedBy=telegram_user_bot_name)
 
                     if room is not None:
                         LOG.debug("Free (created in the past) room found. RoomID: " + str(room.roomID))
                         extendedRoom: ExtendedRoom = ExtendedRoom.fromRoom(room=room)
 
-                        # change to real parameters (election, index, name)
-                        extendedRoom.electionID = election.electionID
-                        extendedRoom.roomIndex = index
-                        extendedRoom.round = round
-                        extendedRoom.roomNameLong = roomName.nameLong()
-                        extendedRoom.roomNameShort = roomName.nameShort()
-                        self.database.updatePreCreatedRoom(room=extendedRoom)
-
-                        # add to the set of groups to update in database
-                        roomArrayPrecreatedGroups.setRoom(extendedRoom)
+                        # add to the set of groups that are precreated but need to be updated in the database
+                        # (electionID, etc). Updating on DB will be done later (because of optimization)
+                        extendedRoom.electionID = election.electionID  # transfer to real election
+                        roomArrayPrecreatedGroups.setRoom(room=extendedRoom)
                     else:
                         LOG.debug("Free (created in the past) room NOT found. Create new one")
+
+                        # get the name of the group
+                        roomName: RoomName = RoomName(round=round,
+                                                      roomIndex=index,
+                                                      season=eden_season,
+                                                      year=eden_year,
+                                                      isLastRound=isLastRound)
+
                         room: ExtendedRoom = ExtendedRoom(electionID=election.electionID,
                                                           round=round,
                                                           roomIndex=index,
@@ -547,7 +592,7 @@ class GroupManagement:
 
                         roomArrayNewGroups.setRoom(room)
 
-            LOG.debug("Number of rooms to change bio: " + str(roomArrayPrecreatedGroups.numRooms()))
+            LOG.debug("Number of rooms that are precreated: " + str(roomArrayPrecreatedGroups.numRooms()))
             LOG.debug("Number of rooms to create: " + str(roomArrayNewGroups.numRooms()))
 
             LOG.info("Writing rooms (that needs to be created) in database and getting their indexes")
@@ -558,8 +603,8 @@ class GroupManagement:
             LOG.info("... room creation finished. Rooms are set with IDs in database.")
 
             # updated one by one: because of getFreePreelectionRoom function - other way it found always same room
-            # LOG.info("Updating rooms (that needs to be update) in database(electionID, roomIndex, names")
-            # self.database.updatePreCreatedRooms(listOfRooms=roomArrayPrecreatedGroups.getRoomArray())
+            LOG.info("Updating rooms (that needs to be update) in database(electionID, roomIndex, names")
+            self.database.updatePreCreatedRooms(listOfRooms=roomArrayPrecreatedGroups.getRoomArray())
 
             LOG.info("Add participants to the rooms and write it to database")
             extendedParticipantsList: list[ExtendedParticipant] = self.getParticipantsFromChain(round=round,
@@ -597,11 +642,20 @@ class GroupManagement:
                 # add room to participant - database related
                 item.roomID = room.roomID
 
-            preelectionRoom: Room = self.database.getRoomWithAllUsersBeforeElection(election=election)
-            if preelectionRoom is None:
-                raise GroupManagementException("Preelection room is not set in database")
+            #preelectionRoom: Room = self.database.getRoomWithAllUsersBeforeElection(election=election)
+            dElection: Election = self.database.getDummyElection(election=election)
+            if dElection is None:
+                raise GroupManagementException("Dummy election is not set in database")
+
+            waitingRoom: WaitingRoom = WaitingRoom(database=self.database,
+                                                   dummyElection=dElection)
+            waitingRoomPreelection: Room = waitingRoom.getRoomFromDB()
+
+            if waitingRoomPreelection is None:
+                raise GroupManagementException("Groupmanagement.createOfflineGroupsWithParticipants."
+                                               " Preelection room is not set in database")
             self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedParticipantsList,
-                                                        roomPreelection=preelectionRoom)
+                                                        roomPreelection=waitingRoomPreelection)
             LOG.info("Participants are delegated to the rooms")
             return roomArrayBothMerged.getRoomArray()
         except Exception as e:
@@ -622,6 +676,7 @@ class GroupManagement:
                 LOG.error("ExtendedRoom is None")
                 raise GroupManagementException("ExtendedRoom is None")
 
+            # if room is not created yet, create it, otherwise use the existing one
             if extendedRoom.roomTelegramID is None or extendedRoom.roomTelegramID == "":
                 # create supergroup - cannot be just a simple group because of admin rights
                 chatID = self.communication.createSuperGroup(name=extendedRoom.roomNameShort,
@@ -636,8 +691,6 @@ class GroupManagement:
                 self.database.updateRoomTelegramID(room=extendedRoom)
             else:
                 chatID = int(extendedRoom.roomTelegramID)
-                self.communication.setChatTitle(chatId=chatID, title=extendedRoom.roomNameShort)
-                self.communication.setChatDescription(chatId=chatID, description=extendedRoom.roomNameLong)
 
             self.communication.addKnownUserAndUpdateLocal(botName=telegram_bot_name, chatID=chatID)
             # add participants to the room / supergroup
@@ -661,34 +714,17 @@ class GroupManagement:
                  if self.database.getKnownUser(botName=telegram_bot_name, telegramID=item)]
 
             LOG.debug("Add participants to the room - communication part related")
-            if self.mode == Mode.LIVE or True:  # always add participants to the room - not admins
-                self.communication.addChatMembers(chatId=chatID,
-                                                  participants=membersWithInteractionWithCurrentBot)
-            else:
-                knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
-                LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
-                LOG.debug(
-                    "Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
-                self.communication.addChatMembers(chatId=chatID,
-                                                  participants=telegram_admins_id)
+            self.communication.addChatMembers(chatId=chatID,
+                                              participants=membersWithInteractionWithCurrentBot)
 
             # LOG.debug("Add participants to the room - database related")
             # check if needed self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedRoom.getMembers(),
 
             LOG.debug("Promote participants to admin rights")
             # make sure BOT has admin rights
-            if self.mode == Mode.LIVE or True:  # always promote participants in the room - not admins
-                self.communication.promoteMembers(sessionType=SessionType.BOT,
-                                                  chatId=chatID,
-                                                  participants=membersWithInteractionWithCurrentBot)
-            else:
-                knownTelegramIDs: list[str] = extendedRoom.getMembersTelegramIDsIfKnown()
-                LOG.debug("This line printed because of test mode. Known telegram IDs: " + str(knownTelegramIDs))
-                LOG.debug(
-                    "Instead of participants, bot will working with telegram_admins_id:" + str(telegram_admins_id))
-                self.communication.promoteMembers(sessionType=SessionType.BOT,
-                                                  chatId=chatID,
-                                                  participants=telegram_admins_id)
+            self.communication.promoteMembers(sessionType=SessionType.BOT,
+                                              chatId=chatID,
+                                              participants=membersWithInteractionWithCurrentBot)
 
             # initialize text management object
             gCtextManagement: GroupCommunicationTextManagement = \
@@ -711,12 +747,8 @@ class GroupManagement:
                     "link is valid until next call of this function! Make sure you handle it properly!")
                 buttons = gCtextManagement.invitationLinkToTheGroupButons(inviteLink=inviteLink)
 
-                # send private message to the participants, in case of test mode to the admins
-                if self.mode == Mode.LIVE or True:  # always send invitation link to the participants - not admins
-                    members = extendedRoom.getMembersTelegramIDsIfKnown()
-                else:
-                    # demo mode
-                    members = telegram_admins_id
+                # send private message to the participants
+                members = extendedRoom.getMembersTelegramIDsIfKnown()
 
                 for item in members:
                     item = ADD_AT_SIGN_IF_NOT_EXISTS(item)
@@ -773,7 +805,7 @@ class GroupManagement:
                                            disableWebPagePreview=True)
 
             LOG.info("Show print screen how to start video call")
-            if isLastRound is False and False:  # never show this message on first elections
+            if isLastRound is False:
                 self.communication.sendPhoto(chatId=chatID,
                                              sessionType=SessionType.BOT,
                                              photoPath=start_video_preview_path,
@@ -806,120 +838,11 @@ class GroupManagement:
             LOG.exception(str(e))
             raise GroupManagementException("Exception thrown when called sendInBot; Description: " + str(e))
 
-    """def sendNotificationTimeLeftIfNeeded(self, extendedRoom: ExtendedRoom, round: int, modeDemo: ModeDemo):
-        try:
-            assert isinstance(extendedRoom, ExtendedRoom), "extendedRoom is not an ExtendedRoom object"
-            assert isinstance(round, int), "round is not an int object"
-            assert round > 0, "round is not greater than 0"
-
-            executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
-            reminders = self.database.getReminders(election=extendedRoom.electionID,
-                                                   reminderGroup=ReminderGroup.IN_ELECTION)
-
-            if reminders is not None:
-                for item in reminders:
-                    if isinstance(item, Reminder):
-                        reminder: Reminder = item
-                        LOG.info("Reminder: " + str(reminder))
-                        LOG.debug("Reminder time: " + str(reminder.dateTimeBefore) +
-                                  "; Reminder time span: " + str(reminder.dateTimeBefore + timedelta(
-                            minutes=time_span_for_notification_time_is_up)) +
-                                  " ..."
-                                  )
-
-                        if reminder.dateTimeBefore < executionTime < reminder.dateTimeBefore + timedelta(
-                                minutes=time_span_for_notification_time_is_up):
-                            LOG.info("... send reminder to election id: " + str(reminder.electionID) +
-                                     " and dateTimeBefore: " + str(reminder.dateTimeBefore))
-                            #members: list[Participant] = self.database.getMembersInElectionRoundNotYetSend(election=election)
-                            reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
-                                reminder=reminder)
-                            for member in extendedRoom.members:
-                                if member.telegramID is None or len(member.telegramID) < 3:
-                                    LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
-                                    continue
-
-                                isSent: bool = self.sendAndSyncWithDatabaseElectionIsComing(member=member,
-                                                                                            election=election,
-                                                                                            reminder=reminder,
-                                                                                            reminderSentList=reminderSentList,
-                                                                                            modeDemo=modeDemo)
-                                if isSent:
-                                    LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
-                                             + member.telegramID)
-
-                        else:
-                            LOG.debug("... reminder is not needed!")
-
-            else:
-                LOG.error("Reminders are not set in the database. Something went wrong.")
-
-
-            ##############################
-            textManagement: GroupCommunicationTextManagement = GroupCommunicationTextManagement(
-                language=default_language)
-
-            # send notification to the room
-            text: str = textManagement.timeIsAlmostUpGroup(timeLeftInMinutes=timeLeftInMinutes,
-                                                           round=extendedRoom.round)
-
-            buttonText: tuple[str] = textManagement.timeIsAlmostUpButton()
-
-            if len(buttonText) != 2:
-                LOG.error("Button text is not valid")
-                raise GroupManagementException("Button text is not valid")
-
-            inlineReplyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
-                inline_keyboard=
-                [
-                    [
-                        InlineKeyboardButton(text=buttonText[0],
-                                             url=eden_portal_url_action)
-                    ]
-                ]
-
-            )
-
-            self.communication.sendMessage(sessionType=SessionType.BOT,
-                                           chatID=extendedRoom.roomTelegramID,
-                                           text=text,
-                                           inlineReplyMarkup=inlineReplyMarkup
-                                           )
-
-            # send notification to the participants
-
-            textParticipant: str = textManagement.timeIsAlmostUpGroup(timeLeftInMinutes=timeLeftInMinutes,
-                                                                      round=extendedRoom.round)
-
-            for participant in extendedRoom.participants:
-                inlineReplyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
-                    inline_keyboard=
-                    [
-                        [
-                            InlineKeyboardButton(text=buttonText[0],
-                                                 url=eden_portal_url_action),
-                            InlineKeyboardButton(text=buttonText[1],  # check if specific link is possible
-                                                 url=RawActionWeb().electVote(round=extendedRoom.round,
-                                                                              voter=None,
-                                                                              candidate=None))
-                        ]
-                    ]
-                )
-
-                self.communication.sendMessage(sessionType=SessionType.BOT,
-                                               chatID=participant.telegramID,
-                                               text=text,
-                                               inlineReplyMarkup=inlineReplyMarkup
-                                               )
-        #################
-        except Exception as e:
-            LOG.exception(str(e))
-            raise GroupManagementException("Exception thrown when called notificationTimeLeft; Description: " + str(e))
-    """
-
     def groupInitialization(self, election: Election, round: int, numParticipants: int, numGroups: int,
-                            isLastRound: bool = False, height: int = None):
-        """Create, rename add user to group"""
+                            isLastRound: bool = False, height: int = None) -> Room:
+        """Create, rename add user to group
+            Return Room object if we are in the last round, otherwise return None
+        """
         try:
             assert isinstance(election, Election), "election is not an Election object"
             assert isinstance(round, int), "round is not an int object"
@@ -955,12 +878,19 @@ class GroupManagement:
 
                 LOG.info("Chat with next chatID has been created: " + str(chatID) if chatID is not None
                          else "<not created>")
+
+            if isLastRound and len(rooms) > 0 and isinstance(rooms[0], ExtendedRoom):
+                # final round- we need to know when there is a last round
+                return rooms[0]
+            else:
+                return None
         except Exception as e:
             LOG.exception("Exception thrown when called groupInitialization; Description: " + str(e))
 
-    def manage(self, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False, height: int = None):
+    def manage(self, election: Election, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False, height: int = None):
         """Staring point of the group management code"""
         # call only when CurrentElectionState is CurrentElectionStateHandlerActive or CurrentElectionStateHandlerFinal
+        assert isinstance(election, Election), "election is not an Election object"
         assert isinstance(round, int), "round is not an int object"
         assert isinstance(numParticipants, int), "numParticipants is not an int object"
         assert isinstance(numGroups, int), "numGroups is not an int object"
@@ -969,35 +899,41 @@ class GroupManagement:
 
         try:
             LOG.info("Group management started")
-
-            election: Election = self.database.getLastElection()
-            if election is None:
-                LOG.exception("GroupManagement.createGroups; No election found!")
-                raise GroupManagementException("GroupManagement.createGroups; No election found!")
-
             # check if groups are already created
             if self.database.electionGroupsCreated(election=election,
                                                    round=round,
-                                                   numRooms=numGroups) is False:
+                                                   numRooms=numGroups,
+                                                   predisposedBy=telegram_user_bot_name) is False:
                 LOG.info("Groups are not created yet, creating them")
-                self.groupInitialization(election=election,
-                                         round=round,
-                                         numParticipants=numParticipants,
-                                         numGroups=numGroups,
-                                         isLastRound=isLastRound,
-                                         height=height)
+                room: ExtendedRoom = self.groupInitialization(election=election,
+                                                              round=round,
+                                                              numParticipants=numParticipants,
+                                                              numGroups=numGroups,
+                                                              isLastRound=isLastRound,
+                                                              height=height)
+                if room is not None or isLastRound is True:
+                    # last round (only last round return no None value - just Chief Delegates group created
+                    LOG.debug("Last round created. Do additional stuff (cleaning unused groups, removing bot from"
+                              "used groups, etc.")
+                    additionalActions: FinalRoundAdditionalActions = FinalRoundAdditionalActions(election=election,
+                                                                                                 database=self.database,
+                                                                                                 edenData=self.edenData,
+                                                                                                 communication=
+                                                                                                 self.communication,
+                                                                                                 mode=self.mode)
+
+                    additionalActions.do(telegramUserBotName=telegram_user_bot_name,
+                                         telegramBotName=telegram_bot_name,
+                                         excludedRoom=room)
             else:
                 LOG.info("Groups are already created")
-
 
         except Exception as e:
             LOG.exception("Exception thrown when called manage function; Description: " + str(e))
 
 
 def main():
-    print("breakpoint")
-    gc = GroupCalculation(numberOfParticipants=140)
-    gc.calculate()
+    print("Main function")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,9 @@ class ExtendedRoom(Room):
                  roomID: int = None,
                  predisposedDateTime: datetime = None,
                  roomTelegramID: str = None,
-                 shareLink: str = None):
+                 shareLink: str = None,
+                 isArchived: bool = False):
+
             assert isinstance(electionID, int), "electionID must be int"
             assert isinstance(roomNameShort, str), "roomNameShort must be str"
             assert isinstance(roomNameLong, str), "roomNameLong must be str"
@@ -30,6 +32,7 @@ class ExtendedRoom(Room):
             assert isinstance(roomID, (int, type(None))), "roomID must be int or None"
             assert isinstance(members, (list, type(None))), "members must be list"
             assert isinstance(shareLink, (str, type(None))), "shareLink must be str or None"
+            assert isinstance(isArchived, bool), "isArchived must be bool"
 
             super().__init__(electionID=electionID,
                              round=round,
@@ -40,7 +43,9 @@ class ExtendedRoom(Room):
                              predisposedBy=predisposedBy,
                              predisposedDateTime=predisposedDateTime,
                              roomID=roomID,
-                             roomTelegramID=roomTelegramID)
+                             roomTelegramID=roomTelegramID,
+                             shareLink=shareLink,
+                             isArchived=isArchived)
             if members is None:
                 self.members = []
             else:
@@ -61,7 +66,8 @@ class ExtendedRoom(Room):
                    roomID=room.roomID,
                    predisposedDateTime=room.predisposedDateTime,
                    roomTelegramID=room.roomTelegramID,
-                   shareLink=room.shareLink)
+                   shareLink=room.shareLink,
+                   isArchived=room.isArchived)
 
     def addMember(self, member: ExtendedParticipant):
         assert isinstance(member, ExtendedParticipant), "member must be an ExtendedParticipant"

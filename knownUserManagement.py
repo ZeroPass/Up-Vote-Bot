@@ -6,6 +6,7 @@ from dateTimeManagement import DateTimeManagement
 from debugMode.modeDemo import ModeDemo
 from log import Log
 from transmission import Communication
+from transmission.name import REMOVE_AT_SIGN_IF_EXISTS
 
 
 class KnownUserManagementException(Exception):
@@ -23,14 +24,9 @@ class KnownUserData:
         self.database = database
         self.knownUsers = None
 
-    def removeAtSignAtBeginning(self, telegramID: (str, int)) -> str:
+    def removeAtSignAtBeginning(self, telegramID: (str, int)) -> (str, int):
         assert isinstance(telegramID, (str, int)), "telegramID is not a string or int"
-        if isinstance(telegramID, int):
-            return telegramID
-        else:
-            if telegramID[0] == "@":
-                telegramID = telegramID[1:]
-        return telegramID
+        return REMOVE_AT_SIGN_IF_EXISTS(name=telegramID)
 
     def setKnownUser(self, botName: str, telegramID: (str, int), isKnown: bool) -> bool:
         assert isinstance(botName, str), "botName is not a string"

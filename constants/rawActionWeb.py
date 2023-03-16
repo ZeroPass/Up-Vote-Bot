@@ -68,6 +68,21 @@ class RawActionWeb:
         LOG.info("Raw action electVote; url: " + url)
         return url
 
+    def electvideo(self, round: int, voter: str = None) -> str:
+        assert isinstance(round, int), "round must be an integer"
+        assert isinstance(voter, str), "voter must be a string"
+
+        LOG.debug("ElectVideo; round: " + str(round) +
+                  "; voter: " + voter if voter is not None else "None")
+
+        url = setQueryParameter(self.baseUrl, "action", "electvideo")
+        url = setQueryParameter(url, "round", str(round))
+        if voter is not None:
+            url = setQueryParameter(url, "voter", voter)
+
+        LOG.info("Raw action electvideo; url: " + url)
+        return url
+
 def main():
     raw = RawActionWeb()
     neki = raw.electOpt()

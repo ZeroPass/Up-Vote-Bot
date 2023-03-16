@@ -2,7 +2,8 @@ from enum import Enum
 
 from chain import EdenData
 from constants import dfuse_api_key, pre_created_groups_total, pre_created_groups_created_groups_in_one_round, \
-    pre_created_groups_how_often_creating_in_min, telegram_bot_name
+    pre_created_groups_how_often_creating_in_min, telegram_bot_name, \
+    pre_created_groups_increase_factor_registration_state, pre_created_groups_increase_factor_seeding_state
 from dateTimeManagement import DateTimeManagement
 from debugMode.modeDemo import ModeDemo, Mode
 from groupManagement import GroupManagement
@@ -34,6 +35,8 @@ class CurrentElectionStateHandler:
         self.data: dict = data
         self.edenBotMode: EdenBotMode = edenBotMode
 
+        LOG.info("Setting current election state: " + str(self.currentElectionState))
+
     def getBotMode(self) -> EdenBotMode:
         return self.edenBotMode
 
@@ -41,15 +44,6 @@ class CurrentElectionStateHandler:
         """Override this method to add custom actions"""
         LOG.debug("No custom actions defined")
         pass
-
-    """def sendNotification(self):
-        #Check/Send telegram notification in EdenBotMode.NOT_ELECTION
-        LOG.debug("Check/Send telegram notification")
-        if self.edenBotMode == EdenBotMode.ELECTION:
-            return
-
-        database: Database = Database()"""
-
 
 # Data['current_election_state_registration_v1', {'start_time': '2022-10-08T13:00:00.000', 'election_threshold': 1000, 'election_schedule_version': 1}]
 class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
@@ -65,8 +59,14 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def getelectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData,
+    def customActions(self, election: Election, database: Database, groupManagement: GroupManagement, edenData: EdenData,
                       communication: Communication, modeDemo: ModeDemo = None):
+        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(database, Database), "database must be type of Database"
+        assert isinstance(groupManagement, GroupManagement), "groupManagement must be type of GroupManagement"
+        assert isinstance(edenData, EdenData), "edenData must be type of EdenData"
+        assert isinstance(communication, Communication), "communication must be type of Communication"
+        assert isinstance(modeDemo, ModeDemo) or modeDemo is None, "modeDemo must be type of ModeDemo or None"
         try:
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_REGISTRATION_V1")
             LOG.info("Saving election datetime in database")
@@ -76,40 +76,29 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
                 LOG.exception("'Election status' not found in database")
                 raise Exception("'Election status' not found in database")
 
-            election: Election = Election(date=datetime.fromisoformat(self.getStartTime()),
-                                          status=electionStatusIDfromDB)
-
-            # setting new election + creating notification records
-            election = database.setElection(election=election)
-            database.createRemindersIfNotExists(election=election)
-
             # commented for demo only
             # write participants/member in database
             participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
                                                                                     database=database,
                                                                                     communication=communication)
-            # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
-            #                                                                    height=modeDemo.currentBlockHeight
-            #                                                                    if modeDemo is not None else None)
 
-            participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
-                                                                                    database=database,
-                                                                                    communication=communication)
             participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
-                                                                                height=modeDemo.currentBlockHeight \
-                                                                                    if modeDemo is not None else None)
+                                                                                height=modeDemo.currentBlockHeight
+                                                                                if modeDemo is not None else None)
 
             # create groups before election
             groupManagement.createPredefinedGroupsIfNeeded(
-                dateTimeManagement=DateTimeManagement(edenData=edenData),
-                totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
-                newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
-                duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
-                increaseFactor=1.2
-            )
+                                election=election,
+                                dateTimeManagement=DateTimeManagement(edenData=edenData),
+                                totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
+                                newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
+                                duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
+                                increaseFactor=pre_created_groups_increase_factor_registration_state,
+                                createChiefDelegateGroup=False)
 
             # send notification
-            reminderManagement: ReminderManagement = ReminderManagement(database=database,
+            reminderManagement: ReminderManagement = ReminderManagement(election=election,
+                                                                        database=database,
                                                                         edenData=edenData,
                                                                         communication=communication,
                                                                         modeDemo=modeDemo)
@@ -143,44 +132,42 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
     def getElectionScheduleVersion(self):
         return self.data["election_schedule_version"]
 
-    def customActions(self, database: Database, groupManagement: GroupManagement, edenData: EdenData,
+    def customActions(self, election: Election, database: Database, groupManagement: GroupManagement, edenData: EdenData,
                       communication: Communication,
                       modeDemo: ModeDemo = None):
+        assert isinstance(election, Election), "election is not an instance of Election"
+        assert isinstance(database, Database), "database is not an instance of Database"
+        assert isinstance(groupManagement, GroupManagement), "groupManagement is not an instance of GroupManagement"
+        assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
+        assert isinstance(communication, Communication), "communication is not an instance of Communication"
+        assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be type of ModeDemo or None"
         try:
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_SEEDING_V1")
             LOG.info("Saving election datetime in database")
-
-            electionStatusIDfromDB: ElectionStatus = database.getElectionStatus(self.currentElectionState)
-            if electionStatusIDfromDB == None:
-                LOG.exception("'Election status' not found in database")
-                raise Exception("'Election status' not found in database")
-
-            election: Election = Election(date=datetime.fromisoformat(self.getSeedEndTime()),
-                                          status=electionStatusIDfromDB)
-
-            # setting new election + creating reminder records
-            election = database.setElection(election=election)
-            database.createRemindersIfNotExists(election=election)
 
             # write participants/member in database
             participantsManagement: ParticipantsManagement = ParticipantsManagement(edenData=edenData,
                                                                                     database=database,
                                                                                     communication=communication)
-            # participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
-            #                                                                    height=modeDemo.currentBlockHeight
-            #                                                                    if modeDemo is not None else None)
-            #
+
+            participantsManagement.getParticipantsFromChainAndMatchWithDatabase(election=election,
+                                                                                height=modeDemo.currentBlockHeight
+                                                                                if modeDemo is not None else None)
+
             # create groups before election
             groupManagement.createPredefinedGroupsIfNeeded(
+                election=election,
                 dateTimeManagement=DateTimeManagement(edenData=edenData),
                 totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
                 newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
                 duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
-                increaseFactor=1.05
+                increaseFactor=pre_created_groups_increase_factor_seeding_state,
+                createChiefDelegateGroup=True,
             )
 
             # send notification
-            reminderManagement: ReminderManagement = ReminderManagement(database=database,
+            reminderManagement: ReminderManagement = ReminderManagement(election=election,
+                                                                        database=database,
                                                                         edenData=edenData,
                                                                         communication=communication,
                                                                         modeDemo=modeDemo)
@@ -255,16 +242,9 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
             assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_ACTIVE")
 
-            electionStatusIDfromDB: ElectionStatus = database.getElectionStatus(self.currentElectionState)
-            if electionStatusIDfromDB == None:
-                LOG.exception("'Election status' not found in database")
-                raise Exception("'Election status' not found in database")
-
-            # setting new election + creating notification records
-            election = database.setElection(election=election)
-
             # send notification
-            reminderManagement: ReminderManagement = ReminderManagement(database=database,
+            reminderManagement: ReminderManagement = ReminderManagement(election=election,
+                                                                        database=database,
                                                                         edenData=edenData,
                                                                         communication=communication,
                                                                         modeDemo=modeDemo)
@@ -272,9 +252,10 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
             reminderManagement.createRemindersTimeIsUpIfNotExists(election=election,
                                                                   round=self.getRound(),
                                                                   roundEnd=datetime.fromisoformat(
-                                                                      self.getConfigRoundEnd()))  # already in setElection
+                                                                      self.getConfigRoundEnd()))
 
-            groupManagement.manage(round=self.getRound(),
+            groupManagement.manage(election=election,
+                                   round=self.getRound(),
                                    numParticipants=self.getConfigNumParticipants(),
                                    numGroups=self.getConfigNumGroups(),
                                    isLastRound=False,
@@ -306,14 +287,15 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
     def getSeedEndTime(self):
         return self.data["seed"]["end_time"]
 
-    def customActions(self, groupManagement: GroupManagement, modeDemo: ModeDemo = None):
+    def customActions(self, election: Election, groupManagement: GroupManagement, modeDemo: ModeDemo = None):
         try:
+            assert isinstance(election, Election), "election is not an instance of Election"
             assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
+            assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_FINAL")
-            # TODO: final state does not do anything, just congrats message, no group created or anything like that
-            # group management call
 
-            groupManagement.manage(round=99,
+            groupManagement.manage(election=election,
+                                   round=99,
                                    numParticipants=4,
                                    numGroups=1,
                                    isLastRound=True,

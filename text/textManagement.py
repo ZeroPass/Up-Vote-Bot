@@ -2,8 +2,10 @@ import gettext
 from datetime import datetime
 from typing import TypedDict, Tuple, Dict
 
+from constants import record_video_preview_path
 from constants.language import Language
 from database import ExtendedRoom, ExtendedParticipant
+
 _ = gettext.gettext
 __ = gettext.ngettext
 
@@ -72,6 +74,7 @@ class BotCommunicationManagement(TextManagement):
 
     def donateCommandtext(self) -> str:
         return _("Support the development of Up Vote Bot features")
+
     def donateCommandtextButon(self) -> str:
         return _("Pomelo (Up Vote Bot)")
 
@@ -91,6 +94,66 @@ class BotCommunicationManagement(TextManagement):
         return _("Learn more about Eden")
 
 
+class VideoReminderTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def videoReminder(self, round: int) -> str:
+        assert isinstance(round, int), "round must be an int"
+        return _("Hey! " + self.newLine() +
+                 "I am here to remind you that video of round %s has not been uploaded yet." + self.newLine() +
+                 "Make sure that the participant with the video is going to upload it.") % (round + 1)
+
+    def invitationLinkToTheGroupButons(self, inviteLink: str, bloksLink: str) -> tuple[Button, Button, Button]:
+        # it returns tuple of all the buttons(text link)
+        assert isinstance(inviteLink, str), "groupLink must be a str"
+        assert isinstance(bloksLink, str), "bloksLink must be a str"
+        return Button(text="Join/Enter the group", value=inviteLink), \
+            Button(text="Update video", value=bloksLink), \
+            Button(text="Update on bloks.io", value=bloksLink),
+
+    def videoReminderButtonText(self) -> str:
+        return _("Watch the video")
+
+
+class CommandResponseTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def recording(self) -> str:
+        return _("There is only few steps to start recording the video when the video is live:" + self.newLine() +
+                 " ```python" + self.newLine() +
+                 "1.) click three dots button on the top of the video chat window," + self.newLine() +
+                 "2.) click on the 'Start recording' button," + self.newLine() +
+                 "3.) select checkbox 'Also record Video'," + self.newLine() +
+                 "4.) click continue button," + self.newLine() +
+                 "5.) add Title if you want (optional), otherwise leave empty," + self.newLine() +
+                 "6.) click 'Start' button.```" + self.newLine()
+                 )
+
+    def recordingImagePath(self) -> str:
+        return record_video_preview_path
+
+
+class VideCallTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def startRecording(self) -> str:
+        return _("Video call has been started! " + self.newLine() + self.newLine() +
+                 "**Join the video and ensure that video is being recorded "
+                 "(red dot on the top of the window).**" + self.newLine() + self.newLine() +
+                 "If video is not being recorded please start it. "
+                 "(Click /recording if you dont know how to do it)")
+
+    def stopRecording(self) -> str:
+        return _("Video call has been stopped! " + self.newLine() + self.newLine() +
+                 "**Make sure that at least one of participant upload video after end of election.**")
+
+    def getImagePath(self) -> str:
+        # get the image from the file - in the future it will be more dynamic - more languages
+        return record_video_preview_path
+
 
 class GroupCommunicationTextManagement(TextManagement):
     def __init__(self, language: Language = Language.ENGLISH):
@@ -105,13 +168,13 @@ class GroupCommunicationTextManagement(TextManagement):
                      "Please join the Eden Chief Delegate group using this link bellow:")
         else:
             return _("Hey," + self.newLine() +
-                 "Round %d has started." + self.newLine() +
-                 "Please join the group using this link bellow:") % (round + 1)
+                     "Round %d has started." + self.newLine() +
+                     "Please join the group using this link bellow:") % (round + 1)
 
     def invitationLinkToTheGroupButons(self, inviteLink: str) -> tuple[Button]:
-        # return a dict with the dictionary of the buttons(text link)
+        # it returns tuple of all the buttons(text link)
         assert isinstance(inviteLink, str), "groupLink must be a str"
-        return Button(text="Join the group", value=inviteLink),
+        return Button(text="Join the group", value=inviteLink),  # must be with comma - to store it as a tuple
 
     def welcomeMessage(self, inviteLink: str, round: int, group: int, isLastRound: bool = False) -> str:
         assert isinstance(inviteLink, str), "groupLink must be a str"
@@ -124,8 +187,8 @@ class GroupCommunicationTextManagement(TextManagement):
                      "Congratulations to everyone for making it this far! " + self.newLine())
         else:
             return _("Welcome to Eden Group %d in the Round %d." + self.newLine() + self.newLine() +
-                 "If any participant is not joined yet (and should be), send them this invite link:" + self.newLine() +
-                 "%s") % (group, round + 1, inviteLink)
+                     "If any participant is not joined yet (and should be), send them this invite link:" + self.newLine() +
+                     "%s") % (group, round + 1, inviteLink)
 
     def participantsInTheRoom(self) -> str:
         return _("Participants in the room: \n")
@@ -138,13 +201,12 @@ class GroupCommunicationTextManagement(TextManagement):
         return _("• Eden: **%s**\n"
                  "\t name: %s\n"
                  "\t Telegram: __%s__") % (
-                    accountName,  # fist parameter
-                    participantName if participantName is not None else "/",  # second parameter
-                    telegramID if telegramID is not None and len(telegramID) > 2 else "<NOT_KNOWN_TELEGRAM_ID>")
+            accountName,  # fist parameter
+            participantName if participantName is not None else "/",  # second parameter
+            telegramID if telegramID is not None and len(telegramID) > 2 else "<NOT_KNOWN_TELEGRAM_ID>")
 
     def demoMessageInCreateGroup(self) -> str:
         return _("__ALERT: Participants above are not really in the group. This is just a demo. Only testers added__")
-
 
     def timeIsAlmostUpGroup(self, timeLeftInMinutes: int, round: int, extendedRoom: ExtendedRoom) -> str:
         assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
@@ -152,9 +214,9 @@ class GroupCommunicationTextManagement(TextManagement):
         assert isinstance(extendedRoom, ExtendedRoom), "extendedRoom must be a ExtendedRoom"
 
         text: str = _("Only **%d minutes left** for voting in round %d. If you have not voted yet, "
-                 "check the button bellow. Check the bot messages if you need to vote on bloks." + self.newLine() + self.newLine() +
-                 "Vote statistic: "+ self.newLine()) % \
-                 (timeLeftInMinutes, round + 1)
+                      "check the button bellow. Check the bot messages if you need to vote on bloks." + self.newLine() + self.newLine() +
+                      "Vote statistic: " + self.newLine()) % \
+                    (timeLeftInMinutes, round + 1)
 
         participants: list[ExtendedParticipant] = extendedRoom.getMembers()
 
@@ -167,11 +229,9 @@ class GroupCommunicationTextManagement(TextManagement):
                         (participant.accountName, participant.voteFor)
         return text
 
-
     def timeIsAlmostUpButtons(self) -> tuple[str]:
         return [_("Vote on Eden members portal"),
                 _("or on bloks.io")]
-
 
     def timeIsAlmostUpPrivate(self, timeLeftInMinutes: int, round: int, voteFor: str = None) -> str:
         assert isinstance(timeLeftInMinutes, int), "timeLeftInMinutes must be an int"
@@ -191,4 +251,3 @@ class GroupCommunicationTextManagement(TextManagement):
     def sendPhotoHowToStartVideoCallCaption(self):
         return _("Start or join the video chat." + self.newLine() + self.newLine() +
                  "Once inside, click start recording in the menu.")
-
