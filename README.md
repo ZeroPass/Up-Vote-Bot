@@ -1,5 +1,6 @@
-# Up-Vote-Bot
-Up vote bot
+# Up Vote Bot
+We are running the [Up Vote Bot in Telegram](https://t.me/Up_Vote_Bot).  
+Read about the progress and donate at [pomelo.io/grants/bot4eden](https://pomelo.io/grants/bot4eden).
 
 
 ## Additional info:
