@@ -4,6 +4,7 @@ import os
 import threading
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Union, Any
 
 import pyrogram.raw.functions.updates
 from pyrogram.enums import ChatType
@@ -193,11 +194,11 @@ class Communication():
                                filters=filters.video_chat_ended), group=2
             )
 
-            self.sessionBotThread.add_handler(
-                MessageHandler(callback=self.commandResponseRecording,
-                               filters=filters.command(commands=["recording"]) & (filters.group | filters.private)),
-                               group=2
-            )
+            # self.sessionBotThread.add_handler(
+            #    MessageHandler(callback=self.commandResponseRecording,
+            #                   filters=filters.command(commands=["recording"]) & (filters.group | filters.private)),
+            #                   group=2
+            # )
 
             # maybe we can detect why stop is called
             # https://stackoverflow.com/questions/69303731/pyrogram-stops-handle-updates-after-updatestoolong-response
@@ -255,6 +256,51 @@ class Communication():
         else:
             self.sessionUser.start()
 
+    async def sendPhotoAsync(self,
+                             client: Client,
+                             chatId: (str, int),
+                             photoPath: str,
+                             caption: str = None,
+                             replyMarkup: InlineKeyboardMarkup = None):
+        try:
+            assert isinstance(client, Client), "Client should be Client"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(photoPath, str), " photoPath should be str"
+            assert isinstance(caption, (str, type(None))), "Caption should be str or None"
+            assert isinstance(replyMarkup, (InlineKeyboardMarkup, type(None))), \
+                "replyMarkup should be InlineKeyboardMarkup or None"
+            LOG.info("Sending photo (async) to: " + str(chatId))
+
+            if isinstance(chatId, type(None)) or \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return False
+
+            response = await client.send_photo(chat_id=chatId,
+                                               photo=open(photoPath, 'rb'),
+                                               caption=caption,
+                                               reply_markup=replyMarkup)
+            LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
+            return True if type(response) is types.Message else False
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
+        except FloodWait as e:
+            LOG.exception("FloodWait exception (in sendPhoto-async) Waiting time (in seconds): " + str(e.value))
+            LOG.debug("Sleeping for " + str(e.value) + " seconds")
+            time.sleep(e.value)
+            LOG.debug("Sleeping for " + str(e.value) + " seconds finished... Send message again")
+            return await self.sendPhoto(client=client,
+                                        chatId=chatId,
+                                        photoPath=photoPath,
+                                        caption=caption,
+                                        replyMarkup=replyMarkup
+                                        )
+        except Exception as e:
+            LOG.exception("Exception (in sendPhoto-async): " + str(e))
+
     def sendPhoto(self,
                   sessionType: SessionType,
                   chatId: (str, int),
@@ -266,6 +312,8 @@ class Communication():
             assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             assert isinstance(photoPath, str), " photoPath should be str"
             assert isinstance(caption, (str, type(None))), "Caption should be str or None"
+            assert isinstance(replyMarkup, (InlineKeyboardMarkup, type(None))), \
+                "replyMarkup should be InlineKeyboardMarkup or None"
             LOG.info("Sending photo to: " + str(chatId))
 
             if isinstance(chatId, type(None)) or \
@@ -275,23 +323,33 @@ class Communication():
                 return False
 
             if sessionType == SessionType.BOT:
-                self.sessionBot.send_photo(chat_id=chatId,
-                                           photo=open(photoPath, 'rb'),
-                                           caption=caption,
-                                           reply_markup=replyMarkup)
-            else:
-                self.sessionUser.send_photo(chat_id=chatId,
-                                            photo=open(photoPath, 'rb'),
-                                            caption=caption,
-                                            reply_markup=replyMarkup)
-            return True
-        except Exception as e:
-            LOG.exception("Exception (in sendPhoto): " + str(e))
-
+                response = self.sessionBot.send_photo(chat_id=chatId,
+                                                      photo=open(photoPath, 'rb'),
+                                                      caption=caption,
+                                                      reply_markup=replyMarkup)
+            elif sessionType == SessionType.USER:
+                response = self.sessionUser.send_photo(chat_id=chatId,
+                                                       photo=open(photoPath, 'rb'),
+                                                       caption=caption,
+                                                       reply_markup=replyMarkup)
+            LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
+            return True if type(response) is types.Message else False
         except PeerIdInvalid:
             LOG.exception("Exception (in sendPhoto): PeerIdInvalid")
             self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
             return False
+        except FloodWait as e:
+            LOG.exception("FloodWait exception (in sendPhoto) Waiting time (in seconds): " + str(e.value))
+            LOG.debug("Sleeping for " + str(e.value) + " seconds")
+            time.sleep(e.value)
+            LOG.debug("Sleeping for " + str(e.value) + " seconds finished... Send message again")
+            return self.sendPhoto(sessionType=sessionType,
+                                  chatId=chatId,
+                                  photoPath=photoPath,
+                                  caption=caption,
+                                  replyMarkup=replyMarkup)
+        except Exception as e:
+            LOG.exception("Exception (in sendPhoto): " + str(e))
 
     def sendMessage(self,
                     sessionType: SessionType,
@@ -299,7 +357,7 @@ class Communication():
                     text: str,
                     disableWebPagePreview=False,
                     scheduleDate: datetime = None,
-                    inlineReplyMarkup: InlineKeyboardMarkup = None
+                    inlineReplyMarkup: InlineKeyboardMarkup = None,
                     ) -> bool:
         # warning:
         # when sessionType is SessionType.USER you cannot send message with inline keyboard
@@ -308,6 +366,10 @@ class Communication():
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
             assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(text, str), "Text should be str"
+            assert isinstance(disableWebPagePreview, bool), "disableWebPagePreview should be bool"
+            assert isinstance(scheduleDate, (datetime, type(None))), "scheduleDate should be datetime or None"
+
             assert (sessionType is SessionType.BOT) or \
                    (sessionType is SessionType.USER and inlineReplyMarkup is None), \
                 "when SessionType is USER there is no option to send inlineReplyMarkup!"
@@ -324,7 +386,7 @@ class Communication():
                                                         schedule_date=scheduleDate,
                                                         reply_markup=inlineReplyMarkup,
                                                         disable_web_page_preview=disableWebPagePreview)
-            else:
+            elif sessionType == SessionType.USER:
                 response = self.sessionUser.send_message(chat_id=chatId,
                                                          text=text,
                                                          schedule_date=scheduleDate,
@@ -348,7 +410,54 @@ class Communication():
                                     scheduleDate=scheduleDate,
                                     inlineReplyMarkup=inlineReplyMarkup)
         except Exception as e:
-            LOG.exception("Exception: " + str(e))
+            LOG.exception("Exception in send messages: " + str(e))
+            return False
+
+    async def sendMessageAsync(self,
+                               client: Client,
+                               chatId: (str, int),
+                               text: str,
+                               disableWebPagePreview=False,
+                               scheduleDate: datetime = None,
+                               inlineReplyMarkup: InlineKeyboardMarkup = None,
+                               ) -> bool:
+        # warning:
+        # when sessionType is SessionType.USER you cannot send message with inline keyboard
+        LOG.info("Send message to: " + str(chatId) + " with text: " + text
+                 + " and scheduleDate: " + str(scheduleDate) if scheduleDate is not None else "<now>")
+        try:
+            assert isinstance(client, Client), "Client should be Client"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(text, str), "Text should be str"
+            assert isinstance(disableWebPagePreview, bool), "disableWebPagePreview should be bool"
+            assert isinstance(scheduleDate, (datetime, type(None))), "scheduleDate should be datetime or None"
+            assert isinstance(inlineReplyMarkup, (InlineKeyboardMarkup, type(None))), \
+                "inlineReplyMarkup should be InlineKeyboardMarkup or None"
+
+            response = await client.send_message(chat_id=chatId,
+                                                 text=text,
+                                                 schedule_date=scheduleDate,
+                                                 reply_markup=inlineReplyMarkup,
+                                                 disable_web_page_preview=disableWebPagePreview)
+            LOG.debug("Successfully send: " + "True" if type(response) is types.Message else "False")
+            return True if type(response) is types.Message else False
+        except PeerIdInvalid:
+            LOG.exception("Exception (in sendMessage): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return False
+        except FloodWait as e:
+            LOG.exception("FloodWait exception (in sendMessage) Waiting time (in seconds): " + str(e.value))
+            LOG.debug("Sleeping for " + str(e.value) + " seconds")
+            time.sleep(e.value)
+            LOG.debug("Sleeping for " + str(e.value) + " seconds finished... Send message again")
+            return await self.sendMessageAsync(client=client,
+                                               chatId=chatId,
+                                               text=text,
+                                               disableWebPagePreview=disableWebPagePreview,
+                                               scheduleDate=scheduleDate,
+                                               inlineReplyMarkup=inlineReplyMarkup)
+        except Exception as e:
+            LOG.exception("Exception in send messages - async: " + str(e))
             return False
 
     def sendLogToAdmin(self, level: str, log: str):
@@ -925,13 +1034,18 @@ class Communication():
                                                                                  " message to the group/room.")
 
             videCallTextManagement: VideCallTextManagement = VideCallTextManagement()
-            photoPath: str = videCallTextManagement.getImagePath()
-            text: str = videCallTextManagement.startRecording()
+            photoPaths: str = videCallTextManagement.startRecordingGetImagePaths()
+            text: str = videCallTextManagement.videoHasBeenStarted()
+            for index, photoPath in enumerate(photoPaths):
+                # add text only to the last photo
+                result = await self.sendPhotoAsync(client=client,
+                                                   chatId=chatId,
+                                                   photoPath=photoPath,
+                                                   caption=text if index == len(photoPaths) - 1 else "")
+                time.sleep(0.5)
 
-            result = await client.send_photo(chat_id=chatId,
-                                             photo=open(photoPath, 'rb'),
-                                             caption=text)
-            LOG.success("Response (actionVideoStarted): " + str(result))
+                LOG.success("Response (actionVideoStarted): " + str(result))
+
         except Exception as e:
             LOG.exception("Exception (in actionVideoStarted): " + str(e))
 
@@ -950,14 +1064,30 @@ class Communication():
             LOG.info("actionVideoEnded; Room with telegramID " + str(chatId) + " found in database.")
 
             videCallTextManagement: VideCallTextManagement = VideCallTextManagement()
-            text: str = videCallTextManagement.stopRecording()
+            text: str = videCallTextManagement.videoHasBeenStopped()
+            button: tuple(Button) = videCallTextManagement.videoHasBeenStoppedButtonText \
+                (inviteLink=eden_portal_upload_video_url)
 
-            result = await client.send_message(chat_id=chatId, text=text)
+            result = await self.sendMessageAsync(client=client,
+                                                 chatId=chatId,
+                                                 text=text,
+                                                 inlineReplyMarkup=InlineKeyboardMarkup(
+                                                     inline_keyboard=
+                                                     [
+                                                         [
+                                                             InlineKeyboardButton(text=button[0]['text'],
+                                                                                  url=button[0]['value']),
+
+                                                         ]
+                                                     ]
+                                                 )
+                                                 )
+
             LOG.success("Response (actionVideoEnded): " + str(result))
         except Exception as e:
             LOG.exception("Exception (in actionVideoEnded): " + str(e))
 
-    async def commandResponseRecording(self, client: Client, message: Message):
+    """async def commandResponseRecording(self, client: Client, message: Message):
         try:
             chatId = message.chat.id
             isPrivateChat: bool = message.chat.type == ChatType.PRIVATE
@@ -982,7 +1112,7 @@ class Communication():
                                              caption=text)
             LOG.success("Response (commandResponseRecording): " + str(result))
         except Exception as e:
-            LOG.exception("Exception (in commandResponseRecording): " + str(e))
+            LOG.exception("Exception (in commandResponseRecording): " + str(e))"""
 
     async def rawUpdateHandler(self, client, update, users, chats):
         """

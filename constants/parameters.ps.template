@@ -29,6 +29,7 @@ alert_message_time_election_is_coming: [(int, ReminderGroup, str)] = \
 # time_span for notification (in minutes) - it must be less than time of cycle in preelection mode
 time_span_for_notification: int = 5
 time_span_for_notification_time_is_up: int = 2
+time_span_for_notification_upload_video: int = 5
 
 alert_message_time_round_end_is_coming: [(int, ReminderGroup, str)] = \
     [
@@ -36,10 +37,22 @@ alert_message_time_round_end_is_coming: [(int, ReminderGroup, str)] = \
         (10, ReminderGroup.IN_ELECTION, "in 10 minutes"),  # in 10 minutes
     ]
 
+# send alert message to participants to upload video (in minutes BEFORE '2 WEEKS AFTER DEADLINE' !)
+# last time to upload video is 2 weeks after election started, here you set the time (in minutes)
+# BEFORE that deadline
+alert_message_time_upload_video: [(int, ReminderGroup, str)] = \
+    [
+        (60 * 24, ReminderGroup.UPLOAD_VIDEO, "in 24 hour"),  # 1 day before
+        (60 * 24 * 2, ReminderGroup.UPLOAD_VIDEO, "in 48 hours"),  # 2 days before
+        (60 * 24 * 7, ReminderGroup.UPLOAD_VIDEO, "in one week"),  # 1 week before
+     ]
+
 # Groups that are created before election
 pre_created_groups_total = 26
-pre_created_groups_created_groups_in_one_round = 4
+pre_created_groups_created_groups_in_one_round = 6
 pre_created_groups_how_often_creating_in_min = 3  # 440  # 1 day
+pre_created_groups_increase_factor_registration_state = 1.3
+pre_created_groups_increase_factor_seeding_state = 1.1
 
 ############################################
 # default constants for system env variables
@@ -48,12 +61,13 @@ pre_created_groups_how_often_creating_in_min = 3  # 440  # 1 day
 # dfuse
 dfuse_api_key_env: str = ""
 dfuse_url_env: str = ""  # must be without slash(/) at the end - dfuse server
+dfuse_graphql_url_env: str = ""  # must be without slash(/) at the end - dfuse graphql server
 
 # eos node
-eos_node_url_env: str = "https://eos.dfuse.eosnation.io"  # must be without slash(/) at the end - raw server
+eos_node_url_env: str = ""  # must be without slash(/) at the end - raw server
 
 # eden data
-eden_account_env: str = "g.e"
+eden_account_env: str = "genesis.eden"
 eden_season_env: int = 1
 eden_year_env: int = 2023
 
@@ -62,30 +76,28 @@ eden_support_url_env: str = "https://t.me/EdenOSinfo"  # just info if user is no
 # attomic assets data
 atomic_assets_account_env: str = "atomicassets"
 
-
-
 # blocks.io
 blocksIoLinkToTheContract_env: str = \
     "https://bloks.io/account/genesis.eden?account=genesis.eden&tab=Actions&loadContract=true"
 
 # database
-database_name_env: str = ""  # REAL ELECTION - DO NOT CHANGE!! !
+database_name_env: str = ""
 database_user_env: str = ""
-database_password_env: str = "."
+database_password_env: str = ""
 database_host_env: str = ""
-database_port_env: int =
+database_port_env: int = 1
 
 telegram_admins_id: list = ['']  # admins must start intecation with bot, unsless it wont work
 
 # TG Sessions
 
 # Our first elections client DO NOT CHANGE ANYTHING! MAKE SURE IT IS NOT DUPLICATED!
-telegram_api_id_env: int = 0  # yes
+telegram_api_id_env: int = 1
 telegram_api_hash_env: str = ""
 telegram_bot_token_env: str = ""
 telegram_phone_number_env: str = ""
 telegram_user_bot_name_env = ""
-telegram_bot_name_env: str = "@"
+telegram_bot_name_env: str = ""
 communication_session_name_user_env: str = ""
 communication_session_name_bot_env: str = ""
 communication_session_name_async_bot_env: str = ""
@@ -93,12 +105,19 @@ communication_session_name_async_bot_env: str = ""
 # Eden portal
 eden_portal_url: str = "https://genesis.eden.eoscommunity.org"
 eden_portal_url_action: str = "https://genesis.eden.eoscommunity.org/election"
+eden_portal_upload_video_url: str = "https://genesis.eden.eoscommunity.org/election/round-video-upload"
 
 # Pomelo grants
 pomelo_grants_url: str = "https://pomelo.io/grants/bot4eden"
 
 # assets relative paths to start script - edenBot.py
 start_video_preview_path: str = "assets/startVideoPreview.png"
+start_video_record_preview_paths: list[str] = ["assets/telegramRecord1.png",
+                                               "assets/telegramRecord2.png",
+                                               "assets/telegramRecord3reddot.png"]
+video_is_still_running_preview_path: str = "assets/telegramEndChat.png"
+
+
 
 
 def isValidString(string: str, name: str) -> bool:
@@ -114,6 +133,16 @@ def isValidString(string: str, name: str) -> bool:
     LOG.success("Parameters.isValidString;" + name + " is valid")
     return True
 
+def isValidInt(integer: int, name: str) -> bool:
+    if isinstance(name, str) is False:
+        LOG.error("Parameters.isValidInt; Name is not valid")
+        return False
+    if isinstance(integer, int) is False:
+        LOG.error("Parameters.isValidInt;" + name + " is not valid")
+        return False
+    LOG.success("Parameters.isValidInt;" + name + " is valid")
+    return True
+
 
 ###############################################
 # translating *env variables to base variables
@@ -121,6 +150,8 @@ def isValidString(string: str, name: str) -> bool:
 
 dfuse_api_key = env.get('DFUSE_API_KEY_ENV', dfuse_api_key_env)  # must be without slash(/) at the end - dfuse server
 dfuse_url = env.get('DFUSE_URL_ENV', dfuse_url_env)
+dfuse_graphql_url = env.get('DFUSE_GRAPHQL_URL_ENV', dfuse_graphql_url_env)
+
 eos_node_url = env.get('EOS_NODE_URL', eos_node_url_env)
 
 
@@ -157,14 +188,16 @@ if isValidString(dfuse_api_key, "DFUSE_API_KEY_ENV") is False:
     raise Exception("Parameters; DFUSE_API_KEY_ENV is not valid")
 if isValidString(dfuse_url, "DFUSE_URL_ENV") is False:
     raise Exception("Parameters; DFUSE_URL_ENV is not valid")
+if isValidString(dfuse_graphql_url, "DFUSE_GRAPHQL_URL_ENV") is False:
+    raise Exception("Parameters; DFUSE_GRAPHQL_ENV is not valid")
 if isValidString(eos_node_url, "EOS_NODE_URL_ENV") is False:
     raise Exception("Parameters; EOS_NODE_URL_ENV is not valid")
 
 if isValidString(eden_account, "EDEN_ACCOUNT_ENV") is False:
     raise Exception("Parameters; EDEN_ACCOUNT_ENV is not valid")
-if isValidString(eden_season, "EDEN_SEASON_ENV") is False:
+if isValidInt(eden_season, "EDEN_SEASON_ENV") is False:
     raise Exception("Parameters; EDEN_SEASON_ENV is not valid")
-if isValidString(eden_year, "EDEN_YEAR_ENV") is False:
+if isValidInt(eden_year, "EDEN_YEAR_ENV") is False:
     raise Exception("Parameters; EDEN_YEAR_ENV is not valid")
 
 if isValidString(eden_support_url, "EDEN_SUPPORT_URL_ENV") is False:
@@ -183,11 +216,11 @@ if isValidString(database_password, "DATABASE_PASSWORD_ENV") is False:
     raise Exception("Parameters; DATABASE_PASSWORD_ENV is not valid")
 if isValidString(database_host, "DATABASE_HOST_ENV") is False:
     raise Exception("Parameters; DATABASE_HOST_ENV is not valid")
-if isValidString(database_port, "DATABASE_PORT_ENV") is False:
+if isValidInt(database_port, "DATABASE_PORT_ENV") is False:
     raise Exception("Parameters; DATABASE_PORT_ENV is not valid")
 
-#if isValidString(telegram_api_id, "TELEGRAM_API_ID_ENV") is False:
-#    raise Exception("Parameters; TELEGRAM_API_ID_ENV is not valid")
+if isValidInt(telegram_api_id, "TELEGRAM_API_ID_ENV") is False:
+    raise Exception("Parameters; TELEGRAM_API_ID_ENV is not valid")
 if isValidString(telegram_api_hash, "TELEGRAM_API_HASH_ENV") is False:
     raise Exception("Parameters; TELEGRAM_API_HASH_ENV is not valid")
 if isValidString(telegram_bot_token, "TELEGRAM_BOT_TOKEN_ENV") is False:
@@ -204,3 +237,6 @@ if isValidString(communication_session_name_bot, "COMMUNICATION_SESSION_NAME_BOT
     raise Exception("Parameters; COMMUNICATION_SESSION_NAME_BOT_ENV is not valid")
 if isValidString(communication_session_name_async_bot, "COMMUNICATION_SESSION_NAME_ASYNC_BOT_ENV") is False:
     raise Exception("Parameters; COMMUNICATION_SESSION_NAME_ASYNC_BOT_ENV is not valid")
+
+
+

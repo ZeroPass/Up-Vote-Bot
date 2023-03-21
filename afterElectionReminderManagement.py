@@ -7,8 +7,9 @@ from chain import EdenData
 from chain.dfuse import DfuseConnection, GraphQLApi
 from constants import alert_message_time_upload_video, ReminderGroup, time_span_for_notification_upload_video, \
     telegram_bot_name, default_language
-from database import Database, Election, Reminder, ReminderSent
+from database import Database, Election, Reminder, ReminderSent, ReminderSendStatus
 from database.participant import Participant
+from database.room import Room
 from dateTimeManagement import DateTimeManagement
 from debugMode.modeDemo import ModeDemo
 from log import Log
@@ -16,7 +17,8 @@ from log import Log
 import gettext
 
 from text.textManagement import VideoReminderTextManagement
-from transmission import Communication
+from transmission import Communication, SessionType
+from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
 
 _ = gettext.gettext
 __ = gettext.ngettext
@@ -135,13 +137,12 @@ class AfterElectionReminderManagement:
             raise ReminderManagementException(
                 "Exception thrown when called getMembersFromDatabase; Description: " + str(e))
 
-    def getTextForVideoUploadReminder(self, member: Participant, election: Election, deadlineInMinutes: int,
+    def getTextForVideoUploadReminder(self, election: Election, room: Room, deadlineInMinutes: int,
                                       currentTime: datetime, vRtextManagement: VideoReminderTextManagement) -> str:
         try:
             LOG.info("Creating text for video reminder for election: " + str(election))
-
-            assert isinstance(member, Participant), "member must be type of Participant"
             assert isinstance(election, Election), "election must be type of Election"
+            assert isinstance(room, Room), "room must be type of Room"
             assert isinstance(deadlineInMinutes, int), "deadlineInMinutes must be type of int"
             assert isinstance(currentTime, datetime), "currentTime must be type of datetime"
             assert isinstance(vRtextManagement, VideoReminderTextManagement), "vRtextManagement must be type of " \
@@ -152,15 +153,16 @@ class AfterElectionReminderManagement:
 
             # get timedifference in text format from constants
             minutesToElectionInMinutes = (deadlineDT - currentTime).total_seconds() / 60
-            nearestDatetimeToElectionInMinutes: tuple[int, ReminderGroup, str] = self.theNearestDateTime(
+            nearestDatetimeToFinishUploadInMinutes: tuple[int, ReminderGroup, str] = self.theNearestDateTime(
                 alert_message_time_upload_video,
                 minutesToElectionInMinutes)
-            nearestDateTimeText = nearestDatetimeToElectionInMinutes[2]
-            LOG.debug("Nearest datetime to election: " + str(nearestDatetimeToElectionInMinutes) +
+            nearestDateTimeText = nearestDatetimeToFinishUploadInMinutes[2]
+            LOG.debug("Nearest datetime to end of upload period of video: " + str(nearestDatetimeToFinishUploadInMinutes) +
                       " minutes with text '" + nearestDateTimeText + "'")
 
-            LOG.debug("Member: " + str(member))
-            text: str = vRtextManagement.videoReminder(round=0)
+            text: str = vRtextManagement.videoReminder(round=room.round+1,
+                                                       group=room.roomIndex+1,
+                                                       expiresText=nearestDateTimeText)
             return text
         except Exception as e:
             LOG.exception("Exception (in getTextForVideoUploadReminder): " + str(e))
@@ -168,6 +170,7 @@ class AfterElectionReminderManagement:
 
     def sendAndSyncWithDatabaseUploadVideoNotification(self,
                                                        member: Participant,
+                                                       room: Room,
                                                        election: Election,
                                                        reminder: Reminder,
                                                        reminderSentList: list[ReminderSent],
@@ -176,6 +179,7 @@ class AfterElectionReminderManagement:
         """Send reminder and write to database"""
         try:
             assert isinstance(member, Participant), "member is not instance of Participant"
+            assert isinstance(room, Room), "room is not instance of Room"
             assert isinstance(election, Election), "election is not instance of Election"
             assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
             assert isinstance(reminderSentList, list), "reminderSentList is not instance of list"
@@ -184,7 +188,8 @@ class AfterElectionReminderManagement:
 
             LOG.trace("Send and sync with database. "
                       "Election id: " + str(election.electionID) +
-                      ", member: " + str(member))
+                      ", member: " + str(member) +
+                      ", room: " + str(room))
 
             foundReminders: list[ReminderSent] = [x for x in reminderSentList if x.accountName == member.accountName]
 
@@ -201,17 +206,18 @@ class AfterElectionReminderManagement:
 
             vRtextManagement: VideoReminderTextManagement = VideoReminderTextManagement(language=default_language)
 
-            uploadReminderText: str = self.getTextForVideoUploadReminder(member=member,
-                                                                         election=election,
+            uploadReminderText: str = self.getTextForVideoUploadReminder(election=election,
+                                                                         room=room,
                                                                          deadlineInMinutes=deadlineInMinutes,
                                                                          reminder=reminder,
                                                                          currentTime=datetime.now(),
                                                                          vRtextManagement=vRtextManagement)
 
-            buttonsUploadReminder: list[InlineKeyboardButton] = vRtextManagement.videoReminderButtonText()
+            buttonsUploadReminder: list[InlineKeyboardButton] = \
+                vRtextManagement.videoReminderButtonText(groupLink=room.shareLink)
 
-            if len(buttonsUploadReminder) != 3:
-                raise AfterElectionReminderManagementException("buttonsUploadReminder must have 3 elements")
+            if len(buttonsUploadReminder) != 2:
+                raise AfterElectionReminderManagementException("buttonsUploadReminder must have 2 elements")
 
             replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                 [
@@ -220,22 +226,13 @@ class AfterElectionReminderManagement:
                             text=buttonsUploadReminder[0]['text'],
                             url=buttonsUploadReminder[0]['value']
                         ),
-                    ],
-                    [  # Second row
                         InlineKeyboardButton(
                             text=buttonsUploadReminder[1]['text'],
                             url=buttonsUploadReminder[1]['value']
                         ),
-                        InlineKeyboardButton(
-                            text=buttonsUploadReminder[2]['text'],
-                            url=buttonsUploadReminder[2]['value']
-                        ),
                     ]
                 ]
-            ) if member.participationStatus is False else None
-
-            # be sure that next comparison is correct, because we really do not want to send fake messages to
-            # users
+            )
 
             sendResponse: bool = False
 
@@ -245,7 +242,7 @@ class AfterElectionReminderManagement:
                 member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
                 sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
                                                               chatId=member.telegramID,
-                                                              text=text,
+                                                              text=uploadReminderText,
                                                               inlineReplyMarkup=replyMarkup)
 
                 LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
@@ -262,13 +259,14 @@ class AfterElectionReminderManagement:
                     self.database.rollbackCcession(session=cSession)
                 self.database.removeCcession(session=cSession)
             except Exception as e:
-                LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
+                LOG.exception("Exception in sendAndSyncWithDatabaseUploadVideoNotification.inside. Description: " +
+                              str(e))
                 self.database.rollbackCcession(session=cSession)
                 self.database.removeCcession(session=cSession)
             return sendResponse
 
         except Exception as e:
-            LOG.exception
+            LOG.exception("Exception (in sendAndSyncWithDatabaseUploadVideoNotification): " + str(e))
 
     def sendReminderUploadVideIfNeeded(self, election: Election, deadlineInMinutes: int, modeDemo: ModeDemo = None):
         assert isinstance(election, Election), "election must be type of Election"
@@ -305,11 +303,15 @@ class AfterElectionReminderManagement:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue
 
-                                isSent: bool = self.sendAndSyncWithDatabaseElectionIsComing(member=member,
-                                                                                            election=election,
-                                                                                            reminder=reminder,
-                                                                                            reminderSentList=reminderSentList,
-                                                                                            modeDemo=modeDemo)
+                                isSent: bool = \
+                                    self.sendAndSyncWithDatabaseUploadVideoNotification(member=member,
+                                                                                        room= room,
+                                                                                        election=election,
+                                                                                        reminder=reminder,
+                                                                                        reminderSentList=reminderSentList,
+                                                                                        deadlineInMinutes=1000,
+                                                                                        # TODO: get from somewhere
+                                                                                        modeDemo=modeDemo)
                                 if isSent:
                                     LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
                                              + member.telegramID)
