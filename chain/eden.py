@@ -97,6 +97,23 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getCurrentElectionState; Description: " + str(e))
 
+    def getElectionState(self, height: int = None):
+        try:
+            LOG.info("Get election state on height: " + str(height) if height is not None else "<current/live>")
+            ACCOUNT = eden_account
+            TABLE = 'elect.state'
+            PRIMARY_KEY = 'elect.state'
+            SCOPE = None
+
+            return self.dfuseConnection.getTableRow(account=ACCOUNT,
+                                                    table=TABLE,
+                                                    primaryKey=PRIMARY_KEY,
+                                                    scope=SCOPE,
+                                                    height=height)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getCurrentElectionState; Description: " + str(e))
+
     def getParticipants(self, height: int = None):
         try:
             LOG.info("Get election state on height: " + str(height) if height is not None else "<current/live>")

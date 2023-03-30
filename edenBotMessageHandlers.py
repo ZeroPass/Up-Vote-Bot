@@ -12,6 +12,7 @@ class EdenBotException(Exception):
 
 LOG = Log(className="EdenBotMessageHandler")
 
+#TODO: in the future move message handlers to this class
 class EdenBotMessageHandler:
     botMode: EdenBotMode
 
@@ -37,9 +38,9 @@ def main():
 
     database = Database()
     EdenBotMessageHandler(telegramApiID=telegram_api_id,
-             telegramApiHash=telegram_api_hash,
-             botToken=telegram_bot_token,
-             database=database).start()
+                          telegramApiHash=telegram_api_hash,
+                          botToken=telegram_bot_token,
+                          database=database).start()
 
     while True:
         time.sleep(1)

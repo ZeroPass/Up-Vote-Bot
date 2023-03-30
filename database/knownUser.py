@@ -12,12 +12,12 @@ class KnownUser(Base):
     userID = Column(Text)
     isKnown = Column(BOOLEAN)
 
-    def __init__(self, botName: str, userID: str, isKnown:bool = True, knownUserID: int = None):
+    def __init__(self, botName: str, userID: str, isKnown: bool = True, knownUserID: int = None):
         """Initialization object"""
         assert isinstance(botName, str), "botName is not a string"
         assert isinstance(userID, str), "userID is not a string"
         assert isinstance(isKnown, bool), "isKnown is not a boolean"
-        assert isinstance(knownUserID, (int, type(None))), "knownUserID is not an integer or None"
+        assert isinstance(knownUserID, (bool, type(None))), "knownUserID is not an bool or None"
 
         self.knownUserID = knownUserID
         self.botName = botName

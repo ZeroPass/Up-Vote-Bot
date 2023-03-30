@@ -7,6 +7,7 @@ from requests_unixsocket import Session
 from additionalActionsManagement import FinalRoundAdditionalActions
 from chain import EdenData
 from chain.dfuse import Response, ResponseError
+from database.election import ElectionRound
 # from chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
 from debugMode.modeDemo import Mode, ModeDemo
 from log import Log
@@ -385,9 +386,9 @@ class GroupManagement:
                         LOG.info("Chief delegate group should not be created in this round. Skip it.")
                         continue
 
-                    alreadyCreatedRooms: list[Room] = self.database.getRoomsPreelectionFilteredByRound(
+                    alreadyCreatedRooms: list[Room] = self.database.getRoomsElectionFilteredByRound(
                         election=dummyElectionForFreeRooms,
-                        round=round if isLastRound is False else 99,
+                        round=round if isLastRound is False else ElectionRound.FINAL.value,
                         predisposedBy=telegram_user_bot_name)
 
                     # get the highest room index
@@ -443,7 +444,8 @@ class GroupManagement:
                                                                   roomIndex=roomIndexToCreate,
                                                                   roomNameShort=shortName,
                                                                   roomNameLong=longName,
-                                                                  round=round if data['isLastRound'] is False else 99,
+                                                                  round=round if data['isLastRound'] is False
+                                                                    else ElectionRound.FINAL.value,
                                                                   roomTelegramID=str(chatID),
                                                                   shareLink=inviteLink
                                                                   )
@@ -514,13 +516,14 @@ class GroupManagement:
         try:
             # real election object has also its own duplicate (where prepared rooms from time before election
             # are stored) in database
-            LOG.debug("Get free room for election: " + str(election) + " round: " + str(round) + " index: " + str(index))
+            LOG.debug(
+                "Get free room for election: " + str(election) + " round: " + str(round) + " index: " + str(index))
             dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=election)
             if dummyElectionForFreeRooms is None:
                 raise GroupManagementException("GroupManagement.getFreePreelectionRoom; "
                                                "No dummy election found for election: " + str(election))
 
-            room: Room = self.database.getRoomPreelectionFilteredByRoundAndIndex(
+            room: Room = self.database.getRoomElectionFilteredByRoundAndIndex(
                 election=dummyElectionForFreeRooms,
                 round=round,
                 index=index,
@@ -642,7 +645,6 @@ class GroupManagement:
                 # add room to participant - database related
                 item.roomID = room.roomID
 
-            #preelectionRoom: Room = self.database.getRoomWithAllUsersBeforeElection(election=election)
             dElection: Election = self.database.getDummyElection(election=election)
             if dElection is None:
                 raise GroupManagementException("Dummy election is not set in database")
@@ -887,7 +889,8 @@ class GroupManagement:
         except Exception as e:
             LOG.exception("Exception thrown when called groupInitialization; Description: " + str(e))
 
-    def manage(self, election: Election, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False, height: int = None):
+    def manage(self, election: Election, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False,
+               height: int = None):
         """Staring point of the group management code"""
         # call only when CurrentElectionState is CurrentElectionStateHandlerActive or CurrentElectionStateHandlerFinal
         assert isinstance(election, Election), "election is not an Election object"
@@ -896,7 +899,6 @@ class GroupManagement:
         assert isinstance(numGroups, int), "numGroups is not an int object"
         assert isinstance(isLastRound, (bool, type(None))), "isLastRound is not a bool object or None"
         assert isinstance(height, (int, type(None))), "height is not an int object or None"
-
         try:
             LOG.info("Group management started")
             # check if groups are already created
@@ -911,20 +913,20 @@ class GroupManagement:
                                                               numGroups=numGroups,
                                                               isLastRound=isLastRound,
                                                               height=height)
-                if room is not None or isLastRound is True:
-                    # last round (only last round return no None value - just Chief Delegates group created
-                    LOG.debug("Last round created. Do additional stuff (cleaning unused groups, removing bot from"
-                              "used groups, etc.")
-                    additionalActions: FinalRoundAdditionalActions = FinalRoundAdditionalActions(election=election,
-                                                                                                 database=self.database,
-                                                                                                 edenData=self.edenData,
-                                                                                                 communication=
-                                                                                                 self.communication,
-                                                                                                 mode=self.mode)
+                # if room is not None or isLastRound is True:
+                # last round (only last round return no None value - just Chief Delegates group created
+                # LOG.debug("Last round created. Do additional stuff (cleaning unused groups, removing bot from"
+                #          "used groups, etc.")
+                # additionalActions: FinalRoundAdditionalActions = FinalRoundAdditionalActions(election=election,
+                #                                                                             database=self.database,
+                #                                                                             edenData=self.edenData,
+                #                                                                             communication=
+                #                                                                             self.communication,
+                #                                                                             modeDemo=self.modeDemo)
 
-                    additionalActions.do(telegramUserBotName=telegram_user_bot_name,
-                                         telegramBotName=telegram_bot_name,
-                                         excludedRoom=room)
+                # additionalActions.do(telegramUserBotName=telegram_user_bot_name,
+                #                     telegramBotName=telegram_bot_name,
+                #                     excludedRoom=room)
             else:
                 LOG.info("Groups are already created")
 

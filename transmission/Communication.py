@@ -12,6 +12,7 @@ from pyrogram.errors import FloodWait, PeerIdInvalid
 from pyrogram.filters import new_chat_members
 from pyrogram.handlers import MessageHandler, ChatMemberUpdatedHandler, RawUpdateHandler
 from pyrogram.methods.decorators import on_chat_member_updated
+from pyrogram.raw import functions
 from pyrogram.raw.types import UpdatesTooLong
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand, Message
 
@@ -25,7 +26,7 @@ from log.log import Log
 
 from multiprocessing import Process
 
-from pyrogram import Client, emoji, filters, types, idle
+from pyrogram import Client, emoji, filters, types, idle, raw
 
 from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS, REMOVE_AT_SIGN_IF_EXISTS
 
@@ -149,7 +150,9 @@ class Communication():
     def startCommAsyncSession(self, apiId: int, apiHash: str, botToken: str):
         LOG.info("Start async bot session - event driven actions")
         # self.startSession(sessionType=SessionType.BOT_THREAD)
-        self.pyrogram = Process(target=self.startSessionAsync, name="Pyrogram idle", args=(apiId, apiHash, botToken))
+        self.pyrogram = Process(target=self.startSessionAsync,
+                                name="Pyrogram event handler",
+                                args=(apiId, apiHash, botToken))
         self.pyrogram.start()
         # asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
         # task1 = asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
@@ -166,7 +169,7 @@ class Communication():
 
             self.sessionBotThread.add_handler(
                 MessageHandler(callback=self.wellcomeProcedure,
-                               filters=filters.new_chat_members), group=-1
+                               filters=filters.new_chat_members), group=2
             )
 
             self.sessionBotThread.add_handler(
@@ -193,6 +196,10 @@ class Communication():
                 MessageHandler(callback=self.actionVideoEnded,
                                filters=filters.video_chat_ended), group=2
             )
+
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.callFeature,
+                               filters=filters.command(commands=["call"])), group=2)
 
             # self.sessionBotThread.add_handler(
             #    MessageHandler(callback=self.commandResponseRecording,
@@ -744,6 +751,27 @@ class Communication():
             LOG.exception("Exception (in setChatDescription): " + str(e))
             return False
 
+    async def isVideoCallRunning(self, sessionType: SessionType, chatId: (str, int)) -> bool:
+        try:
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            LOG.info("Checking if video call is running in group: " + str(chatId))
+
+            groupData = await self.sessionBot.invoke(pyrogram.raw.functions.channels.GetFullChannel(
+                channel=(await self.sessionBot.resolve_peer(chatId))))
+
+            isCall = groupData.full_chat.call
+
+            if isCall is None:
+                LOG.info("No video call is running in the group " + str(chatId))
+                return False
+            else:
+                LOG.info("Video call is running in the group " + str(chatId))
+                return True
+        except Exception as e:
+            LOG.exception("Exception (in isVideoCallRunning): " + str(e))
+            return None
+
     def leaveChat(self, sessionType: SessionType, chatId: (str, int)) -> bool:
         assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
@@ -780,7 +808,9 @@ class Communication():
 
             if self.knownUserData.getKnownUsersOptimizedOnlyBoolean \
                         (botName=telegram_bot_name, telegramID=str(chatid)) is False:
-                LOG.error("Group not known to bot!")
+                #does this really matter? Message comes when you creating a group ( + add user in process) and group
+                # is not known to bot yet
+                LOG.error("Group not known to bot! Does not matter if you are creating a group")
             for newMember in message.new_chat_members:
                 if isinstance(newMember, types.User):
                     LOG.success("Wellcome message to user: " + str(newMember.id))
@@ -1086,6 +1116,53 @@ class Communication():
             LOG.success("Response (actionVideoEnded): " + str(result))
         except Exception as e:
             LOG.exception("Exception (in actionVideoEnded): " + str(e))
+
+    async def getGroupCall(self, client: Client, chat_id: Union[int, str], limit: int = 1):
+        """ Get group call - not in use for now - just test for the feature in the future"""
+        peer = await client.resolve_peer(chat_id)
+
+        if isinstance(peer, raw.types.InputPeerChannel):
+            call = (await client.invoke(
+                raw.functions.channels.GetFullChannel(
+                    channel=peer
+                ))).full_chat.call
+        else:
+            if isinstance(peer, raw.types.InputPeerChat):
+                call = (await client.invoke(
+                    raw.functions.messages.GetFullChat(
+                        chat_id=peer.chat_id
+                    ))).full_chat.call
+
+        if call is None:
+            return call
+
+        return await client.invoke(
+            raw.functions.phone.GetGroupCall(
+                call=call,
+                limit=limit
+            ))
+
+    async def callFeature(self, client: Client, message: Message):
+        """Not in use for now - just test for the feature in the future"""
+        try:
+            chatId = message.chat.id
+
+            groupData = await client.invoke(pyrogram.raw.functions.channels.GetFullChannel(
+                channel=(await client.resolve_peer(message.chat.id))))
+
+            groupData1 = await self.sessionBotThread.invoke(pyrogram.raw.functions.channels.GetFullChannel(
+                channel=(await self.sessionBotThread.resolve_peer(-1001888934788))))
+
+            isCall = groupData.full_chat.call
+            if isCall is None:
+                print("No call")
+                return
+
+            # available only with UserBot
+            result = await self.getGroupCall(client=client, chat_id=chatId, limit=1)
+            LOG.debug("Result: " + str(result))
+        except Exception as e:
+            LOG.exception("Exception (in testtest): " + str(e))
 
     """async def commandResponseRecording(self, client: Client, message: Message):
         try:

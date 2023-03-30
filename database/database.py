@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 import database.base
 from database.abi import Abi
 from database.tokenService import TokenService
-from database.election import Election
+from database.election import Election, ElectionRound
 from database.electionStatus import ElectionStatus
 from database.participant import Participant
 from database.extendedParticipant import ExtendedParticipant
@@ -160,11 +160,13 @@ class Database(metaclass=Singleton):
                 session.add(ElectionStatus(electionStatusID=3,
                                            status=CurrentElectionState.CURRENT_ELECTION_STATE_INIT_VOTERS_V0))
                 session.add(
-                    ElectionStatus(electionStatusID=4, status=CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE))
+                    ElectionStatus(electionStatusID=4, status=CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE,
+                                   isLive=True))
                 session.add(
                     ElectionStatus(electionStatusID=5, status=CurrentElectionState.CURRENT_ELECTION_STATE_POST_ROUND))
                 session.add(
-                    ElectionStatus(electionStatusID=6, status=CurrentElectionState.CURRENT_ELECTION_STATE_FINAL))
+                    ElectionStatus(electionStatusID=6, status=CurrentElectionState.CURRENT_ELECTION_STATE_FINAL,
+                                   isLive=True))
                 session.add(ElectionStatus(electionStatusID=7,
                                            status=CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1))
                 session.add(
@@ -319,10 +321,18 @@ class Database(metaclass=Singleton):
         try:
             # function return PREVIOUS election state - not current. If election state was not changed, return None
             session = self.createCsesion(expireOnCommit=False)
-            election, electionStatus = session.query(Election, ElectionStatus) \
+            result = session.query(Election, ElectionStatus) \
                 .join(ElectionStatus, Election.status == ElectionStatus.electionStatusID) \
                 .filter(Election.electionID == election.electionID) \
                 .first()
+
+            if result is None:
+                LOG.debug("Election " + str(election.electionID) + " not found")
+                self.removeCcession(session=session)
+                return None
+
+            election: Election = result.Election
+            electionStatus: ElectionStatus = result.ElectionStatus
 
             if electionStatus.status == currentElectionState.value:
                 self.removeCcession(session=session)
@@ -351,6 +361,52 @@ class Database(metaclass=Singleton):
             session.rollback()
             self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when updating election status in election: " + str(e))
+            return None
+
+    def updateElectionRoundLive(self, election: Election, currentRound: int):
+        #function returns None if election is not live or election not found
+        assert isinstance(election, Election), "election is not of type Election"
+        assert isinstance(currentRound, int), "currentRound is not of type int"
+        try:
+            session = self.createCsesion(expireOnCommit=False)
+
+            result = session.query(Election, ElectionStatus) \
+                .join(ElectionStatus, Election.status == ElectionStatus.electionStatusID) \
+                .filter(Election.electionID == election.electionID) \
+                .first()
+
+            if result is None:
+                LOG.debug("Election " + str(election.electionID) + " not found")
+                self.removeCcession(session=session)
+                return None
+
+            electionFromDB: Election = result.Election
+            electionStatusFromDB: ElectionStatus = result.ElectionStatus
+            if electionStatusFromDB is None or electionStatusFromDB.isLive == False:
+                # not live elections
+                self.removeCcession(session=session)
+                return None
+
+            previousRound: int = ElectionRound.DEFAULT.value
+            if electionFromDB.roundLive != currentRound:
+                LOG.debug("Election round live changed from " + str(electionFromDB.roundLive) + " to "
+                          + str(currentRound))
+                #election round is changed
+                previousRound = electionFromDB.roundLive
+                session.query(Election) \
+                    .filter(Election.electionID == election.electionID) \
+                    .update({Election.roundLive: currentRound})
+                session.commit()
+            else:
+                LOG.info("Election round live is the same: " + str(currentRound))
+                #previous and current round are the same
+                previousRound = currentRound
+            self.removeCcession(session=session)
+            return previousRound
+        except Exception as e:
+            session.rollback()
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when updating election round live: " + str(e))
             return None
 
     def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus,
@@ -502,7 +558,8 @@ class Database(metaclass=Singleton):
             self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when creating reminders: " + str(e))
 
-    def getReminders(self, election: Election, reminderGroup1: ReminderGroup, reminderGroup2: ReminderGroup = None) -> list[Reminder]:
+    def getReminders(self, election: Election, reminderGroup1: ReminderGroup, reminderGroup2: ReminderGroup = None) -> \
+            list[Reminder]:
         assert isinstance(election, Election), "election is not Election"
         assert isinstance(reminderGroup1, ReminderGroup), "reminderGroup is not ReminderGroup"
         assert isinstance(reminderGroup2, (ReminderGroup, type(None))), "reminderGroup is not int or None"
@@ -617,8 +674,8 @@ class Database(metaclass=Singleton):
         try:
             session = self.createCsesion()
             participant: KnownUser = session.query(KnownUser).filter(KnownUser.botName == botName,
-                                                                     func.lower(
-                                                                         KnownUser.userID) == telegramID.lower()).first()
+                                                                     func.lower(KnownUser.userID) == telegramID.lower()
+                                                                     ).first()
             toReturn = participant
             self.removeCcession(session=session)
             return toReturn  # if not found it returns None
@@ -652,25 +709,6 @@ class Database(metaclass=Singleton):
             self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when getting known users: " + str(e))
             return False
-
-    def getRooms(self, election: Election, round: int, roomIndex) -> list[Room]:
-        assert isinstance(election, Election)
-        try:
-            session = self.createCsesion()
-            cs = (
-                session.query(Room).filter(Room.electionID == election.electionID,
-                                           Room.isArchived == False).all()
-            )
-            if cs is None:
-                self.removeCcession(session=session)
-                return None
-            toReturn = cs
-            self.removeCcession(session=session)
-            return toReturn
-        except Exception as e:
-            self.removeCcession(session=session)
-            LOG.exception(message="Problem occurred when getting rooms: " + str(e))
-            return None
 
     def getRoomWaitingRoom(self, election: Election, room: Room) -> Room:
         assert isinstance(election, Election), "election must be type of Election"
@@ -830,7 +868,7 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting room: " + str(e))
             return None
 
-    def getRoomsPreelectionFilteredByRound(self, election: Election, round: int, predisposedBy: str) -> list[Room]:
+    def getRoomsElectionFilteredByRound(self, election: Election, round: int, predisposedBy: str) -> list[Room]:
         assert isinstance(election, Election), "election must be type of Election"
         assert isinstance(predisposedBy, str), "prediposedBy must be type of int"
         assert isinstance(round, int), "round must be type of int"
@@ -844,14 +882,14 @@ class Database(metaclass=Singleton):
                         Room.predisposedDateTime != None,
                         Room.isArchived == False).all()
             if rooms is None:
-                LOG.debug("Pre-election room (round: " + str(round) + ") for election " + str(
+                LOG.debug("Election room (round: " + str(round) + ") for election " + str(
                     election.electionID) + " not found")
             elif len(rooms) == 0:
-                LOG.debug("Pre-election room (round: " + str(round) + ") for election " + str(
+                LOG.debug("Election room (round: " + str(round) + ") for election " + str(
                     election.electionID) + " found, but empty")
             else:
-                LOG.debug(
-                    "Pre-election room (round: " + str(round) + ") for election " + str(election.electionID) + " found")
+                LOG.debug("Election room (round: " + str(round) + ") for election " + str(election.electionID)
+                          + " found")
             toReturn = rooms
             self.removeCcession(session=session)
             return toReturn
@@ -860,7 +898,7 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting room: " + str(e))
             return None
 
-    def getRoomPreelectionFilteredByRoundAndIndex(self, election: Election, round: int, index: int, predisposedBy: str) \
+    def getRoomElectionFilteredByRoundAndIndex(self, election: Election, round: int, index: int, predisposedBy: str) \
             -> list[Room]:
         assert isinstance(election, Election), "election must be type of Election"
         assert isinstance(predisposedBy, str), "prediposedBy must be type of int"
@@ -878,39 +916,20 @@ class Database(metaclass=Singleton):
                         Room.isArchived == False).first()
             if room is None:
                 LOG.debug(
-                    "Pre-election room (round: " + str(round) + ", index: " + str(index) + ") for election " + str(
+                    "Election room (round: " + str(round) + ", index: " + str(index) + ") for election " + str(
                         election.electionID) + " not found")
             else:
                 LOG.debug(
-                    "Pre-election room (round: " + str(round) + ", index: " + str(index) + ") for election " + str(
+                    "Election room (round: " + str(round) + ", index: " + str(index) + ") for election " + str(
                         election.electionID) + " found")
             toReturn = room
             self.removeCcession(session=session)
             return toReturn
         except Exception as e:
             self.removeCcession(session=session)
-            LOG.exception(message="Problem occurred (getRoomPreelectionFilteredByRoundAndIndex) when getting room: "
+            LOG.exception(message="Problem occurred (getRoomElectionFilteredByRoundAndIndex) when getting room: "
                                   + str(e))
             return None
-
-    # def getRoomWithAllUsersBeforeElection(self, election: Election) -> Room: #probably not in use anymore
-    #    assert isinstance(election, Election)
-    #    try:
-    #        session = self.createCsesion()
-    #        room = session.query(Room).filter(Room.electionID == election.electionID,
-    #                                          Room.roomIndex == -50,
-    #                                          Room.isArchived == False).first()  # must be -50 not other numbers
-    #        if room is None:
-    #            LOG.debug("Pre-election room for election " + str(election.electionID) + " not found")
-    #        else:
-    #            LOG.debug("Pre-election room for election " + str(election.electionID) + " found")
-    #        toReturn = room
-    #        self.removeCcession(session=session)
-    #        return toReturn
-    #    except Exception as e:
-    #        self.removeCcession(session=session)
-    #        LOG.exception(message="Problem occurred when getting room: " + str(e))
-    #        return None
 
     def createRooms(self, listOfRooms: list[ExtendedRoom]) -> list[Room]:
         assert isinstance(listOfRooms, list), "listOfRooms is not a list"
@@ -1174,7 +1193,40 @@ class Database(metaclass=Singleton):
                 return toReturn
         except Exception as e:
             self.removeCcession(session=session)
-            LOG.exception(message="Problem occurred in function setElection: " + str(e))
+            LOG.exception(message="Problem occurred in function getLastElection: " + str(e))
+            return None
+
+    def getElectionByDate(self, date: datetime, contract: str) -> Election:
+        assert isinstance(date, datetime), "date is not a datetime"
+        assert isinstance(contract, str), "contract is not a str"
+        try:
+            session = self.createCsesion()
+            LOG.debug("Getting election (searching by date)... for contract: " + contract)
+
+            # get election
+            electionFromDB = (
+                session.query(Election)
+                .join(ElectionStatus, ElectionStatus.electionStatusID == Election.status)
+                .order_by(Election.date.desc())
+                .filter(
+                    Election.contract == contract,
+                    ElectionStatus.status != CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS.value,
+                    Election.date == date
+                )
+                .first()
+            )
+
+            if electionFromDB is None:
+                raise DatabaseException("Election (searching by date) not found")
+            else:
+                LOG.debug("Election found.")
+                toReturn = electionFromDB
+                self.removeCcession(session=session)
+                return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            #do not raise exception, because it is not critical and it will show always on first elections
+            LOG.error(message="Problem occurred or not found in function getElectionByDate: " + str(e))
             return None
 
     def getMembersWhoParticipateInElectionCount(self, room: Room) -> int:
@@ -1340,10 +1392,9 @@ class Database(metaclass=Singleton):
 
             result = session.query(Room, Participant) \
                 .join(Participant, Participant.roomID == Room.roomID) \
-                .order_by(Room.round.asc()) \
+                .order_by(Room.roomID.asc(), Room.round.asc()) \
                 .filter(Room.electionID == election.electionID,
                         Room.isArchived == False)\
-                .group_by(Room.roomID)\
                 .all()
 
             toReturn = result if len(result) > 0 else None
@@ -1448,8 +1499,7 @@ class Database(metaclass=Singleton):
         try:
             session = self.createCsesion()
             room = session.query(Room).filter(Room.roomTelegramID == roomTelegramID,
-                                                        Room.isArchived == False
-                                                        ).first()
+                                              Room.isArchived == False).first()
             if room is None:
                 self.removeCcession(session=session)
                 return None

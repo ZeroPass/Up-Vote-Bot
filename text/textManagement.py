@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TypedDict, Tuple, Dict
 
 from constants import start_video_record_preview_paths, video_is_still_running_preview_path, \
-    eden_portal_upload_video_url
+    eden_portal_upload_video_url, eden_portal_url_action
 from constants.language import Language
 from database import ExtendedRoom, ExtendedParticipant
 
@@ -106,7 +106,7 @@ class VideoReminderTextManagement(TextManagement):
         return _("Hey election participants!" + self.newLine() +
                  "I am here to remind you that your group %s from round %s still "
                  "didn't upload the election video. Uploads video time expires %s") % \
-            (group, round + 1, expiresText)
+            (group, round, expiresText)
 
     def invitationLinkToTheGroupButons(self, inviteLink: str, bloksLink: str) -> tuple[Button, Button, Button]:
         # it returns tuple of all the buttons(text link)
@@ -116,29 +116,45 @@ class VideoReminderTextManagement(TextManagement):
             Button(text="Update video", value=bloksLink), \
             Button(text="Update on bloks.io", value=bloksLink),
 
-    def videoReminderButtonText(self, groupLink: str) -> str:
+    def videoReminderButtonText(self, groupLink: str) -> tuple[Button]:
         assert isinstance(groupLink, str), "groupLink must be a str"
         return Button(text="Upload on the portal", value=eden_portal_upload_video_url), \
                Button(text="Coordinate with your group", value=groupLink),
 
 
 class CommandResponseTextManagement(TextManagement):
+    #not yet in use
     def __init__(self, language: Language = Language.ENGLISH):
         super().__init__(language)
 
     def recording(self) -> str:
-        return _("There is only few steps to start recording the video when the video is live:" + self.newLine() +
-                 " ```python" + self.newLine() +
-                 "1.) click three dots button on the top of the video chat window," + self.newLine() +
-                 "2.) click on the 'Start recording' button," + self.newLine() +
-                 "3.) select checkbox 'Also record Video'," + self.newLine() +
-                 "4.) click continue button," + self.newLine() +
-                 "5.) add Title if you want (optional), otherwise leave empty," + self.newLine() +
-                 "6.) click 'Start' button.```" + self.newLine()
-                 )
+        return _("Recording has been started")
 
     def recordingImagePath(self) -> str:
         return start_video_record_preview_paths
+
+class EndOfRoundTextManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
+
+    def roundIsOverAndVideoIsRunning(self):
+        return _("It appears you didn't end the video chat. Rejoin the chat and follow the two steps. "
+                 "It stops recording and saves it to your `Saved Messages`.")
+
+    def roundIsOverAndVideoIsNotRunning(self):
+        return _("Thank you for participating! User that started and ended the recording check your `Saved Messages` "
+                 "for video, and upload it after elections are done.")
+
+    def endVideoChatImagePath(self) -> str:
+        return video_is_still_running_preview_path
+
+    def roundIsOverUploadVideoLink(self):
+        return eden_portal_upload_video_url
+
+    def roundIsOverButton(self, inviteLink: str):
+        assert isinstance(inviteLink, str), "inviteLink must be a str"
+        return Button(text="Upload on the portal", value=inviteLink),
+
 
 
 class VideCallTextManagement(TextManagement):
@@ -152,7 +168,7 @@ class VideCallTextManagement(TextManagement):
         return _("Thank you for participating! User that started and ended the recording "
                  "check your `Saved Messages` for video, and upload it after elections are done.")
 
-    def videoHasBeenStoppedButtonText(self, inviteLink: str) -> tuple[Button]:
+    def videoHasBeenStoppedButtonText(self, inviteLink: str) -> Button:
         # it returns tuple of all the buttons(text link)
         assert isinstance(inviteLink, str), "groupLink must be a str"
         return Button(text="Upload on the portal", value=inviteLink),  # must be with comma - to store it as a tuple
@@ -167,10 +183,6 @@ class VideCallTextManagement(TextManagement):
     def videoIsStillRunningText(self) -> str:
         return _("It appears you didn't end the video chat. Rejoin the chat and follow the two steps. "
                  "It stops recording and saves it to your `Saved Messages`.")
-    def videoIsStillRunningImagePath(self) -> str:
-        if isinstance(video_is_still_running_preview_path, str) is False:
-            raise TypeError("video_is_still_running_preview_path must be a str")
-        return video_is_still_running_preview_path
 
 
 class GroupCommunicationTextManagement(TextManagement):
@@ -195,7 +207,7 @@ class GroupCommunicationTextManagement(TextManagement):
         return Button(text="Join the group", value=inviteLink),  # must be with comma - to store it as a tuple
 
     def welcomeMessage(self, inviteLink: str, round: int, group: int, isLastRound: bool = False) -> str:
-        assert isinstance(inviteLink, str), "groupLink must be a str"
+        assert isinstance(inviteLink, str), "inviteLink must be a str"
         assert isinstance(round, int), "round must be an int"
         assert isinstance(group, int), "group must be an int"
         assert isinstance(isLastRound, bool), "isLastRound must be a bool"

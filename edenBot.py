@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 import datetime as datetime
@@ -7,9 +8,11 @@ from chain.dfuse import *
 from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
+from chain.stateElectionState import ElectCurrTable
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
     eden_account
 from database import Database, Election, ElectionStatus, Reminder
+from database.election import ElectionRound
 from log import Log
 from datetime import datetime, timedelta
 from debugMode.modeDemo import ModeDemo, Mode
@@ -74,7 +77,7 @@ class EdenBot:
             self.communication = Communication(database=database)
 
             # to run callback part of pyrogram library on separated thread - not as separated executable file
-            # self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
+            self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
 
             self.communication.startComm(apiId=telegramApiID,
                                          apiHash=telegramApiHash,
@@ -161,26 +164,63 @@ class EdenBot:
             if election is None:
                 raise EdenBotException("EdenBot.manageElectionInDB: Election is None.")
 
-                #########################
-                # write current election state to database
-                previousElectionState: CurrentElectionState = \
-                    database.updateElectionColumnElectionStateIfChanged(election=election,
-                                                                        currentElectionState=
-                                                                        self.currentElectionStateHandler.
-                                                                        currentElectionState)
-                if previousElectionState is not None:
-                    LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
-                              + str(self.currentElectionStateHandler.currentElectionState.value))
-                else:
-                    LOG.debug("Election state is not changed")
+            #########################
+            # write current election state to database
+            previousElectionState: CurrentElectionState = \
+                database.updateElectionColumnElectionStateIfChanged(election=election,
+                                                                    currentElectionState=
+                                                                    self.currentElectionStateHandler.
+                                                                    currentElectionState)
+            if previousElectionState is not None:
+                LOG.debug("Previous election state: " + str(previousElectionState.value) + " changed to: "
+                          + str(self.currentElectionStateHandler.currentElectionState.value))
+            else:
+                LOG.debug("Election state is not changed")
 
-                ##########################
+            # election state is active and changed
+            if self.currentElectionStateHandler.getIsInLive():
+                if isinstance(self.currentElectionStateHandler, CurrentElectionStateHandlerActive):
+                    currentRound: int = self.currentElectionStateHandler.getRound()
+                else:
+                    currentRound: int = ElectionRound.FINAL.value
+                previousRound: int = database.updateElectionRoundLive(election=election, currentRound=currentRound)
+                if previousRound is not None and previousRound != currentRound:
+                    LOG.debug("Current round is changed from " + str(previousRound) + " to: " + str(currentRound))
+                    self.currentElectionStateHandler.setIsRoundChanged(isRoundChanged=True,
+                                                                       previousRound=previousRound)
+                else:
+                    LOG.debug("Current round is not changed")
+                    self.currentElectionStateHandler.setIsRoundChanged(isRoundChanged=False)
+
+
+            ##########################
 
             # return current election state
             return election
 
         except Exception as e:
             LOG.exception("Exception in manageElectionInDB. Description: " + str(e))
+            return None
+
+    def getElectionState(self) -> ElectCurrTable:
+        try:
+            edenData: Response = self.edenData.getElectionState(height=self.modeDemo.currentBlockHeight if \
+                self.modeDemo is not None else None)
+
+            if isinstance(edenData, ResponseError):
+                raise EdenBotException("Error when called eden.getElectionState; Description: " + edenData.error)
+            if isinstance(edenData.data, ResponseError):
+                raise EdenBotException("Error when called eden.getElectionState; Description: " + edenData.data.error)
+
+            receivedData = edenData.data
+            electCurrTable: ElectCurrTable = ElectCurrTable(receivedData)
+
+            if electCurrTable.type != "election_state_v0":
+                raise EdenBotException("Unknown election state type: " + str(electCurrTable.type))
+
+            return electCurrTable
+        except Exception as e:
+            LOG.exception("Exception in getElectionState. Description: " + str(e))
             return None
 
     def setCurrentElectionStateAndCallCustomActions(self, contract: str, database: Database):
@@ -206,11 +246,17 @@ class EdenBot:
                                                          contract=contract,
                                                          database=database)
 
+            if election is None:
+                LOG.exception("EdenBot.setCurrentElectionStateAndCallCustomActions; 'Election' is None")
+                raise Exception("EdenBot.setCurrentElectionStateAndCallCustomActions; 'Election' is None")
+
             # get current election state to manage business logic
             currentElectionState = self.currentElectionStateHandler.currentElectionState
 
             if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
+                electionCurrState: ElectCurrTable = self.getElectionState()
                 self.currentElectionStateHandler.customActions(election=election,
+                                                               electCurr=electionCurrState,
                                                                database=database,
                                                                groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
@@ -278,7 +324,7 @@ class EdenBot:
                     raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
                 # continue #TODO remove this
-                # define current election state and write it to the database
+                # defines current election state and write it to the database
                 self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
 
         except Exception as e:
@@ -298,16 +344,19 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     startEndDatetimeList = [
-        #####(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
-        ####(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        #(datetime(2022, 10, 7, 12, 45), datetime(2022, 10, 7, 12, 54)),  # adding users
-        #(datetime(2022, 10, 7, 12, 56), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        (datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
+        #(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
+        #(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
+        (datetime(2022, 10, 7, 12, 44), datetime(2022, 10, 7, 12, 54)),  # adding users
+        (datetime(2022, 10, 7, 12, 56), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        # (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
         # (datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
         # (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
         # (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 15, 1), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        #(datetime(2022, 10, 8, 15, 1), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        #(datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
+        #(datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
+        (datetime(2022, 10, 21, 13, 0), datetime(2022, 10, 21, 13, 1)),  # one day before video deadline
     ]
 
     # 120 blocks per minute
@@ -373,24 +422,28 @@ def main1():
                                   contract=eden_account
                                   )
 
-    kva = database.getMembers(election=election)
-    kva1 = kva.Room
-    kva2 = kva.Participant
+    #kva = database.getMembers(election=election)
+    #kva1 = kva.Room
+    #kva2 = kva.Participant
 
-    reminder: Reminder = Reminder(reminderID=8, electionID=2, dateTimeBefore=datetime.now(), round=0)
-    test = database.electionGroupsCreated(election=election, round=0, numRooms=20)
+    #reminder: Reminder = Reminder(reminderID=8, electionID=2, dateTimeBefore=datetime.now(), round=0)
+    #test = database.electionGroupsCreated(election=election, round=0, numRooms=20)
 
     kva = 8
 
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.USER, text="test")
+    comm.sendMessage(chatId=-1001888934788, sessionType=SessionType.BOT, text="test")
+    #neki = await comm.isVideoCallRunning(sessionType=SessionType.BOT, chatId=-1001888934788)
+    task = asyncio.get_event_loop().run_until_complete(comm.isVideoCallRunning(sessionType=SessionType.BOT,
+                                                                               chatId=-1001888934788))
+    kva =- 8
 
     while True:
         time.sleep(2)
 
 
 if __name__ == "__main__":
-    #main()
-    main1()
+    main()
+    #main1()
     # mainPyrogramTestMode() #to test pyrogram application - because of one genuine session file

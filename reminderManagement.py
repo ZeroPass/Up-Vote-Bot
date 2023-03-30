@@ -221,7 +221,19 @@ class ReminderManagement:
             executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
             LOG.debug("Working time: " + str(executionTime))
 
-            reminders = self.database.getReminders(election=election)
+            reminders: list[Reminder] = self.database.getReminders(election=election,
+                                                                   reminderGroup1=ReminderGroup.ATTENDED,
+                                                                   reminderGroup2=ReminderGroup.NOT_ATTENDED)
+            remindersBoth: list[Reminder] = self.database.getReminders(election=election,
+                                                                       reminderGroup1=ReminderGroup.BOTH)
+            if reminders is None and remindersBoth is not None:
+                reminders = remindersBoth
+            elif reminders is not None and remindersBoth is None:
+                # do nothing
+                Log.info("reminders is not None and remindersBoth is None")
+            elif reminders is not None and remindersBoth is not None:
+                reminders = reminders + remindersBoth
+
             if reminders is not None:
                 for item in reminders:
                     if isinstance(item, Reminder):
@@ -238,7 +250,13 @@ class ReminderManagement:
                                 minutes=time_span_for_notification):
                             LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
-                            members: list[(Room, Participant)] = self.getMembersFromDatabase(election=election)
+
+                            dummyElection: Election = self.database.getDummyElection(election=election)
+                            if dummyElection is None:
+                                LOG.error("HUGE PROBLEM: Dummy election is not found. Reminders will not be sent")
+                                return
+
+                            members: list[(Room, Participant)] = self.getMembersFromDatabase(election=dummyElection)
                             reminderSentList: list[ReminderSent] = self.database.getAllParticipantsReminderSentRecord(
                                 reminder=reminder)
                             self.communication.updateKnownUserData(botName=telegram_bot_name)
@@ -250,8 +268,7 @@ class ReminderManagement:
                                 isSent: bool = self.sendAndSyncWithDatabaseElectionIsComing(member=member,
                                                                                             election=election,
                                                                                             reminder=reminder,
-                                                                                            reminderSentList=reminderSentList,
-                                                                                            modeDemo=modeDemo)
+                                                                                            reminderSentList=reminderSentList)
                                 if isSent:
                                     LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
                                              + member.telegramID)
@@ -326,25 +343,23 @@ class ReminderManagement:
         try:
             LOG.info("Getting text for election: " + str(electionDateTime))
 
-            assert isinstance(electionDateTime, datetime)
-            assert isinstance(currentTime, datetime)
-            assert isinstance(reminder, Reminder)
-            assert isinstance(member, Participant)
+            assert isinstance(electionDateTime, datetime), "electionDateTime is not instance of datetime"
+            assert isinstance(currentTime, datetime), "currentTime is not instance of datetime"
+            assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
+            assert isinstance(member, Participant), "member is not instance of Participant"
 
             # get timedifference in text format from constants
             minutesToElectionInMinutes = (electionDateTime - currentTime).total_seconds() / 60
-            nearestDatetimeToElectionInMinutes: tuple[int, ReminderGroup, str] = self.theNearestDateTime(
-                alert_message_time_election_is_coming,
-                minutesToElectionInMinutes)
+            nearestDatetimeToElectionInMinutes: tuple[int, ReminderGroup, str] = \
+                self.theNearestDateTime(alert_message_time_election_is_coming, minutesToElectionInMinutes)
             nearestDateTimeText = nearestDatetimeToElectionInMinutes[2]
-            LOG.debug("Nearest datetime to election: " + str(
-                nearestDatetimeToElectionInMinutes) + " minutes with text '" + nearestDateTimeText + "'")
+            LOG.debug("Nearest datetime to election: " + str(nearestDatetimeToElectionInMinutes) +
+                      " minutes with text '" + nearestDateTimeText + "'")
 
-            LOG.debug("Member: " + str(member))
             if member.participationStatus and \
                     (nearestDatetimeToElectionInMinutes[1] == ReminderGroup.BOTH or
                      nearestDatetimeToElectionInMinutes[1] == ReminderGroup.ATTENDED):
-                LOG.debug("Member is going to participate and reminder is for 'attended members'")
+                LOG.debug("Member (" + str(member) + ") is going to participate and reminder is for 'attended members'")
                 return _("Hey! \n"
                          "I am here to remind you that Eden election is starting %s.") % \
                        (nearestDateTimeText)
@@ -352,17 +367,19 @@ class ReminderManagement:
             elif member.participationStatus is False and \
                     (nearestDatetimeToElectionInMinutes[1] is ReminderGroup.BOTH or \
                      nearestDatetimeToElectionInMinutes[1] is ReminderGroup.NOT_ATTENDED):
-                LOG.debug("Member is going to participate and reminder is for 'not attended members'")
+                LOG.debug("Member (" + str(member) + ") is not going to participate and reminder "
+                                                     "is for 'not attended members'")
                 return _("Hey! \n"
                          "I am here to remind you that Eden election is starting %s."
                          " \n You are not attending this election, so you will not be able to participate.\n\n"
                          "You can change your attendance status by pressing the button below text:.") % \
                        (nearestDateTimeText)
             else:
+                LOG.debug("Do not send reminder to member (" + str(member) + ").")
                 return ""
         except Exception as e:
-            LOG.exception("Exception (in getTextForUpcomingElection): " + str(e))
-            raise ReminderManagementException("Exception (in getTextForUpcomingElection): " + str(e))
+            LOG.exception("Exception in getTextForUpcomingElection: " + str(e))
+            raise ReminderManagementException("Exception in getTextForUpcomingElection: " + str(e))
 
     def sendToTheGroupTimeIsUp(self,
                                election: Election,
@@ -484,98 +501,55 @@ class ReminderManagement:
                                                    round=reminder.round,
                                                    voteFor=member.voteFor)
 
-            # be sure that next comparison is correct, because we really do not want to send fake messages to
-            # users
-
             sendResponse: bool = False
 
-            if modeDemo is None or True:
-                try:
-                    # LIVE MODE
-                    cSession = self.database.createCsesion()
-                    LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
-                    member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                  chatId=member.telegramID,
-                                                                  text=text,
-                                                                  inlineReplyMarkup=replyMarkup)
+            try:
+                # LIVE MODE
+                cSession = self.database.createCsesion()
+                LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
+                member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
+                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                              chatId=member.telegramID,
+                                                              text=text,
+                                                              inlineReplyMarkup=replyMarkup)
 
 
-                    # Save the recod to the database
-                    response = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
-                                                                   accountName=member.accountName,
-                                                                   sendStatus=ReminderSendStatus.SEND if sendResponse is True
-                                                                   else ReminderSendStatus.ERROR,
-                                                                   cSession=cSession)
-                    if response is True:
-                        self.database.commitCcession(session=cSession)
-                    else:
-                        self.database.rollbackCcession(session=cSession)
-
-
-                    LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
-                             + ". Saving to the database under electionID: " + str(election.electionID))
-                    self.database.removeCcession(session=cSession)
-                except Exception as e:
-                    LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
+                # Save the recod to the database
+                response = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
+                                                               accountName=member.accountName,
+                                                               sendStatus=ReminderSendStatus.SEND if sendResponse is True
+                                                               else ReminderSendStatus.ERROR,
+                                                               cSession=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
                     self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
 
-            else:
-                try:
-                    # DEMO MODE
-                    cSession = self.database.createCsesion()
-                    LOG.trace("Demo mode is enabled, sending message to admins")
-                    sendResponse = True
-                    member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                    self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                  chatId=member.telegramID,
-                                                                  text=text,
-                                                                  inlineReplyMarkup=replyMarkup)
-                    # commented out, because we want to send message to real users
-                    """for admin in telegram_admins_id:
-                        text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
-                               ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                        self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                       chatId=admin,
-                                                       text=text,
-                                                       inlineReplyMarkup=replyMarkup)
-    
-                        LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
-                                 + ". Saving to the database under electionID: " + str(election.electionID))"""
 
-                    # Save the record to the database
-                    response: bool  = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
-                                                                   accountName=member.accountName,
-                                                                   sendStatus=ReminderSendStatus.SEND if sendResponse is True
-                                                                   else ReminderSendStatus.ERROR,
-                                                                   cSession=cSession)
-                    if response is True:
-                        self.database.commitCcession(session=cSession)
-                    else:
-                        self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
-                except Exception as e:
-                    LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
-                    self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
+                LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
+                         + ". Saving to the database under electionID: " + str(election.electionID))
+                self.database.removeCcession(session=cSession)
+            except Exception as e:
+                LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
+                self.database.rollbackCcession(session=cSession)
+                self.database.removeCcession(session=cSession)
             return sendResponse
-
         except Exception as e:
             LOG.exception("Exception thrown when called sendAndSyncWithDatabaseElectionIsComing; Description: " + str(e))
 
 
     def sendAndSyncWithDatabaseElectionIsComing(self, member: Participant, election: Election, reminder: Reminder,
-                                                reminderSentList: list[ReminderSent],
-                                                modeDemo: ModeDemo = None) -> bool:
+                                                reminderSentList: list[ReminderSent]) -> bool:
         """Send reminder and write to database"""
         try:
             assert isinstance(member, Participant), "member is not instance of Participant"
             assert isinstance(election, Election), "election is not instance of Election"
+            assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
             assert isinstance(reminderSentList, list), "reminderSentList is not instance of list"
-            LOG.trace("Send and sync with database")
-            LOG.trace("Member: " + str(member))
-            LOG.trace("Election id: " + str(election.electionID))
+            LOG.trace("Send and sync with database: election is coming; "
+                      "Member: " + str(member) +
+                      ", Election: " + str(election) +
+                      ", Reminder: " + str(reminder))
 
             foundReminders: list[ReminderSent] = [x for x in reminderSentList if x.accountName == member.accountName]
 
@@ -605,75 +579,33 @@ class ReminderManagement:
                 ]
             ) if member.participationStatus is False else None
 
-            # be sure that next comparison is correct, because we really do not want to send fake messages to
-            # users
-
             sendResponse: bool = False
 
-            if modeDemo is None or True:
-                # LIVE MODE
-                try:
-                    cSession = self.database.createCsesion()
-                    LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
-                    member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                  chatId=member.telegramID,
-                                                                  text=text,
-                                                                  inlineReplyMarkup=replyMarkup)
+            try:
+                cSession = self.database.createCsesion()
+                LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
+                member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
+                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                              chatId=member.telegramID,
+                                                              text=text,
+                                                              inlineReplyMarkup=replyMarkup)
 
-                    LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
-                             + ". Saving to the database under electionID: " + str(election.electionID))
+                LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
+                         + ". Saving to the database under electionID: " + str(election.electionID))
 
-                    response: bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
-                                                                   sendStatus=ReminderSendStatus.SEND if sendResponse is True
-                                                                   else ReminderSendStatus.ERROR,
-                                                                   cSession=cSession)
-                    if response is True:
-                        self.database.commitCcession(session=cSession)
-                    else:
-                        self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
-                except Exception as e:
-                    LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
+                response: bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
+                                                               sendStatus=ReminderSendStatus.SEND if sendResponse is True
+                                                               else ReminderSendStatus.ERROR,
+                                                               cSession=cSession)
+                if response is True:
+                    self.database.commitCcession(session=cSession)
+                else:
                     self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
-
-            else:
-                # DEMO MODE
-                try:
-                    cSession = self.database.createCsesion()
-                    LOG.trace("Demo mode is enabled, sending message to admins")
-                    member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                  chatId=member.telegramID,
-                                                                  text=text,
-                                                                  inlineReplyMarkup=replyMarkup)
-
-                    """for admin in telegram_admins_id:
-                        text = text + "\n\n" + "Demo mode is enabled, sending message to " + admin + " instead of " + \
-                               ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                        sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                                      chatId=admin,
-                                                                      text=text,
-                                                                      inlineReplyMarkup=replyMarkup)
-    
-                        LOG.info("DemoMode; Is message sent successfully to " + admin + ": " + str(sendResponse)
-                                 + ". Saving to the database under electionID: " + str(election.electionID))"""
-
-                    response:bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder, accountName=member.accountName,
-                                                                       sendStatus=ReminderSendStatus.SEND
-                                                                       if sendResponse is True
-                                                                       else ReminderSendStatus.ERROR,
-                                                                       cSession=cSession)
-                    if response is True:
-                        self.database.commitCcession(session=cSession)
-                    else:
-                        self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
-                except Exception as e:
-                    LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
-                    self.database.rollbackCcession(session=cSession)
-                    self.database.removeCcession(session=cSession)
+                self.database.removeCcession(session=cSession)
+            except Exception as e:
+                LOG.exception("Exception in sendAndSyncWithDatabaseElectionIsComing. Description: " + str(e))
+                self.database.rollbackCcession(session=cSession)
+                self.database.removeCcession(session=cSession)
             return sendResponse
 
         except Exception as e:
