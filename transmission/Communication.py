@@ -14,7 +14,8 @@ from pyrogram.handlers import MessageHandler, ChatMemberUpdatedHandler, RawUpdat
 from pyrogram.methods.decorators import on_chat_member_updated
 from pyrogram.raw import functions
 from pyrogram.raw.types import UpdatesTooLong
-from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand, Message
+from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand, Message, \
+    ChatPreview
 
 from constants.parameters import *
 from database import Database
@@ -218,6 +219,7 @@ class Communication():
             # )
 
             self.sessionBotThread.start()
+            LOG.success("Pyrogram event handler started")
             idle()
 
         except Exception as e:
@@ -579,11 +581,11 @@ class Communication():
 
             self.sessionUser.delete_supergroup(chat_id=chatId)
             # remove also from known users
-            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=str(chatId))
             return True
         except PeerIdInvalid:
             LOG.exception("Exception (in deleteGroup): PeerIdInvalid")
-            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=str(chatId))
             return False
         except Exception as e:
             LOG.exception("Exception (in deleteGroup): " + str(e))
@@ -592,10 +594,9 @@ class Communication():
     def leaveChat(self, sessionType: SessionType, chatId: (str, int), userId: str) -> bool:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
-        assert isinstance(userId, str), "UserId should be str"
         try:
             # delete option not used, because it is not working on supergroups
-            LOG.debug("User" + str(userId) + " is leaving chat: " + str(chatId))
+            LOG.debug("User is leaving a chat: " + str(chatId))
             if sessionType == SessionType.USER:
                 self.sessionUser.leave_chat(chat_id=chatId)
             else:
@@ -749,24 +750,67 @@ class Communication():
             return True
         except Exception as e:
             LOG.exception("Exception (in setChatDescription): " + str(e))
-            return False
+
+    def isInChat(self, sessionType: SessionType, chatId: (str, int)) -> bool:
+        try:
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            LOG.info("Checking if user(bot) is in chat: " + str(chatId))
+            chatIdInt: int = None
+            try:
+                if isinstance(chatId, str):
+                    chatIdInt = int(chatId)
+                elif isinstance(chatId, int):
+                    chatIdInt = chatId
+                else:
+                    raise Exception("ChatId is not str or int")
+            except Exception as e:
+                LOG.exception("Not int value stored in string: " + str(e))
+                raise Exception("Not int value stored in string: " + str(e))
+
+
+            if sessionType == SessionType.USER:
+                chat = self.sessionUser.get_chat(chat_id=chatIdInt)
+            else:
+                chat = self.sessionBot.get_chat(chat_id=chatIdInt)
+
+            if isinstance(chat, Chat):
+                return True
+            elif isinstance(chat, ChatPreview):
+                return False
+            else:
+                raise Exception("Chat is not Chat or ChatPreview")
+        except Exception as e:
+            LOG.exception("Exception (in isInChat): " + str(e))
+            return None
 
     async def isVideoCallRunning(self, sessionType: SessionType, chatId: (str, int)) -> bool:
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
             assert isinstance(chatId, (str, int)), "ChatId should be str or int"
             LOG.info("Checking if video call is running in group: " + str(chatId))
+            chatIdInt: int = None
+            try:
+                if isinstance(chatId, str):
+                    chatIdInt = int(chatId)
+                elif isinstance(chatId, int):
+                    chatIdInt = chatId
+                else:
+                    raise Exception("ChatId is not str or int")
+            except Exception as e:
+                LOG.exception("Not int value stored in string: " + str(e))
+                return None
 
             groupData = await self.sessionBot.invoke(pyrogram.raw.functions.channels.GetFullChannel(
-                channel=(await self.sessionBot.resolve_peer(chatId))))
+                channel=(await self.sessionBot.resolve_peer(chatIdInt))))
 
             isCall = groupData.full_chat.call
 
             if isCall is None:
-                LOG.info("No video call is running in the group " + str(chatId))
+                LOG.info("No video call is running in the group " + str(chatIdInt))
                 return False
             else:
-                LOG.info("Video call is running in the group " + str(chatId))
+                LOG.info("Video call is running in the group " + str(chatIdInt))
                 return True
         except Exception as e:
             LOG.exception("Exception (in isVideoCallRunning): " + str(e))
@@ -877,7 +921,7 @@ class Communication():
                         LOG.debug("...is bot. Do nothing")
                         continue
 
-                    if isinstance(newMember.username, str) or len(newMember.username) == 0:
+                    if isinstance(newMember.username, str) is False or len(newMember.username) == 0:
                         LOG.error("WellcomeProcedure; New member username is None")
 
                     # promote only users who supposed to be in this room

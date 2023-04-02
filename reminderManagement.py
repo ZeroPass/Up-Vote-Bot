@@ -120,7 +120,7 @@ class ReminderManagement:
             self.communication.updateKnownUserData(botName=telegram_bot_name)
             executionTime: datetime = self.setExecutionTime(modeDemo=modeDemo)
 
-            reminders: list = self.database.getReminders(election=election, reminderGroup=ReminderGroup.IN_ELECTION)
+            reminders: list = self.database.getReminders(election=election, reminderGroup1=ReminderGroup.IN_ELECTION)
             if reminders is not None:
                 for reminder in reminders:
                     reminderRound: int = reminder.round
@@ -505,7 +505,7 @@ class ReminderManagement:
 
             try:
                 # LIVE MODE
-                cSession = self.database.createCsesion()
+                cSession = self.database.createCsesion(expireOnCommit=False)
                 LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
                 member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
                 sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
@@ -582,7 +582,7 @@ class ReminderManagement:
             sendResponse: bool = False
 
             try:
-                cSession = self.database.createCsesion()
+                cSession = self.database.createCsesion(expireOnCommit=False)
                 LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
                 member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
                 sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,

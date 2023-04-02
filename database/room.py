@@ -3,7 +3,7 @@ from sqlalchemy import String, Table, Column, Integer, ForeignKey, Text, CHAR, B
 from database.election import Election
 from database.base import Base
 
-
+ROOM_PREDISPOSED_BY_PROCESS = "process"
 class Room(Base):
     __tablename__ = 'room'
     """Class for interaction between code structure and database"""
@@ -27,7 +27,7 @@ class Room(Base):
                  roomNameShort: str,
                  roomNameLong: str,
                  isPredisposed: bool = False,
-                 predisposedBy: str = "process",
+                 predisposedBy: str = ROOM_PREDISPOSED_BY_PROCESS,
                  predisposedDateTime: datetime = None,
                  roomID: int = None,
                  roomTelegramID: str = None,

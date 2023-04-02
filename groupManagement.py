@@ -263,7 +263,8 @@ class RoomArray:
         for room in self.rooms:
             if room.roomIndex == roomIndex and room.round == round:
                 return room
-        raise GroupManagementException("RoomArray.getRoom; Room not found")
+        LOG.error("RoomArray.getRoom; Room not found")
+        return None
 
     def setRooms(self, rooms: list[ExtendedRoom]):
         assert isinstance(rooms, list), "rooms must be a list"
@@ -550,6 +551,14 @@ class GroupManagement:
         """Create groups"""
         try:
             LOG.info("Create groups")
+
+            #dummyElection: Election = self.database.getDummyElection(election=election)
+            #if dummyElection is None:
+            #    raise GroupManagementException("GroupManagement.createOfflineGroupsWithParticipants; "
+            #                                   "No dummy election found for election: " + str(election))
+
+
+            #roomArrayAlreadyCreated: RoomArray = RoomArray()
             roomArrayNewGroups: RoomArray = RoomArray()
             roomArrayPrecreatedGroups: RoomArray = RoomArray()
             for index in range(numGroups):  # from 0 to numGroups -1
@@ -557,12 +566,18 @@ class GroupManagement:
                                                 round=round,
                                                 roomIndex=index):
                     LOG.debug("Room with electionID: " + str(election.electionID) + ", round:" + str(round) +
-                              ", room index:" + str(index) + "already exists")
+                              ", room index: " + str(index) + " already exists")
+                    #room: Room = self.database.getRoomElectionFilteredByRoundAndIndexWithoutPredisposed(
+                    #                                                        election=election,
+                    #                                                        round=round,
+                    #                                                        index=index)
+                    #if isinstance(room, Room):
+                    #    roomArrayAlreadyCreated.setRoom(room=ExtendedRoom.fromRoom(room=room))
                     continue
 
                 else:
                     LOG.debug("Room with electionID: " + str(election.electionID) + ", round:" + str(round) +
-                              ", room index:" + str(index) + "does not exist. Create new one")
+                              ", room index:" + str(index) + "does not exist. Create new one in election")
                     room: Room = self.getFreePreelectionRoom(
                         election=election,
                         round=round,
@@ -603,6 +618,7 @@ class GroupManagement:
             roomArrayBothMerged: RoomArray = RoomArray()
             roomArrayBothMerged.setRooms(roomsListWithIndexes)
             roomArrayBothMerged.appendRooms(rooms=roomArrayPrecreatedGroups.getRoomArray())
+            #roomArrayBothMerged.appendRooms(rooms=roomArrayAlreadyCreated.getRoomArray())
             LOG.info("... room creation finished. Rooms are set with IDs in database.")
 
             # updated one by one: because of getFreePreelectionRoom function - other way it found always same room
@@ -638,7 +654,9 @@ class GroupManagement:
                 roomIndex = roomAllocation.memberIndexToGroup(item.index)
                 # found the room with the index (name is +1 used)
                 room: ExtendedRoom = roomArrayBothMerged.getRoom(roomIndex=roomIndex, round=round)
-
+                if room is None:
+                    LOG.error("Room is not found. Just skip it.")
+                    continue
                 # add participant to room
                 room.addMember(item)
 
@@ -654,7 +672,7 @@ class GroupManagement:
             waitingRoomPreelection: Room = waitingRoom.getRoomFromDB()
 
             if waitingRoomPreelection is None:
-                raise GroupManagementException("Groupmanagement.createOfflineGroupsWithParticipants."
+                raise GroupManagementException("GroupManagement.createOfflineGroupsWithParticipants."
                                                " Preelection room is not set in database")
             self.database.delegateParticipantsToTheRoom(extendedParticipantsList=extendedParticipantsList,
                                                         roomPreelection=waitingRoomPreelection)
@@ -716,7 +734,8 @@ class GroupManagement:
                  if self.database.getKnownUser(botName=telegram_bot_name, telegramID=item)]
 
             LOG.debug("Add participants to the room - communication part related")
-            self.communication.addChatMembers(chatId=chatID,
+            if len(membersWithInteractionWithCurrentBot) > 0:
+                self.communication.addChatMembers(chatId=chatID,
                                               participants=membersWithInteractionWithCurrentBot)
 
             # LOG.debug("Add participants to the room - database related")
@@ -738,6 +757,8 @@ class GroupManagement:
             # make sure bot has admin rights
             if extendedRoom.shareLink is None or extendedRoom.shareLink == '':
                 inviteLink: str = self.communication.getInvitationLink(sessionType=SessionType.USER, chatId=chatID)
+                self.database.updateShareLinkRoom(roomID=extendedRoom.roomID,
+                                                  shareLink=inviteLink)
             else:
                 inviteLink = extendedRoom.shareLink
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from database.room import Room
+from database.room import Room, ROOM_PREDISPOSED_BY_PROCESS
 from database.extendedParticipant import ExtendedParticipant
 
 
@@ -12,7 +12,7 @@ class ExtendedRoom(Room):
                  roomNameShort: str,
                  roomNameLong: str,
                  isPredisposed: bool = False,
-                 predisposedBy: str = "process",
+                 predisposedBy: str = ROOM_PREDISPOSED_BY_PROCESS,
                  members: list[ExtendedParticipant] = None,
                  roomID: int = None,
                  predisposedDateTime: datetime = None,

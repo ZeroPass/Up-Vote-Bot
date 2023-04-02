@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from log import Log
 from enum import Enum
@@ -102,7 +103,7 @@ class ModeDemo:
         assert (self.liveMode is True), "LiveMode should be True when you call 'ModeDemo.setNextLiveBlockAndTimestamp'"
         self.currentBlockHeight = self.edenObj.getChainHeadBlockNumber() - self.stepBack
         self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=self.currentBlockHeight)
-
+        LOGModeDemo.debug("Block: " + str(self.currentBlockHeight) + ", timestamp" + str(self.currentBlockTimestamp))
     def setStartBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
         LOGModeDemo.debug("ModeDemo; Set start block height to: " + str(height))

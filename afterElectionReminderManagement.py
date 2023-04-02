@@ -7,7 +7,7 @@ from chain import EdenData
 from chain.dfuse import DfuseConnection, GraphQLApi
 from chain.stateElectionState import ElectCurrTable
 from constants import alert_message_time_upload_video, ReminderGroup, time_span_for_notification_upload_video, \
-    telegram_bot_name, default_language
+    telegram_bot_name, default_language, CurrentElectionState
 from database import Database, Election, Reminder, ReminderSent, ReminderSendStatus
 from database.participant import Participant
 from database.room import Room
@@ -69,16 +69,18 @@ class AfterElectionReminderManagement:
             blockchainTime: datetime = modeDemo.getCurrentBlockTimestamp()
             return blockchainTime
 
-    def createRemindersUploadVideoIfNotExists(self, election: Election, deadlineInMinutes: int):
+    def createRemindersUploadVideoIfNotExists(self, currentElection: Election,
+                                              deadlineInMinutes: int):
         """Create reminders to upload video if not exists"""
-        assert isinstance(election, Election), "election must be type of Election"
+        assert isinstance(currentElection, Election), "currentElection must be type of Election"
         assert isinstance(deadlineInMinutes, int), "deadlineInMinutes must be type of int"  # 2 weeks = 60 * 24 * 14
         try:
+            # reminders are created before elections started, but run after election ended
             LOG.info("Create reminders (upload video) in election if not exists")
 
-            if self.database.getRemindersCount(election=election, reminderGroup1=ReminderGroup.UPLOAD_VIDEO) == \
+            if self.database.getRemindersCount(election=currentElection, reminderGroup1=ReminderGroup.UPLOAD_VIDEO) == \
                     len(alert_message_time_upload_video):
-                LOG.debug(message="Reminders(upload video) for election:" + str(election.electionID) + " already exist")
+                LOG.debug(message="Reminders(upload video) for election:" + str(currentElection.electionID) + " already exist")
                 return
 
             session = self.database.createCsesion(expireOnCommit=False)
@@ -106,10 +108,10 @@ class AfterElectionReminderManagement:
                     raise AfterElectionReminderManagementException("alert_message_time_upload_video tuple[2]: "
                                                                    "element is not str")
 
-                deadlineDT = election.date + timedelta(minutes=deadlineInMinutes)
+                deadlineDT = currentElection.date + timedelta(minutes=deadlineInMinutes)
                 LOG.info("Deadline for upload video: " + str(deadlineDT))
 
-                reminder = Reminder(electionID=election.electionID,
+                reminder = Reminder(electionID=currentElection.electionID,
                                     reminderGroup=item[1],
                                     dateTimeBefore=deadlineDT - timedelta(minutes=item[0]))
                 self.database.createReminder(reminder=reminder, csession=session)
@@ -169,10 +171,10 @@ class AfterElectionReminderManagement:
             LOG.debug(
                 "Nearest datetime to end of upload period of video: " + str(nearestDatetimeToFinishUploadInMinutes) +
                 " minutes with text '" + nearestDateTimeText + "'")
-
-            text: str = vRtextManagement.videoReminder(round=room.round + 1,
-                                                       group=room.roomIndex + 1,
-                                                       expiresText=nearestDateTimeText)
+            if room.round != CurrentElectionState.CURRENT_ELECTION_STATE_FINAL.value:
+                text: str = vRtextManagement.videoReminder(round=room.round + 1,
+                                                           group=room.roomIndex + 1,
+                                                           expiresText=nearestDateTimeText)
             return text
         except Exception as e:
             LOG.exception("Exception (in getTextForVideoUploadReminder): " + str(e))
@@ -219,7 +221,7 @@ class AfterElectionReminderManagement:
             uploadReminderText: str = self.getTextForVideoUploadReminder(election=election,
                                                                          room=room,
                                                                          deadlineInMinutes=deadlineInMinutes,
-                                                                         currentTime=datetime.now(),
+                                                                         currentTime=self.datetime,
                                                                          vRtextManagement=vRtextManagement)
 
             buttonsUploadReminder: tuple(Button) = \
@@ -246,7 +248,7 @@ class AfterElectionReminderManagement:
             sendResponse: bool = False
 
             try:
-                cSession = self.database.createCsesion()
+                cSession = self.database.createCsesion(expireOnCommit=False)
                 LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
                 member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
                 sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
@@ -302,10 +304,10 @@ class AfterElectionReminderManagement:
             raise AfterElectionReminderManagementException("Exception (in isVideoReminderTimeframe): " + str(e))
 
     def sendReminderUploadVideIfNeeded(self, currentElection: Election, deadlineInMinutes: int,
-                                       electCurr: ElectCurrTable = None,  modeDemo: ModeDemo = None):
+                                       electCurr: ElectCurrTable,  modeDemo: ModeDemo = None):
         assert isinstance(currentElection, Election), "currentElection must be type of Election"
         assert isinstance(deadlineInMinutes, int), "deadlineInMinutes must be type of int"
-        assert isinstance(electCurr, (ElectCurrTable, type(None))), "electCurr must be type of ElectCurrTable or None"
+        assert isinstance(electCurr, ElectCurrTable), "electCurr must be type of ElectCurrTables"
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be type of ModeDemo or None"
         """Send reminder to group and participants if needed"""
         try:

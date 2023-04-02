@@ -46,9 +46,10 @@ class AfterEveryRoundAdditionalActions:
         self.database = database
         self.communication = communication
         self.modeDemo = modeDemo
-        LOG_aeraa.log("AfterEveryRoundAdditionalActions object created")
+        LOG_aeraa.debug("AfterEveryRoundAdditionalActions object created")
 
     def isVideoCallRunning(self, chatId: Union[int, str]):
+        assert isinstance(chatId, (int, str)), "chatId is not an integer or string"
         try:
             isRunning = asyncio.get_event_loop().run_until_complete(self.communication.isVideoCallRunning(
                                                                         sessionType=SessionType.BOT,
@@ -56,12 +57,26 @@ class AfterEveryRoundAdditionalActions:
 
             LOG_aeraa.debug("Is video call running: " + str(isRunning) + " in chat " + str(chatId))
             if isRunning is None:
-                return LOG_aeraa.error("Error while getting information if video call is active. Return False")
+                LOG_aeraa.error("Error while getting information if video call is active. Return False")
                 return False
             return isRunning
         except Exception as e:
             LOG_aeraa.exception("Error while getting information if video call is active: " + str(e))
             return False
+
+    def isInChat(self, chatId: Union[int, str]):
+        assert isinstance(chatId, (int, str)), "chatId is not an integer or string"
+        try:
+            isInChat = self.communication.isInChat(sessionType=SessionType.BOT, chatId=chatId)
+
+            LOG_aeraa.debug("Is user(bot): " + str(isInChat) + " in chat " + str(chatId))
+            if isInChat is None:
+                LOG_aeraa.error("AdditionalActions.isInCat; Value is None.")
+                raise AfterEveryRoundAdditionalActionsException("AdditionalActions.isInCat; Value is None.")
+            return isInChat
+        except Exception as e:
+            LOG_aeraa.exception("Error while getting information if user(bot) is in chat: " + str(e))
+            return None
 
     def getGroupsInRound(self, round: int, predisposedBy: str) -> list[Room]:
         assert isinstance(round, int), "round is not an integer"
@@ -87,10 +102,10 @@ class AfterEveryRoundAdditionalActions:
             photoPath: str = endOfRoundTextManagement.endVideoChatImagePath()
             text: str = endOfRoundTextManagement.roundIsOverAndVideoIsRunning()
 
-            result: bool =self.communication.sendPhoto(sessionType=SessionType.BOT,
-                                         chatId=room.roomTelegramID,
-                                         photoPath=photoPath,
-                                         caption=text)
+            result: bool = self.communication.sendPhoto(sessionType=SessionType.BOT,
+                                                        chatId=room.roomTelegramID,
+                                                        photoPath=photoPath,
+                                                        caption=text)
 
             LOG_aeraa.debug("Last message to group(video stil running) sent to room " + str(room.roomID) +
                       ". Result: " + str(result))
@@ -111,16 +126,16 @@ class AfterEveryRoundAdditionalActions:
                 [
                     [
                         InlineKeyboardButton(
-                            text=button['text'],
-                            url=button['value']
+                            text=button[0]['text'],
+                            url=button[0]['value']
                         )
                     ]
                 ]
             )
             result: bool = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                           chatId=room.roomTelegramID,
-                                           text=text,
-                                           replyMarkup=replyMarkup)
+                                                          chatId=room.roomTelegramID,
+                                                          text=text,
+                                                          inlineReplyMarkup=replyMarkup)
             LOG_aeraa.debug("Last message to group sent to room " + str(room.roomID) + ". Result: " + str(result))
         except Exception as e:
             LOG_aeraa.exception("Error while sending message to room " + str(room.roomID) + ": " + str(e))
@@ -130,7 +145,7 @@ class AfterEveryRoundAdditionalActions:
         assert isinstance(telegramBotName, str), "telegramBotName is not a string"
         assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
         try:
-            LOG_aeraa.log("Removing the bot from groups")
+            LOG_aeraa.debug("Removing the bot from groups")
             rooms: list[Room] = self.getGroupsInRound(round=round, predisposedBy=telegramUserBotName)
 
             if rooms is None or len(rooms) == 0:
@@ -140,61 +155,64 @@ class AfterEveryRoundAdditionalActions:
 
             for room in rooms:
                 try:
+
                     # we want to get actual members in the group, not the ones in the database
                     members: list[CustomMember] = self.communication.getMembersInGroup(sessionType=SessionType.BOT,
-                                                                                       chatId=room.chatId)
+                                                                                       chatId=room.roomTelegramID)
                     if len(members) == 0:
                         LOG_aeraa.error("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                       " Requested as bot. No members found in the group " + str(room.chatId))
+                                       " Requested as bot. No members found in the group " + str(room.roomTelegramID))
 
                         members: list[CustomMember] = self.communication.getMembersInGroup(sessionType=SessionType.USER,
-                                                                                           chatId=room.chatId)
+                                                                                           chatId=room.roomTelegramID)
                         if len(members) == 0:
                             LOG_aeraa.error("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                           " Requested as user. No members found in the group " + str(room.chatId))
+                                           " Requested as user. No members found in the group " + str(room.roomTelegramID))
                     counterUsers = 0
+                    userBotInGroup: bool = False
+                    botInGroup: bool = False
                     for member in members:
                         # bots are not counted
-                        if member.isBot:
+                        if member.username == telegramBotName:
+                            botInGroup = True
                             continue
                         # user bot is not counted
                         if member.username == telegramUserBotName:
+                            userBotInGroup = True
                             continue
-                        if member.username == telegramBotName:
-                            # probably never happens, because of .isBot check before
+                        if member.isBot:
                             continue
                         counterUsers += 1
 
                     # if no users are found in the group, the group will be deleted!
                     if counterUsers == 0:
-                        LOG_aeraa.log("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
-                                      "No users found in the group " + str(room.chatId) + ". Removing the group")
-                        response: bool = self.communication.deleteGroup(chatId=room.chatId)
+                        LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
+                                      "No users found in the group " + str(room.roomTelegramID) + ". Removing the group")
+                        response: bool = self.communication.deleteGroup(chatId=room.roomTelegramID)
                         if response:
                             self.database.archiveRoom(room=room)
                         LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                        " archiveRoom with id " + str(room.chatId + " done"))
+                                        " archiveRoom with id " + str(room.roomTelegramID + " done"))
                     else:
-                        LOG_aeraa.log("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
-                                      "Removing the bot from the group " + str(room.chatId))
-                        response: bool = self.communication.leaveChat(sessionType=SessionType.BOT,
-                                                                      chatId=room.chatId,
-                                                                      userId=telegramBotName)
-                        LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                        "Is bot left chat with id " + str(room.chatId + " done? " + str(response)))
-
-                        response: bool = self.communication.leaveChat(sessionType=SessionType.USER,
-                                                                      chatId=room.chatId,
-                                                                      userId=telegramUserBotName)
-                        LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                        "Is USER-bot left chat with id " + str(room.chatId + " done? " + str(response)))
-                        if response is False:
-                            LOG_aeraa.error("Error while removing USER_BOT(" + telegramUserBotName + ") from the group "
-                                           + str(room.chatId))
+                        if botInGroup:
+                            LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
+                                          "Removing the bot from the group " + str(room.roomTelegramID))
+                            response: bool = self.communication.leaveChat(sessionType=SessionType.BOT,
+                                                                          chatId=room.roomTelegramID)
+                            LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
+                                        "Is bot left chat with id " + str(room.roomTelegramID + " done? " + str(response)))
+                        if userBotInGroup:
+                            response: bool = self.communication.leaveChat(sessionType=SessionType.USER,
+                                                                          chatId=room.roomTelegramID)
+                            LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
+                                            "Is USER-bot left chat with id " + str(room.roomTelegramID + " done? " + str(response)))
+                            if response is False:
+                                LOG_aeraa.error("Error while removing USER_BOT(" + telegramUserBotName + ") from the group "
+                                                + str(room.roomTelegramID))
                 except Exception as e:
                     LOG_aeraa.error("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups.inner "
                                     "exp: Error while removing the bot from the group or deleting unused groups"
-                                    + str(room.chatId) + ": " + str(e))
+                                    + str(room.roomTelegramID) + ": " + str(e))
 
         except Exception as e:
             raise AfterEveryRoundAdditionalActionsException("Error while removing the bot from groups: " + str(e))
@@ -209,13 +227,17 @@ class AfterEveryRoundAdditionalActions:
                 LOG.error("No rooms found. Something went wrong. Skipping additional actions")
                 return
             for room in rooms:
-                Log.info("Checking room: " + str(room.roomID) + ", tgID:" + str(room.roomTelegramID))
-                if self.isVideoCallRunning(chatId=room.chatId):
-                    LOG.debug("Video call is running in group " + str(room.chatId) + ". Stopping it")
+                LOG.info("Checking room: " + str(room.roomID) + ", tgID:" + str(room.roomTelegramID))
+                if self.isInChat(chatId=room.roomTelegramID) is not True:
+                    LOG.debug("Bot is not in group " + str(room.roomTelegramID) + ". Skipping")
+                    continue
+
+                if self.isVideoCallRunning(chatId=room.roomTelegramID):
+                    LOG.debug("Video call is running in group " + str(room.roomTelegramID) + ". Stopping it")
                     self.videoCallStillRunningSendMsg(room=room)
                 else:
                     self.roundEndMsg(room=room)
-                    LOG.debug("Video call is not running in group " + str(room.chatId))
+                    LOG.debug("Video call is not running in group " + str(room.roomTelegramID))
         except Exception as e:
             LOG_aeraa.exception("Error in checkIfVideoCallIsRunningAndGoodbyeMsg: " + str(e))
 
@@ -233,7 +255,6 @@ class AfterEveryRoundAdditionalActions:
                                                             telegramBotName=telegramBotName)
         except Exception as e:
             LOG_aeraa.exception("Error in AfterEveryRoundAdditionalActions.do: " + str(e))
-            raise AfterEveryRoundAdditionalActionsException("Error while doing additional actions: " + str(e))
 
     def doAfterSomeTimeRunsOut(self):
         #TODO: imlement actions after some time runs out, to send message about running video call after 10 minutes
@@ -251,90 +272,53 @@ class FinalRoundAdditionalActions:
         self.database = database
         self.communication = communication
         self.modeDemo = modeDemo
-        LOG_fraa.log("FinalRoundAdditionalActions object created")
+        LOG_fraa.debug("FinalRoundAdditionalActions object created")
 
-    def do(self, telegramBotName: str, telegramUserBotName: str, excludedRoom: Room):
+    def do(self, telegramBotName: str, telegramUserBotName: str):
         assert isinstance(telegramBotName, str), "telegramBotName is not a string"
         assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
-        assert isinstance(excludedRoom, (Room, ExtendedRoom)), "excludedRoom is not a Room or ExtendedRoom object"
         try:
-            self.removingBotFromGroupsAndDeleteUnusedGroups(telegramBotName=telegramBotName,
-                                                            telegramUserBotName=telegramUserBotName,
-                                                            excludedRoom=excludedRoom)
+            self.deleteUnusedGroups(telegramBotName=telegramBotName,
+                                    telegramUserBotName=telegramUserBotName)
         except Exception as e:
-            raise FinalRoundAdditionalActionsException("Error while doing additional actions: " + str(e))
+            LOG_fraa.exception("Error in FinalRoundAdditionalActions.do: " + str(e))
 
-    def removingBotFromGroupsAndDeleteUnusedGroups(self, telegramBotName: str, telegramUserBotName: str,
-                                                   excludedRoom: Room):
+    def deleteUnusedGroups(self, telegramBotName: str, telegramUserBotName: str):
         assert isinstance(telegramBotName, str), "telegramBotName is not a string"
         assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
-        assert isinstance(excludedRoom, (Room, ExtendedRoom)), "excludedRoom is not a Room or ExtendedRoom object"
         try:
-            LOG_fraa.log("Removing the bot from groups")
-            rooms: list[Room] = self.database.getAllRoomsByElection(election=self.election,
-                                                                    predisposedBy=telegramUserBotName)
+            LOG_fraa.debug("Removing the bot from groups")
+            dummyElectionForFreeRooms: Election = self.database.getDummyElection(election=self.election)
+            if dummyElectionForFreeRooms is None:
+                raise FinalRoundAdditionalActionsException("No dummy election set in database")
+
+            #  remove unused rooms
+            rooms: list[Room] = self.database.getRoomsPreelection(election=dummyElectionForFreeRooms,
+                                                                  predisposedBy=telegramUserBotName)
 
             if rooms is None or len(rooms) == 0:
                 LOG_fraa.error("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: No rooms found")
                 return
 
             for room in rooms:
+                LOG_fraa.debug("FinalRoundAdditionalActions.deleteUnusedGroups: "
+                               "Removing the group: " + str(room.roomTelegramID))
+                chatIdInt: int = None
                 try:
-                    members: list[CustomMember] = self.communication.getMembersInGroup(sessionType=SessionType.BOT,
-                                                                                       chatId=room.chatId)
-                    if len(members) == 0:
-                        LOG_fraa.error("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                       " Requested as bot. No members found in the group " + str(room.chatId))
-
-                        members: list[CustomMember] = self.communication.getMembersInGroup(sessionType=SessionType.USER,
-                                                                                           chatId=room.chatId)
-                        if len(members) == 0:
-                            LOG_fraa.error("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                           " Requested as user. No members found in the group " + str(room.chatId))
-                    counterUsers = 0
-                    for member in members:
-                        # bots are not counted
-                        if member.isBot:
-                            continue
-                        # user bot is not counted
-                        if member.username == telegramUserBotName:
-                            continue
-                        if member.username == telegramBotName:
-                            # probably never happens, because of .isBot check before
-                            continue
-                        counterUsers += 1
-
-                    # if no users are found in the group, the group is deleted, only LAST GROUP is not deleted, just
-                    # remove users!
-                    if counterUsers == 0 and room.chatId != excludedRoom.chatId:
-                        LOG_fraa.log("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
-                                     "No users found in the group " + str(room.chatId) + ". Removing the group")
-                        self.communication.deleteGroup(chatId=room.chatId)
-                        self.database.archiveRoom(room=room)
-                        LOG_fraa.debug("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                       " archiveRoom with id " + str(room.chatId + " done"))
+                    if isinstance(room.roomTelegramID, str):
+                        chatIdInt = int(room.roomTelegramID)
+                    elif isinstance(room.roomTelegramID, int):
+                        chatIdInt = room.roomTelegramID
                     else:
-                        LOG_fraa.log("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
-                                     "Removing the bot from the group " + str(room.chatId))
-                        response: bool = self.communication.leaveChat(sessionType=SessionType.BOT,
-                                                                      chatId=room.chatId,
-                                                                      userId=telegramBotName)
-                        LOG_fraa.debug("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                       "Is bot leaving chat with id " + str(room.chatId + " done? " + str(response)))
-
-                        response: bool = self.communication.leaveChat(sessionType=SessionType.USER,
-                                                                      chatId=room.chatId,
-                                                                      userId=telegramUserBotName)
-                        LOG_fraa.debug("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                       "Is USER bot leaving chat with id " + str(
-                            room.chatId + " done? " + str(response)))
-                        if response is False:
-                            LOG_fraa.error("Error while removing USER_BOT(" + telegramUserBotName + ") from the group "
-                                           + str(room.chatId))
+                        raise Exception("ChatId is not str or int")
                 except Exception as e:
-                    LOG_fraa.error("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups.inner exp: "
-                                   "Error while removing the bot from the group or deleting unused groups"
-                                   + str(room.chatId) + ": " + str(e))
+                    LOG.exception("Not int value stored in string: " + str(e))
+                    return None
+
+                self.communication.deleteGroup(chatId=chatIdInt)
+                self.database.archiveRoom(room=room)
+                LOG_fraa.debug("FinalRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
+                               " archiveRoom with id " + str(chatIdInt) + " done")
 
         except Exception as e:
             raise FinalRoundAdditionalActionsException("Error while removing the bot from groups: " + str(e))

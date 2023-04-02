@@ -1,12 +1,12 @@
 from enum import Enum
 
-from additionalActionsManagement import AfterEveryRoundAdditionalActions
+from additionalActionsManagement import AfterEveryRoundAdditionalActions, FinalRoundAdditionalActions
 from chain import EdenData
 from chain.stateElectionState import ElectCurrTable
 from constants import pre_created_groups_created_groups_in_one_round, \
     pre_created_groups_how_often_creating_in_min, \
     pre_created_groups_increase_factor_registration_state, pre_created_groups_increase_factor_seeding_state, \
-    upload_video_deadline_after_election_started, telegram_user_bot_name
+    upload_video_deadline_after_election_started, telegram_user_bot_name, telegram_bot_name
 from database.election import ElectionRound
 from dateTimeManagement import DateTimeManagement
 from debugMode.modeDemo import ModeDemo
@@ -128,7 +128,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
                                                 modeDemo=modeDemo)
 
             afterElectionReminderManagement.createRemindersUploadVideoIfNotExists(
-                election=election,
+                currentElection=election,
                 deadlineInMinutes=upload_video_deadline_after_election_started
             )
 
@@ -265,8 +265,10 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
             raise Exception("self.isRoundChanged[0] is not a bool")
         if isinstance(self.isRoundChanged[1], int) is False:
             raise Exception("self.isRoundChanged[1] is not a int")
-        return self.data[1]
+        return self.isRoundChanged[1]
 
+    def getRound(self):
+        return self.data["round"]
     def getConfigNumParticipants(self):
         return self.data["config"]["num_participants"]
 
@@ -307,8 +309,8 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                                                                   roundEnd=datetime.fromisoformat(
                                                                       self.getConfigRoundEnd()))
 
-            if self.getIsRoundChanged() and self.getPreviousRound() > 0:
-                # round changed -> we go to a new level of elections, do action for previous levels, not do anything
+            if self.getIsRoundChanged() and 0 <= self.getPreviousRound() < ElectionRound.FINAL.value:
+                # round changed -> we go to a new level of elections, do action for previous levels, do nothing
                 # in first round
                 additionalAction: AfterEveryRoundAdditionalActions = \
                     AfterEveryRoundAdditionalActions(election=election,
@@ -319,7 +321,8 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
 
                 additionalAction.do(election=election,
                                     round=self.getPreviousRound(),
-                                    predisposedBy=telegram_user_bot_name)
+                                    telegramUserBotName=telegram_user_bot_name,
+                                    telegramBotName=telegram_bot_name)
 
             groupManagement.manage(election=election,
                                    round=self.getRound(),
@@ -340,14 +343,29 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
 #  '2022-07-09T15:02:49.000', 'end_time': '2022-07-09T17:02:49.000'}}]
 class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
     def __init__(self, data: dict):
-        super().__init__(CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE, data, EdenBotMode.ELECTION, True)
-        self.isRoundChanged = False
+        super().__init__(CurrentElectionState.CURRENT_ELECTION_STATE_FINAL, data, EdenBotMode.ELECTION, True)
+        self.isRoundChanged: tuple = (False, -1)
 
-    def setIsRoundChanged(self, isRoundChanged: bool = True):
-        self.isRoundChanged = isRoundChanged
+    def setIsRoundChanged(self, isChanged: bool = True, round: int = -1):
+        self.isRoundChanged = (isChanged, round)
 
-    def getIsRoundChanged(self):
+    def getIsRoundChanged(self) -> bool:
+        if len(self.isRoundChanged) != 2:
+            raise Exception("self.isRoundChanged is not a tuple with 2 elements")
+        if isinstance(self.isRoundChanged[0], bool) is False:
+            raise Exception("self.isRoundChanged[0] is not a bool")
+        if isinstance(self.isRoundChanged[1], int) is False:
+            raise Exception("self.isRoundChanged[1] is not a int")
         return self.isRoundChanged
+
+    def getPreviousRound(self):
+        if len(self.isRoundChanged) != 2:
+            raise Exception("self.isRoundChanged is not a tuple with 2 elements")
+        if isinstance(self.isRoundChanged[0], bool) is False:
+            raise Exception("self.isRoundChanged[0] is not a bool")
+        if isinstance(self.isRoundChanged[1], int) is False:
+            raise Exception("self.isRoundChanged[1] is not a int")
+        return self.isRoundChanged[1]
 
     def getSeed(self):
         return self.data["seed"]
@@ -368,17 +386,45 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
             assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_FINAL")
 
-            ######
-            # when round changed
-
-            ####
-
             groupManagement.manage(election=election,
                                    round=ElectionRound.FINAL.value,
                                    numParticipants=4,
                                    numGroups=1,
                                    isLastRound=True,
                                    height=modeDemo.currentBlockHeight if modeDemo is not None else None)
+
+
+            if self.getIsRoundChanged() and 0 <= self.getPreviousRound() < ElectionRound.FINAL.value:
+                # round changed -> we go to a new level of elections, do action for previous levels, do nothing
+                # in first round
+                additionalAction: AfterEveryRoundAdditionalActions = \
+                    AfterEveryRoundAdditionalActions(election=election,
+                                                     database=groupManagement.database,
+                                                     edenData=groupManagement.edenData,
+                                                     communication=groupManagement.communication,
+                                                     modeDemo=modeDemo)
+
+                additionalAction.do(election=election,
+                                    round=self.getPreviousRound(),
+                                    telegramUserBotName=telegram_user_bot_name,
+                                    telegramBotName=telegram_bot_name)
+
+                finalRoundAdditionalActions: FinalRoundAdditionalActions = \
+                                    FinalRoundAdditionalActions(election=election,
+                                                                edenData=groupManagement.edenData,
+                                                                database=groupManagement.database,
+                                                                communication=groupManagement.communication,
+                                                                modeDemo=modeDemo)
+                finalRoundAdditionalActions.do(telegramBotName=telegram_bot_name,
+                                               telegramUserBotName=telegram_user_bot_name)
+
+
+
+
+
+
+
+
 
         except Exception as e:
             LOG.exception("Exception thrown when called CurrentElectionStateHandlerFinal.customActions; "

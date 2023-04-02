@@ -10,7 +10,7 @@ from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerR
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
 from chain.stateElectionState import ElectCurrTable
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
-    eden_account
+    eden_account, telegram_user_bot_name, telegram_bot_name
 from database import Database, Election, ElectionStatus, Reminder
 from database.election import ElectionRound
 from log import Log
@@ -49,6 +49,8 @@ class EdenBot:
             assert isinstance(telegramApiHash, str), "telegramApiHash is not a string"
             assert isinstance(botToken, str), "botToken is not a string"
             assert isinstance(database, Database), "database is not an instance of Database"
+            assert isinstance(mode, Mode), "mode is not an instance of Mode"
+            assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo is not an instance of ModeDemo or None"
 
             self.database = database
 
@@ -83,6 +85,10 @@ class EdenBot:
                                          apiHash=telegramApiHash,
                                          botToken=botToken)
 
+            LOG.debug("Creating first communication session user bot to bot if not yet created")
+            self.sayHelloFromUserBotToBot(userBotUsername=telegram_user_bot_name,
+                                          botUsername=telegram_bot_name)
+
             LOG.debug(" ...and group management object ...")
             self.groupManagement = GroupManagement(edenData=edenData,
                                                    database=self.database,
@@ -96,6 +102,26 @@ class EdenBot:
             self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
         except Exception as e:
             LOG.exception("Exception in EdenBot.init. Description: " + str(e))
+
+    def sayHelloFromUserBotToBot(self, userBotUsername: str, botUsername: str):
+        try:
+            self.communication.updateKnownUserData(botName=botUsername)
+
+            if self.communication.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=botUsername,
+                                                                                  telegramID=str(userBotUsername)) \
+                    is False:
+                response: bool= self.communication.sendMessage(sessionType=SessionType.USER,
+                                               chatId=str(botUsername),
+                                               text="/start")
+
+                if response:
+                    LOG.success("EdenBot.sayHelloFromUserBotToBot; Message sent to bot")
+                else:
+                    LOG.error("EdenBot.sayHelloFromUserBotToBot; Message not sent to bot")
+
+
+        except Exception as e:
+            LOG.exception("Exception in EdenBot.sayHelloFromUserBotToBot. Description: " + str(e))
 
     def manageElectionInDB(self, electionsStateStr: str, data: dict, contract: str, database: Database) -> Election:
         assert isinstance(electionsStateStr, str), "electionsStateStr is not a string"
@@ -182,15 +208,19 @@ class EdenBot:
                 if isinstance(self.currentElectionStateHandler, CurrentElectionStateHandlerActive):
                     currentRound: int = self.currentElectionStateHandler.getRound()
                 else:
+                    #election state final
                     currentRound: int = ElectionRound.FINAL.value
                 previousRound: int = database.updateElectionRoundLive(election=election, currentRound=currentRound)
                 if previousRound is not None and previousRound != currentRound:
+                    #if round changed - set flag ; there will be functions that are called only when round is changed
                     LOG.debug("Current round is changed from " + str(previousRound) + " to: " + str(currentRound))
-                    self.currentElectionStateHandler.setIsRoundChanged(isRoundChanged=True,
-                                                                       previousRound=previousRound)
+                    self.currentElectionStateHandler.setIsRoundChanged(isChanged=True,
+                                                                       round=previousRound)
+                    # update election round in live object
+                    election.roundLive = currentRound
                 else:
                     LOG.debug("Current round is not changed")
-                    self.currentElectionStateHandler.setIsRoundChanged(isRoundChanged=False)
+                    self.currentElectionStateHandler.setIsRoundChanged(isChanged=False)
 
 
             ##########################
@@ -344,18 +374,18 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     startEndDatetimeList = [
-        #(datetime(2022, 10, 7, 11, 58), datetime(2022, 10, 7, 11, 59)),  # add user
+        #(datetime(2022, 10, 7, 11, 52), datetime(2022, 10, 7, 11, 59)),  # add user
         #(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        (datetime(2022, 10, 7, 12, 44), datetime(2022, 10, 7, 12, 54)),  # adding users
-        (datetime(2022, 10, 7, 12, 56), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        # (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        #(datetime(2022, 10, 8, 13, 1), datetime(2022, 10, 8, 13, 4)),  # notification - in few minutes + start
-        # (datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        # (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        # (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        #(datetime(2022, 10, 8, 15, 1), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        #(datetime(2022, 10, 7, 12, 57), datetime(2022, 10, 7, 12, 58)),  # adding users
+        #(datetime(2022, 10, 7, 12, 59), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        #(datetime(2022, 10, 8, 12, 59), datetime(2022, 10, 8, 13, 2)),  # notification - in few minutes + start
+        #(datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        #(datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        #(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
         #(datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
-        #(datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
+        (datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
         (datetime(2022, 10, 21, 13, 0), datetime(2022, 10, 21, 13, 1)),  # one day before video deadline
     ]
 
