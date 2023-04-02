@@ -12,6 +12,7 @@ from log import Log
 from text.textManagement import EndOfRoundTextManagement, Button
 from transmission import Communication, SessionType
 from transmission.Communication import CustomMember
+from transmission.name import REMOVE_AT_SIGN_IF_EXISTS
 
 
 # This class is used to do additional actions at the end of the elections like:
@@ -148,6 +149,9 @@ class AfterEveryRoundAdditionalActions:
             LOG_aeraa.debug("Removing the bot from groups")
             rooms: list[Room] = self.getGroupsInRound(round=round, predisposedBy=telegramUserBotName)
 
+            telegramBotNameCp = REMOVE_AT_SIGN_IF_EXISTS(telegramBotName.lower())
+            telegramUserBotNameCp = REMOVE_AT_SIGN_IF_EXISTS(telegramUserBotName.lower())
+
             if rooms is None or len(rooms) == 0:
                 LOG_aeraa.error("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
                                 " No rooms found")
@@ -172,12 +176,19 @@ class AfterEveryRoundAdditionalActions:
                     userBotInGroup: bool = False
                     botInGroup: bool = False
                     for member in members:
+                        try:
+                            member.username = REMOVE_AT_SIGN_IF_EXISTS(member.username.lower())
+                        except Exception as e:
+                            LOG_aeraa.error("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
+                                            "Cannot update username: " + str(member.username))
+
+
                         # bots are not counted
-                        if member.username == telegramBotName:
+                        if member.username == telegramBotNameCp:
                             botInGroup = True
                             continue
                         # user bot is not counted
-                        if member.username == telegramUserBotName:
+                        if member.username == telegramUserBotNameCp:
                             userBotInGroup = True
                             continue
                         if member.isBot:
