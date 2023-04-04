@@ -138,7 +138,7 @@ class ModeDemo:
             self.currentTimeFrameIndex = self.currentTimeFrameIndex + 1
             self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
             LOG.success("ModeDemo; Set next timestamp and sector to: " + str(self.currentBlockTimestamp))
-            LOG.success("Lets wait 3 minutes for new sector")
+            LOG.success("Lets wait 2 minutes for new sector")
             time.sleep(120)
         try:
             self.currentBlockHeight = self.edenObj.getBlockNumOfTimestamp(timestamp=self.currentBlockTimestamp).data

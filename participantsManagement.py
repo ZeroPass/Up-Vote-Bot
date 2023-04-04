@@ -4,7 +4,7 @@ from constants import dfuse_api_key
 from database import Database, Election
 from database.room import Room
 from log import Log
-from chain.dfuse import Response, ResponseError, ResponseSuccessful
+from chain.dfuse import Response, ResponseError, ResponseSuccessful, DfuseConnection
 from chain.eden import EdenData
 from database.participant import Participant
 from chain.atomicAssets import AtomicAssetsData
@@ -396,9 +396,27 @@ class ParticipantsManagement:
 
 def main():
     print("Hello World!")
-    dfuseObj = EdenData(dfuseApiKey=dfuse_api_key)
-    pm = ParticipantsManagement(edenData=dfuseObj)
-    ker = pm.getParticipantsFromChainAndMatchWithDatabase()
+    database = Database()
+    comm = Communication(database=database)
+    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
+
+    dfuseObj = EdenData(dfuseConnection=dfuseConnection)
+    pm = ParticipantsManagement(edenData=dfuseObj, database=database, communication=comm)
+    room = Room(roomID=1,
+                predisposedBy="",
+                round=1,
+                shareLink="",
+                electionID=1,
+                roomIndex=0,
+                roomNameLong="fds",
+                roomNameShort="fds",
+                roomTelegramID="fds",
+                isPredisposed=False)
+
+
+    neki = pm.getMembersFromChain(height=272109435, room=room)
+    reje = 0
+    #ker = pm.getParticipantsFromChainAndMatchWithDatabase()
 
 
 if __name__ == "__main__":

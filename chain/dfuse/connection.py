@@ -83,6 +83,30 @@ class DfuseConnection:
             raise DfuseError("API key is null")
         self.apiKeyParam = dfuseApiKey
         self.database = database
+        ########
+        # TODO: make this more universal! to work with more accounts, more heights, etc
+        account="genesis.eden"
+        abiHex = None
+        abi = self.database.getABI(accountName=account)
+        if (abi is not None):
+            LOG.debug("ABI exists for account: " + account)
+            abiObj: hex = abi.contract
+            if (len(abiObj) == 0):
+                raise ResponseException("Could not get ABi from db: " + abiObj.error)
+            abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
+        else:
+            abiResponse = self.getAbiFromChain(account=account, height=None)
+            if not abiResponse.successful:
+                raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
+            else:
+                abiHex = abiResponse.data
+
+        self.s = EosAbiSerializer()
+        if not self.s.set_abi_from_hex(account, abiHex):
+                raise DfuseError("Cannot load abi from hex")
+
+
+        #######
 
         # initialize counter
         self.counter = Counter()
@@ -184,28 +208,30 @@ class DfuseConnection:
             if hex is None or len(account) == 0:
                 raise DfuseError("parseHexWithAbi; Hex value is not valid")
 
-            abiHex = None
-            abi = self.database.getABI(accountName=account)
-            if (abi is not None):
-                LOG.debug("ABI exists for account: " + account)
-                abiObj: hex = abi.contract
-                if (len(abiObj) == 0):
-                    raise ResponseException("Could not get ABi from db: " + abiObj.error)
-                abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
-            else:
-                abiResponse = self.getAbiFromChain(account=account, height=height)
-                if not abiResponse.successful:
-                    raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
-                else:
-                    abiHex = abiResponse.data
-            s = EosAbiSerializer()
-            if not s.set_abi_from_hex(account, abiHex):
-                raise DfuseError("Cannot load abi from hex")
+            # TODO: this was commented out because it was causing problems with memory leak - repair it after the election
+            #abiHex = None
+            #abi = self.database.getABI(accountName=account)
+            #if (abi is not None):
+            #    LOG.debug("ABI exists for account: " + account)
+            #    abiObj: hex = abi.contract
+            #    if (len(abiObj) == 0):
+            #        raise ResponseException("Could not get ABi from db: " + abiObj.error)
+            #    abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
+            #else:
+            #    abiResponse = self.getAbiFromChain(account=account, height=height)
+            #    if not abiResponse.successful:
+            #        raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
+            #    else:
+            #        abiHex = abiResponse.data
+            s = self.s
+            #if not s.set_abi_from_hex(account, abiHex):
+            #    raise DfuseError("Cannot load abi from hex")
 
             LOG.info("Start parsing the data from hex to json")
             tableName = s.get_type_for_table(account, table)
             #return ResponseSuccessful(data=s.hex_to_json(account, tableName, hex))
-            return s.hex_to_json(account, tableName, hex)
+            json = s.hex_to_json(account, tableName, hex)
+            return json
         except Exception as e:
             LOG.exception("Exception thrown when called getAbi; Description: " + str(e))
             #return ResponseError("Exception thrown when called getAbi; Description: " + str(e))
