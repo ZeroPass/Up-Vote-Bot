@@ -308,7 +308,7 @@ def main():
     blockNumOfStart = 272116751 #edenData.getBlockNumOfTimestamp(timestamp=dtStart)
     blockNumOfEnd = 274534282 # edenData.getBlockNumOfTimestamp(timestamp=dtEnd)
 
-    edenData.getActionsVideoUploaded(account=eden_account,
+    edenData.getActionsVideoUploaded(contractAccount=eden_account,
                                      startTime=dtStart,  # 272116751
                                      endTime=dtEnd,  # 274534282
                                      round=1)

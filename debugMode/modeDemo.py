@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta
 from log import Log
 from enum import Enum
@@ -14,7 +15,7 @@ class ModeDemoException(Exception):
     pass
 
 
-LOGModeDemo = Log(className="ModeDemo")
+LOG = Log(className="ModeDemo")
 
 
 class ModeDemo:
@@ -36,26 +37,26 @@ class ModeDemo:
 
 
 
-        LOGModeDemo.debug("Initialization of ModeDemo with startAndEndDatetime: " + str(startAndEndDatetime) +
+        LOG.debug("Initialization of ModeDemo with startAndEndDatetime: " + str(startAndEndDatetime) +
                           " and step: " + str(step))
         assert isinstance(startAndEndDatetime, list), "Start is not a list object"
         assert isinstance(edenObj, EdenData), "EdenObj is not a EdenData object"
         assert isinstance(step, int), "Step is not an integer"
 
         if step < 1:
-            LOGModeDemo.exception("ModeDemo; Step must be greater than 0")
+            LOG.exception("ModeDemo; Step must be greater than 0")
             raise ModeDemoException("Step must be greater than 0")
 
-        LOGModeDemo.debug("Checking datetime list of tuples")
+        LOG.debug("Checking datetime list of tuples")
         for oneTimeFrame in startAndEndDatetime:
             if oneTimeFrame[0] > oneTimeFrame[1]:
-                LOGModeDemo.exception("ModeDemo; Start is greater than end")
+                LOG.exception("ModeDemo; Start is greater than end")
                 raise ModeDemoException("Start is greater than end")
             if isinstance(oneTimeFrame[0], datetime) is False:
-                LOGModeDemo.exception("ModeDemo; Start is not a datetime object")
+                LOG.exception("ModeDemo; Start is not a datetime object")
                 raise ModeDemoException("Start is not a datetime object")
             if isinstance(oneTimeFrame[1], datetime) is False:
-                LOGModeDemo.exception("ModeDemo; End is not a datetime object")
+                LOG.exception("ModeDemo; End is not a datetime object")
                 raise ModeDemoException("End is not a datetime object")
         if fromLive is False:
             self.edenObj = edenObj
@@ -77,9 +78,9 @@ class ModeDemo:
         assert isinstance(edenObj, EdenData), "EdenObj is not a EdenData object"
         assert isinstance(stepBack, int), "Step is not an integer"
         if stepBack < 1:
-            LOGModeDemo.exception("ModeDemo; stepBack must be greater than 0")
+            LOG.exception("ModeDemo; stepBack must be greater than 0")
             raise ModeDemoException("StepBack must be greater than 0")
-        LOGModeDemo.debug("Live mode activated")
+        LOG.debug("Live mode activated")
 
         cls.liveMode = True
         #selfObject = cls(edenObj=edenObj,
@@ -103,17 +104,18 @@ class ModeDemo:
         assert (self.liveMode is True), "LiveMode should be True when you call 'ModeDemo.setNextLiveBlockAndTimestamp'"
         self.currentBlockHeight = self.edenObj.getChainHeadBlockNumber() - self.stepBack
         self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=self.currentBlockHeight)
-        LOGModeDemo.debug("Block: " + str(self.currentBlockHeight) + ", timestamp" + str(self.currentBlockTimestamp))
+        LOG.debug("Block: " + str(self.currentBlockHeight) + ", timestamp" + str(self.currentBlockTimestamp))
+
     def setStartBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
-        LOGModeDemo.debug("ModeDemo; Set start block height to: " + str(height))
+        LOG.debug("ModeDemo; Set start block height to: " + str(height))
         self.startBlockHeight = height
         self.currentBlockHeight = height
         self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=height)
 
     def setEndBlockHeight(self, height: int):
         assert isinstance(height, int), "Height is not an integer"
-        LOGModeDemo.debug("ModeDemo; Set end block height to: " + str(height))
+        LOG.debug("ModeDemo; Set end block height to: " + str(height))
         self.endBlockHeight = height
 
     def isNextTimestampInLimit(self, seconds: int) -> bool:
@@ -131,43 +133,47 @@ class ModeDemo:
         if self.currentBlockTimestamp + timedelta(seconds=seconds) <= \
                 self.startAndEndDatetime[self.currentTimeFrameIndex][1]:
             self.currentBlockTimestamp = self.currentBlockTimestamp + timedelta(seconds=seconds)
+            LOG.success("ModeDemo; Set next timestamp to: " + str(self.currentBlockTimestamp))
         else:
             self.currentTimeFrameIndex = self.currentTimeFrameIndex + 1
             self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
+            LOG.success("ModeDemo; Set next timestamp and sector to: " + str(self.currentBlockTimestamp))
+            LOG.success("Lets wait 3 minutes for new sector")
+            time.sleep(120)
         try:
             self.currentBlockHeight = self.edenObj.getBlockNumOfTimestamp(timestamp=self.currentBlockTimestamp).data
         except Exception as e:
-            LOGModeDemo.exception("ModeDemo; Exception: " + str(e))
+            LOG.exception("ModeDemo; Exception: " + str(e))
             raise ModeDemoException("Exception: " + str(e))
 
     def isNextBlock(self):
         if self.currentBlockHeight is None:
-            LOGModeDemo.exception("ModeDemo; Current block is not available")
+            LOG.exception("ModeDemo; Current block is not available")
             raise ModeDemoException("No current block available")
         return True if self.currentBlockHeight + self.step <= self.endBlockHeight else False
 
     def getNextBlock(self):
         if self.currentBlockHeight is None:
-            LOGModeDemo.exception("ModeDemo; Current block is not available")
+            LOG.exception("ModeDemo; Current block is not available")
             raise ModeDemoException("No current block available")
         self.currentBlockHeight += self.step
         self.currentBlockTimestamp = self.edenObj.getTimestampOfBlock(blockNum=self.currentBlockHeight)
-        LOGModeDemo.debug("ModeDemo; Current block height is now: " + str(self.currentBlockHeight) +
+        LOG.debug("ModeDemo; Current block height is now: " + str(self.currentBlockHeight) +
                           " and timestamp is: " + str(self.currentBlockTimestamp))
         if self.isNextBlock() is False:
-            LOGModeDemo.exception("ModeDemo; Next block is not available")
+            LOG.exception("ModeDemo; Next block is not available")
             raise ModeDemoException("No next block available")
         return self.currentBlockHeight
 
     def getCurrentBlock(self) -> int:
         if self.currentBlockHeight is None:
-            LOGModeDemo.exception("ModeDemo; Current block is not available")
+            LOG.exception("ModeDemo; Current block is not available")
             raise ModeDemoException("No current block available")
         return self.currentBlockHeight
 
     def getCurrentBlockTimestamp(self) -> datetime:
         if self.currentBlockTimestamp is None:
-            LOGModeDemo.exception("ModeDemo; Current block timestamp is not available")
+            LOG.exception("ModeDemo; Current block timestamp is not available")
             raise ModeDemoException("No current block timestamp available")
         return self.currentBlockTimestamp
 

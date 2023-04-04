@@ -388,33 +388,20 @@ class AfterElectionReminderManagement:
         except Exception as e:
             LOG.exception("Exception thrown when called sendReminderIfNeeded; Description: " + str(e))
 
-    def getActionsVideoUploaded(self, account: str, startBlockNum: int, endBlockNum: int) -> list:  # made by bot
+    def getActionsVideoUploaded(self, account: str, startTime: int, endTime: int) -> list:  # made by bot
         assert isinstance(account, str), "account must be type of str"  # where smart contract is deployed
-        assert isinstance(startBlockNum, int), "startBlockNum must be type of int"
-        assert isinstance(endBlockNum, int), "endBlockNum must be type of int"
+        assert isinstance(startTime, datetime), "startTime must be type of datetime"
+        assert isinstance(endTime, int), "endTime must be type of datetime"
         try:
             LOG.debug("Check if video is uploaded on account: " + account +
-                      " from block: " + str(startBlockNum) +
-                      " to block: " + str(endBlockNum))
+                      " from start time: " + str(startTime) +
+                      " to end time: " + str(endTime))
 
-            actionsVideoUploaded = self.graphQLApi.getActionsVideoUploaded(account=account,
-                                                                           startBlockNum=startBlockNum,
-                                                                           endBlockNum=endBlockNum)
+            actionsVideoUploaded = self.graphQLApi.getActionsVideoUploaded(contractAccount=account,
+                                                                           startTime=startTime,
+                                                                           endTime=endTime)
             return actionsVideoUploaded
         except Exception as e:
             LOG.exception("Error in AfterElectionReminderManagement.getActionsVideoUploaded: " + str(e))
             raise AfterElectionReminderManagementException(
                 "Error in AfterElectionReminderManagement.getActionsVideoUploaded: " + str(e))
-
-    def getActionsVideoUploadedFromBlock(self, account: str, startBlockNum: int) -> list:  # made by bot
-        assert isinstance(account, str), "account must be type of str"  # where smart contract is deployed
-        assert isinstance(startBlockNum, int), "startBlockNum must be type of int"
-        try:
-            LOG.debug("Check if video is uploaded on account: " + account +
-                      " from block: " + str(startBlockNum))
-
-            actionsVideoUploaded = self.graphQLApi.getActionsVideoUploadedFromBlock(account=account,
-                                                                                    startBlockNum=startBlockNum)
-            return actionsVideoUploaded
-        except Exception as e:
-            LOG.exception("Error in AfterElectionReminderManagement.getActionsVideoUploadedFrom")

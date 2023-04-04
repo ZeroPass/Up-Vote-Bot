@@ -353,7 +353,6 @@ class EdenBot:
                 else:
                     raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
-                # continue #TODO remove this
                 # defines current election state and write it to the database
                 self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
 
@@ -374,17 +373,18 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     startEndDatetimeList = [
-        #(datetime(2022, 10, 7, 11, 52), datetime(2022, 10, 7, 11, 59)),  # add user
-        #(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
-        #(datetime(2022, 10, 7, 12, 57), datetime(2022, 10, 7, 12, 58)),  # adding users
-        #(datetime(2022, 10, 7, 12, 59), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
-        #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
-        #(datetime(2022, 10, 8, 12, 59), datetime(2022, 10, 8, 13, 2)),  # notification - in few minutes + start
-        #(datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
-        #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
-        #(datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
-        (datetime(2022, 10, 8, 15, 1), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
-        #(datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
+        (datetime(2022, 10, 7, 11, 52), datetime(2022, 10, 7, 11, 59)),  # add user
+        (datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
+        (datetime(2022, 10, 7, 12, 57), datetime(2022, 10, 7, 12, 58)),  # adding users
+        (datetime(2022, 10, 7, 12, 59), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
+        (datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
+        (datetime(2022, 10, 8, 12, 57), datetime(2022, 10, 8, 12, 59)),  # notification - in few minutes
+        (datetime(2022, 10, 8, 12, 59), datetime(2022, 10, 8, 13, 2)),  # start
+        (datetime(2022, 10, 8, 13, 51), datetime(2022, 10, 8, 13, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
+        (datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
+        (datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
+        (datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
         (datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
         (datetime(2022, 10, 21, 13, 0), datetime(2022, 10, 21, 13, 1)),  # one day before video deadline
     ]

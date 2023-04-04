@@ -68,7 +68,7 @@ class Database(metaclass=Singleton):
             driver = 'mysql+pymysql'
             url = URL.create(driver, database_user, database_password, database_host, database_port, database_name)
             # mysql connection
-            self._engine = create_engine(url, pool_recycle=3600, pool_pre_ping=True, echo_pool=True, echo=True,
+            self._engine = create_engine(url, pool_recycle=3600, pool_pre_ping=True, #echo_pool=True, echo=True,
                                          poolclass=NullPool)
             self._conn = self._engine.connect()
             # self._session = scoped_session(sessionmaker(bind=self._engine, expire_on_commit=False))
