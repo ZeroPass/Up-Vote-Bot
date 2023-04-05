@@ -83,33 +83,31 @@ class DfuseConnection:
             raise DfuseError("API key is null")
         self.apiKeyParam = dfuseApiKey
         self.database = database
-        ########
-        # TODO: make this more universal! to work with more accounts, more heights, etc
-        account="genesis.eden"
-        abiHex = None
-        abi = self.database.getABI(accountName=account)
-        if (abi is not None):
-            LOG.debug("ABI exists for account: " + account)
-            abiObj: hex = abi.contract
-            if (len(abiObj) == 0):
-                raise ResponseException("Could not get ABi from db: " + abiObj.error)
-            abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
-        else:
-            abiResponse = self.getAbiFromChain(account=account, height=None)
-            if not abiResponse.successful:
-                raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
-            else:
-                abiHex = abiResponse.data
-
-        self.s = EosAbiSerializer()
-        if not self.s.set_abi_from_hex(account, abiHex):
-                raise DfuseError("Cannot load abi from hex")
-
-
-        #######
-
         # initialize counter
         self.counter = Counter()
+
+        ########
+        # TODO: make this more universal! to work with more accounts, more heights, etc
+        #account="genesis.eden"
+        #abiHex = None
+        #abi = self.database.getABI(accountName=account)
+        #if (abi is not None):
+        #    LOG.debug("ABI exists for account: " + account)
+        #    abiObj: hex = abi.contract
+        #    if (len(abiObj) == 0):
+        #        raise ResponseException("Could not get ABi from db: " + abiObj.error)
+        #    abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
+        #else:
+        #    abiResponse = self.getAbiFromChain(account=account, height=None)
+        #    if not abiResponse.successful:
+        #        raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
+        #    else:
+        #        abiHex = abiResponse.data
+
+        #self.s = EosAbiSerializer()
+        #if not self.s.set_abi_from_hex(account, abiHex):
+        #        raise DfuseError("Cannot load abi from hex")
+        #######
         #self.connect()
 
     def getTokenFromApiKey(self) -> ():
@@ -136,6 +134,33 @@ class DfuseConnection:
             return (self.dfuseToken, expiresAtDT)
         except Exception as e:
             LOG.exception("Exception thrown when called getTokenFromApiKey; Description: " + str(e))
+
+    def initContractDeserializer(self):
+        try:
+            ########
+            # TODO: make this more universal! to work with more accounts, more heights, etc
+            account = "genesis.eden"
+            abiHex = None
+            abi = self.database.getABI(accountName=account)
+            if (abi is not None):
+                LOG.debug("ABI exists for account: " + account)
+                abiObj: hex = abi.contract
+                if (len(abiObj) == 0):
+                    raise ResponseException("Could not get ABi from db: " + abiObj.error)
+                abiHex = abiObj if isinstance(abiObj, str) else abiObj.decode('utf-8')
+            else:
+                abiResponse = self.getAbiFromChain(account=account, height=None)
+                if not abiResponse.successful:
+                    raise DfuseError("cannot get abi from chain. Error: " + abiResponse.error)
+                else:
+                    abiHex = abiResponse.data
+
+            self.s = EosAbiSerializer()
+            if not self.s.set_abi_from_hex(account, abiHex):
+                raise DfuseError("Cannot load abi from hex")
+
+        except Exception as e:
+            LOG.exception("Exception thrown when called initContractDeserializer; Description: " + str(e))
 
     def headers(self) -> {}:
         return {'Authorization': 'Bearer ' + self.dfuseToken}
@@ -410,7 +435,7 @@ class DfuseConnection:
         :return: result of first successful invocation
         :raises: last invocation exception if attempts exhausted or exception is not an instance of ex_type
         """
-        assert isinstance(counterObj, Counter), "counterObj must be of type Counter"
+        assert isinstance(counterObj, Counter), "counterObj must be Counter"
         attempt = 1
         while True:
             try:

@@ -34,6 +34,7 @@ class EdenData:
 
         # update api key
         self.updateDfuseApiKey(database=dfuseConnection.database)
+        self.dfuseConnection.initContractDeserializer()
         schedule.every(120).minutes.do(self.updateDfuseApiKey1, database=dfuseConnection.database)
         # must be set as variable
         self.stop_run_continuously = self.run_continuously()

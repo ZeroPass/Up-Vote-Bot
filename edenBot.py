@@ -337,8 +337,8 @@ class EdenBot:
 
                 elif self.mode == Mode.DEMO and self.modeDemo is not None:
                     # Mode.DEMO
-                    LOG.debug("Demo mode: sleep time: " + str(3))
-                    time.sleep(3)  # in demo mode sleep 3
+                    LOG.debug("Demo mode: sleep time: " + str(10))
+                    time.sleep(10)  # in demo mode sleep 3
 
                     if self.modeDemo.isLiveMode():
                         self.modeDemo.setNextLiveBlockAndTimestamp()
