@@ -208,10 +208,11 @@ class AfterEveryRoundAdditionalActions:
                         if botInGroup:
                             LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups: "
                                           "Removing the bot from the group " + str(room.roomTelegramID))
-                            response: bool = self.communication.leaveChat(sessionType=SessionType.BOT,
-                                                                          chatId=room.roomTelegramID)
-                            LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
-                                        "Is bot left chat with id " + str(room.roomTelegramID + " done? " + str(response)))
+                            #TODO: bot should be removed from group after 2 weeks, because of the invite link - do it after election
+                            #response: bool = self.communication.leaveChat(sessionType=SessionType.BOT,
+                            #                                              chatId=room.roomTelegramID)
+                            #LOG_aeraa.debug("AfterEveryRoundAdditionalActions.removingBotFromGroupsAndDeleteUnusedGroups:"
+                            #            "Is bot left chat with id " + str(room.roomTelegramID + " done? " + str(response)))
                         if userBotInGroup:
                             response: bool = self.communication.leaveChat(sessionType=SessionType.USER,
                                                                           chatId=room.roomTelegramID)

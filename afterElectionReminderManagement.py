@@ -9,6 +9,7 @@ from chain.stateElectionState import ElectCurrTable
 from constants import alert_message_time_upload_video, ReminderGroup, time_span_for_notification_upload_video, \
     telegram_bot_name, default_language, CurrentElectionState
 from database import Database, Election, Reminder, ReminderSent, ReminderSendStatus
+from database.election import ElectionRound
 from database.participant import Participant
 from database.room import Room
 from dateTimeManagement import DateTimeManagement
@@ -171,11 +172,9 @@ class AfterElectionReminderManagement:
             LOG.debug(
                 "Nearest datetime to end of upload period of video: " + str(nearestDatetimeToFinishUploadInMinutes) +
                 " minutes with text '" + nearestDateTimeText + "'")
-            if room.round != CurrentElectionState.CURRENT_ELECTION_STATE_FINAL.value:
-                text: str = vRtextManagement.videoReminder(round=room.round + 1,
-                                                           group=room.roomIndex + 1,
-                                                           expiresText=nearestDateTimeText)
-            return text
+            return vRtextManagement.videoReminder(round=room.round + 1,
+                                                  group=room.roomIndex + 1,
+                                                  expiresText=nearestDateTimeText)
         except Exception as e:
             LOG.exception("Exception (in getTextForVideoUploadReminder): " + str(e))
             raise AfterElectionReminderManagementException("Exception (in getTextForVideoUploadReminder): " + str(e))
@@ -365,6 +364,10 @@ class AfterElectionReminderManagement:
                             self.communication.updateKnownUserData(botName=telegram_bot_name)
 
                             for room, member in roomsAndMembers:
+                                if room.roomIndex == ElectionRound.FINAL.value:
+                                    LOG.debug("Skip sending reminder to participants of final room")
+                                    continue
+
                                 if member.telegramID is None or len(member.telegramID) < 3:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue

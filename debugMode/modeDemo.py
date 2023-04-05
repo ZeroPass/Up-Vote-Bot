@@ -133,13 +133,13 @@ class ModeDemo:
         if self.currentBlockTimestamp + timedelta(seconds=seconds) <= \
                 self.startAndEndDatetime[self.currentTimeFrameIndex][1]:
             self.currentBlockTimestamp = self.currentBlockTimestamp + timedelta(seconds=seconds)
-            LOG.success("ModeDemo; Set next timestamp to: " + str(self.currentBlockTimestamp))
+            LOG.success("ModeDemo; Current timestamp: " + str(self.currentBlockTimestamp))
         else:
             self.currentTimeFrameIndex = self.currentTimeFrameIndex + 1
             self.currentBlockTimestamp = self.startAndEndDatetime[self.currentTimeFrameIndex][0]
-            LOG.success("ModeDemo; Set next timestamp and sector to: " + str(self.currentBlockTimestamp))
-            LOG.success("Lets wait 2 minutes for new sector")
-            time.sleep(120)
+            LOG.success("ModeDemo; Current timestamp: " + str(self.currentBlockTimestamp))
+            LOG.success("Lets wait 1 minute for new sector")
+            time.sleep(60)
         try:
             self.currentBlockHeight = self.edenObj.getBlockNumOfTimestamp(timestamp=self.currentBlockTimestamp).data
         except Exception as e:
