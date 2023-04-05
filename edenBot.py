@@ -390,13 +390,13 @@ def main():
     ]
 
     # 120 blocks per minute
-    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-                        edenObj=edenData,
-                        step=1  # 1.5 min
-                        )
+    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+    #                    edenObj=edenData,
+    #                    step=1  # 1.5 min
+    #                    )
     # live!
-    # modeDemo = ModeDemo.live(edenObj=edenData,
-    #                         stepBack=10)
+    modeDemo = ModeDemo.live(edenObj=edenData,
+                             stepBack=10)
 
     EdenBot(edenData=edenData,
             telegramApiID=telegram_api_id,
