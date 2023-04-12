@@ -9,6 +9,7 @@ from chain.dfuse.graphqlApi import GraphQLApi
 from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
 from constants import eden_account, dfuse_api_key
 from database import Database
+from database.participant import Participant
 from log.log import Log
 import requests as requests
 import json
@@ -265,11 +266,10 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called updateDfuseApiKey; Description: " + str(e))
 
-    def getActionsVideoUploaded(self, contractAccount: str, startTime: datetime, endTime: datetime, round: int):
+    def getActionsVideoUploaded(self, contractAccount: str, startTime: datetime, endTime: datetime):
         assert isinstance(contractAccount, str), "contractAccount is not of type str"
         assert isinstance(startTime, datetime), "startTime is not of type datetime"
         assert isinstance(endTime, datetime), "endTime is not of type datetime"
-        assert isinstance(round, int), "round is not of type int"
         try:
             if startTime > endTime:
                 return ResponseError("Start time is after end time")
@@ -297,6 +297,49 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getActionsVideoUploaded; Description: " + str(e))
 
+    def checkIfGroupSentVideo(self, actionVideoReport: list, round: int, participants: list[Participant]):
+        assert isinstance(actionVideoReport, list), "actionVideoReport must be type of list"
+        assert isinstance(round, int), "round must be type of int"
+        assert isinstance(participants, list), "participants must be type of list"
+        try:
+            LOG.debug("checkIfGroupSentVideo; Round: " + str(round) + "; Participants: " + str(participants))
+            if round < 0:
+                LOG.exception("Round must be positive number")
+                raise Exception("Round must be positive number")
+            if len(participants) == 0:
+                LOG.exception("Participants list is empty")
+                raise Exception("Participants list is empty")
+            for participant in participants:
+                if isinstance(participant, Participant) is False:
+                    LOG.exception("Participants list must contain only Participant objects")
+                    raise Exception("Participants list must contain only Participant objects")
+
+            TRACE = 'trace'
+            MATCHING_ACTION = 'matchingActions'
+            DATA = 'data'
+            ROUND = 'round'
+            VOTER = 'voter'
+
+            for action in actionVideoReport:
+                if TRACE not in action or MATCHING_ACTION not in action[TRACE]:
+                    LOG.error("checkIfGroupSentVideo; Trace not in action: " + str(action))
+                    continue
+                subactions = action[TRACE][MATCHING_ACTION]
+                for subaction in subactions:
+                    if DATA not in subaction or \
+                        ROUND not in subaction[DATA] or \
+                        VOTER not in subaction[DATA]:
+                        LOG.error("checkIfGroupSentVideo; Data not in subaction: " + str(subaction))
+                        continue
+                    roundInSubaction = subaction[DATA][ROUND]
+                    voterInSubaction = subaction[DATA][VOTER]
+                    if roundInSubaction == round:
+                        if any(voterInSubaction == participant.telegramID for participant in participants):
+                            return True
+            return False
+        except Exception as e:
+            LOG.exception("Error in AfterElectionReminderManagement.checkIfGroupSentVideo: " + str(e))
+            raise Exception("Error in AfterElectionReminderManagement.checkIfGroupSentVideo: " + str(e))
 def main():
     print("Hello World!")
     database = Database()
@@ -304,15 +347,30 @@ def main():
 
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
-    dtStart = datetime(2022, 10, 8, 13, 0, 0)
-    dtEnd = dtStart + timedelta(days=14)
+    dtStart = datetime(2021, 10, 8, 13, 0, 0)
+    dtEnd = dtStart + timedelta(minutes=2)
     blockNumOfStart = 272116751 #edenData.getBlockNumOfTimestamp(timestamp=dtStart)
     blockNumOfEnd = 274534282 # edenData.getBlockNumOfTimestamp(timestamp=dtEnd)
 
-    edenData.getActionsVideoUploaded(contractAccount=eden_account,
-                                     startTime=dtStart,  # 272116751
-                                     endTime=dtEnd,  # 274534282
-                                     round=1)
+    round1 = edenData.getBlockNumOfTimestamp(datetime(2021, 3, 9, 13, 5, 0))
+
+    #returned = edenData.getActionsVideoUploaded(contractAccount=eden_account,
+    #                                 startTime=dtStart,  # 272116751
+    #                                 endTime=dtEnd,  # 274534282
+    #                                 round=1)
+    #partipants = []
+    #partipants.append(Participant(accountName="costaricamae",
+    #                              roomID=1,
+    #                            participantName="Costa Rica",
+    #                              telegramID="ncoltd1234514",
+    #                              participationStatus=True,
+    #                              nftTemplateID=3245))
+
+    #if isinstance(returned, ResponseSuccessful):
+    #    isTrue = edenData.checkIfGroupSentVideo(actionVideoReport=returned.data, round=1, participants=partipants)
+    #    LOG.success("Is true: " + str(isTrue))
+
+
 
     test = edenData.getVotes(height=272119950 + 100)
     ret = 9

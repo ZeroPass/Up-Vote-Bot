@@ -409,23 +409,28 @@ class Database(metaclass=Singleton):
             return None
 
     def createOrUpdateReminderSentRecord(self, reminder: Reminder, accountName: str, sendStatus: ReminderSendStatus,
+                                         round: int = None,
                                          cSession=None):
         assert isinstance(reminder, Reminder)
         assert isinstance(accountName, str)
         assert isinstance(sendStatus, ReminderSendStatus)
+        assert isinstance(round, (int, type(None)))
+
         try:
             session = cSession
             # get election
             reminderSentRecordFromDB = (
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
-                                                   ReminderSent.reminderID == reminder.reminderID).first()
+                                                   ReminderSent.reminderID == reminder.reminderID,
+                                                   ReminderSent.round == round).first()
             )
             if reminderSentRecordFromDB is None:
                 LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
                           str(reminder.dateTimeBefore) + " not found, creating new")
                 reminderSentRecordFromDB = ReminderSent(reminderID=reminder.reminderID,
                                                         accountName=accountName,
-                                                        sendStatus=sendStatus)
+                                                        sendStatus=sendStatus,
+                                                        round=round)
                 session.add(reminderSentRecordFromDB)
                 session.flush()  # commit and get id in the room object
                 session.commit()
@@ -435,7 +440,8 @@ class Database(metaclass=Singleton):
                 LOG.debug("ReminderSent for ElectionID " + str(reminder.electionID) + " and dateTimeBefore" +
                           str(reminder.dateTimeBefore) + " found, updating")
                 session.query(ReminderSent).filter(ReminderSent.accountName == accountName,
-                                                   ReminderSent.reminderID == reminder.reminderID) \
+                                                   ReminderSent.reminderID == reminder.reminderID,
+                                                   ReminderSent.round == round) \
                     .update({ReminderSent.sendStatus: sendStatus.value})
                 return True
         except Exception as e:
@@ -469,25 +475,26 @@ class Database(metaclass=Singleton):
     def createReminder(self, reminder: Reminder, csession: scoped_session):
         assert isinstance(reminder, Reminder), "reminder is not of type Reminder"
         try:
-            session = self.createCsesion()
+            #session = self.createCsesion(expireOnCommit=False)
+            session = csession
             # because of database specs we need to eliminate microseconds
-            reminder.dateTimeBefore.replace(microsecond=0)
-            reminderSendRecords = session.query(Reminder) \
+            reminder.dateTimeBefore = reminder.dateTimeBefore.replace(microsecond=0)
+            reminderFromDB = session.query(Reminder) \
                 .filter(Reminder.electionID == reminder.electionID,
                         Reminder.reminderGroup == reminder.reminderGroup,
                         Reminder.dateTimeBefore == reminder.dateTimeBefore).first()
 
-            if reminderSendRecords is None:
+            if reminderFromDB is None:
                 session.add(reminder)
                 session.commit()
                 LOG.info("Reminder for election " + str(reminder.electionID) + " saved")
-                self.removeCcession(session=session)
+                #self.removeCcession(session=session)
             else:
                 LOG.info("Reminder for election " + str(reminder.electionID) + " already exists")
-                self.removeCcession(session=session)
+                #self.removeCcession(session=session)
         except Exception as e:
-            session.rollback()
-            self.removeCcession(session=session)
+            #session.rollback()
+            #self.removeCcession(session=session)
             LOG.exception(message="Problem occurred when creating reminder: " + str(e))
             raise DatabaseExceptionConnection("Problem occurred when creating reminder: " + str(e))
 

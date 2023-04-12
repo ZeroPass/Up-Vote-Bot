@@ -418,14 +418,6 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
                 finalRoundAdditionalActions.do(telegramBotName=telegram_bot_name,
                                                telegramUserBotName=telegram_user_bot_name)
 
-
-
-
-
-
-
-
-
         except Exception as e:
             LOG.exception("Exception thrown when called CurrentElectionStateHandlerFinal.customActions; "
                           "Description: " + str(e))

@@ -44,6 +44,7 @@ class GraphQLApi:
         assert isinstance(startBlockNum, int), "startBlockNum must be type of int"
         assert isinstance(endBlockNum, int), "endBlockNum must be type of int"
         try:
+            #function returns list of json objects
             LOG.debug("Check if video is uploaded on account: " + account +
                       " from block: " + str(startBlockNum) +
                       " to block: " + str(endBlockNum))
