@@ -394,13 +394,13 @@ def main():
     ]
 
     # 120 blocks per minute
-    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-                        edenObj=edenData,
-                        step=1  # 1.5 min
-                        )
+    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+    #                    edenObj=edenData,
+    #                    step=1  # 1.5 min
+    #                    )
     # live!
-    #modeDemo = ModeDemo.live(edenObj=edenData,
-    #                         stepBack=10)
+    modeDemo = ModeDemo.live(edenObj=edenData,
+                             stepBack=10)
 
     EdenBot(edenData=edenData,
             telegramApiID=telegram_api_id,
@@ -429,10 +429,10 @@ def mainPyrogramTestMode():
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
 
     comm.sendMessage(sessionType=SessionType.BOT,
-                     chatId="@nejcskerjanc2",
+                     chatId="",
                      text="test")
 
-    # comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="te423423st")
+    # comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="te423423st")
     # comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
     pyogram = Process(target=runPyrogramTestMode, args=(comm,))
     pyogram.start()
@@ -442,7 +442,7 @@ def mainPyrogramTestMode():
         i = i + 1
         # if i % 3 == 0:
         if i == 3:
-            comm.sendMessage(chatId="nejcSkerjanc2", sessionType=SessionType.BOT, text="test")
+            comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="test")
         time.sleep(3)
         print("main Thread")
 
