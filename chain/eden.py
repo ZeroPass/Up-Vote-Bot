@@ -211,7 +211,6 @@ class EdenData:
             j = json.loads(resultTable.text)
             LOG.debug("Result: " + str(j))
             return int(j['head_block_num'])
-
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getChainDatetime; Description: " + str(e))
@@ -347,17 +346,16 @@ def main():
 
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
-    dtStart = datetime(2021, 10, 8, 13, 0, 0)
-    dtEnd = dtStart + timedelta(minutes=2)
+    dtStart = datetime(2023, 4, 8, 13, 0, 0)
+    dtEnd = dtStart + timedelta(days=7)
     blockNumOfStart = 272116751 #edenData.getBlockNumOfTimestamp(timestamp=dtStart)
     blockNumOfEnd = 274534282 # edenData.getBlockNumOfTimestamp(timestamp=dtEnd)
 
     round1 = edenData.getBlockNumOfTimestamp(datetime(2021, 3, 9, 13, 5, 0))
 
-    #returned = edenData.getActionsVideoUploaded(contractAccount=eden_account,
-    #                                 startTime=dtStart,  # 272116751
-    #                                 endTime=dtEnd,  # 274534282
-    #                                 round=1)
+    returned = edenData.getActionsVideoUploaded(contractAccount=eden_account,
+                                     startTime=dtStart,
+                                     endTime=dtEnd)
     #partipants = []
     #partipants.append(Participant(accountName="costaricamae",
     #                              roomID=1,

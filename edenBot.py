@@ -285,13 +285,13 @@ class EdenBot:
 
             if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
                 electionCurrState: ElectCurrTable = self.getElectionState()
-                self.currentElectionStateHandler.customActions(election=election,
-                                                               electCurr=electionCurrState,
-                                                               database=database,
-                                                               groupManagement=self.groupManagement,
-                                                               edenData=self.edenData,
-                                                               communication=self.communication,
-                                                               modeDemo=self.modeDemo)
+                #self.currentElectionStateHandler.customActions(election=election,
+                #                                               electCurr=electionCurrState,
+                #                                               database=database,
+                #                                               groupManagement=self.groupManagement,
+                #                                               edenData=self.edenData,
+                #                                               communication=self.communication,
+                #                                               modeDemo=self.modeDemo)
             elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_SEEDING_V1:
                 self.currentElectionStateHandler.customActions(election=election,
                                                                database=database,
@@ -328,33 +328,35 @@ class EdenBot:
         try:
             i = 0
             while True:
+                try:
+                    # sleep time depends on bot mode
+                    if self.mode == Mode.LIVE:
+                        time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode])
 
-                # self.edenData.updateDfuseApiKey2(self.database) #just test
+                    elif self.mode == Mode.DEMO and self.modeDemo is not None:
+                        # Mode.DEMO
+                        LOG.debug("Demo mode: sleep time: " + str(10))
+                        time.sleep(10)  # in demo mode sleep 3
 
-                # sleep time depends on bot mode
-                if self.mode == Mode.LIVE:
-                    time.sleep(REPEAT_TIME[self.currentElectionStateHandler.edenBotMode])
+                        if self.modeDemo.isLiveMode():
+                            self.modeDemo.setNextLiveBlockAndTimestamp()
 
-                elif self.mode == Mode.DEMO and self.modeDemo is not None:
-                    # Mode.DEMO
-                    LOG.debug("Demo mode: sleep time: " + str(10))
-                    time.sleep(10)  # in demo mode sleep 3
-
-                    if self.modeDemo.isLiveMode():
-                        self.modeDemo.setNextLiveBlockAndTimestamp()
+                        else:
+                            if self.modeDemo.isNextTimestampInLimit(seconds=60):
+                                self.modeDemo.setNextTimestamp(seconds=60)
+                            else:
+                                LOG.success("Time limit reached - Demo mode finished")
+                                break
 
                     else:
-                        if self.modeDemo.isNextTimestampInLimit(seconds=60):
-                            self.modeDemo.setNextTimestamp(seconds=60)
-                        else:
-                            LOG.success("Time limit reached - Demo mode finished")
-                            break
+                        raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
-                else:
-                    raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
+                    # defines current election state and write it to the database
+                    self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
 
-                # defines current election state and write it to the database
-                self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
+                except Exception as e:
+                    LOG.exception("Exception in start loop. Description: " + str(e))
+                    time.sleep(20)
 
         except Exception as e:
             LOG.exception("Exception: " + str(e))
@@ -465,13 +467,32 @@ def main1():
 
     kva = 8
 
+    #self.pyrogram = Process(target=self.startSessionAsync,
+    #                            name="Pyrogram event handler",
+    #                            args=(apiId, apiHash, botToken))
+    #                             self.pyrogram.start()
+    #
+    #
+
+
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    comm.sendMessage(chatId=-1001888934788, sessionType=SessionType.BOT, text="test")
-    #neki = await comm.isVideoCallRunning(sessionType=SessionType.BOT, chatId=-1001888934788)
-    task = asyncio.get_event_loop().run_until_complete(comm.isVideoCallRunning(sessionType=SessionType.BOT,
-                                                                               chatId=-1001888934788))
-    kva =- 8
+    for i in range(0, 4):
+        for j in range(0, 25):
+            kva = Process(target=comm.sendMessage,
+                    name="Pyrogram event handler",
+                    args=(SessionType.BOT, "", "A:" + str(i) + " " + str(j))
+                    )
+            kva.start()
+            #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="B:" + str(i) + " " + str(j))
+            #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="C:" + str(i) + " " + str(j))
+        #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="test")
+        #time.sleep(1)
+
+    #neki = await comm.isVideoCallRunning(sessionType=SessionType.BOT, chatId=)
+    #task = asyncio.get_event_loop().run_until_complete(comm.isVideoCallRunning(sessionType=SessionType.BOT,
+    #                                                                           chatId=-1001888934788))
+    #kva =- 8
 
     while True:
         time.sleep(2)
