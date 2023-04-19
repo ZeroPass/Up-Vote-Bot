@@ -423,9 +423,9 @@ class AfterElectionReminderManagement:
                                     #roomChanged - check if they already sent video and send reminder if needed
 
                                     if self.checkIfGroupSentVideo(actionVideoReport=actionsVideoUpload,
-                                                                      round=room.round,
+                                                                      round=currentRoom.round,
                                                                       participants=usersInCurrentRoom) is False:
-                                        LOG.debug("Group (roomId: " + str(room.roomID) +
+                                        LOG.debug("Group (roomId: " + str(currentRoom.roomID) +
                                                   ") has not sent a video yet. Send reminder to all participants")
                                         self.sendAndSyncWithDatabaseUploadVideoNotif(participants=usersInCurrentRoom,
                                                                                  room=currentRoom,
@@ -477,9 +477,12 @@ class AfterElectionReminderManagement:
                       " from start time: " + str(startTime) +
                       " to end time: " + str(endTime))
 
-            actionsVideoUploaded = self.edenData.getActionsVideoUploaded(contractAccount=account,
+            for i in range(0, 3):
+                actionsVideoUploaded = self.edenData.getActionsVideoUploaded(contractAccount=account,
                                                                          startTime=startTime,
                                                                          endTime=endTime)
+                if isinstance(actionsVideoUploaded, ResponseSuccessful):
+                    return actionsVideoUploaded
             return actionsVideoUploaded
         except Exception as e:
             LOG.exception("Error in AfterElectionReminderManagement.getActionsVideoUploaded: " + str(e))

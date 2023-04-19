@@ -1,4 +1,6 @@
 import json
+from datetime import datetime
+
 import requests
 
 from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
@@ -136,7 +138,70 @@ class AtomicAssetsData:
             LOG.exception(str(e))
             return ResponseError("Exception when getting TG name of user: " + str(e))
 
+    def getTemplateFromTemplateID(self, templateID: int, collectionName: str) -> Response:
+        assert isinstance(templateID, int), "templateID must be type of int"
+        assert isinstance(collectionName, str), "collectionName must be type of str"
+        try:
+            LOG.info("Get template from templateID: " + str(templateID) + " and collection: " + collectionName)
+            url = requests.get(
+                "https://eos.api.atomicassets.io/atomicassets/v1/templates/" + collectionName + "/" + str(templateID))
+            if url.status_code == 200:
+                jsonData = json.loads(url.text)
+                if jsonData['success']:
+                    LOG.success("Succeeded")
+                    return ResponseSuccessful(jsonData['data']['created_at_time'])
+            #otherwise return error
+            return ResponseError("Error when getting template from templateID: " + str(templateID) +
+                              " and collection: " + collectionName)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getTemplateFromTemplateID; Description: " + str(e))
 
+    def getTemplatesCreateTimeFromAccount(self, accountName: str, collectionName: str) -> Response:
+        assert isinstance(accountName, str), "accountName must be type of str"
+        assert isinstance(collectionName, str), "collectionName must be type of str"
+        try:
+            LOG.info("Get templates(create time) from account: " + accountName + " and collection: " + collectionName)
+            url = requests.get(
+                "https://eos.api.atomicassets.io/atomicassets/v1/accounts/" + accountName + "/" + collectionName)
+            list: datetime = []
+            if url.status_code == 200:
+                jsonData = json.loads(url.text)
+                if jsonData['success']:
+                    LOG.success("Succeeded")
+                    templates = jsonData['data']['templates']
+                    for template in templates:
+                        templateID = template['template_id']
+                        createdAtTimeResponse: Response = self.getTemplateFromTemplateID(templateID=templateID,
+                                                                                        collectionName=collectionName)
+                        if isinstance(createdAtTimeResponse, ResponseSuccessful):
+                            list.append(createdAtTimeResponse.data)
+                        else:
+                            LOG.error("Error when getting template from templateID: " + str(templateID))
+
+                    if True:
+                        return ResponseSuccessful(socialJson['telegram'])
+                    else:
+                        return ResponseError("No telegram in social data")
+                # otherwise return error
+            return ResponseError("Error when getting templates id from account")
+
+            return data
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getElectionState; Description: " + str(e))
+
+    def getLatestSBTOfUser(self):
+        try:
+            #account, collection name
+            #https://eos.api.atomicassets.io/atomicassets/v1/accounts/lukaperrrcic/sbts4edeneos'
+            # collection_name, templateID
+            #https://eos.api.atomicassets.io/atomicassets/v1/templates/sbts4edeneos/8361'
+            #atomic_assets_SBT_account
+            LOG.info("Get latest SBT of user")
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception when getting latest SBT of user: " + str(e))
 
 
 def main():

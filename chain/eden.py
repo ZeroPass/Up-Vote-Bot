@@ -347,7 +347,7 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     dtStart = datetime(2023, 4, 8, 13, 0, 0)
-    dtEnd = dtStart + timedelta(days=7)
+    dtEnd = dtStart + timedelta(days=10)
     blockNumOfStart = 272116751 #edenData.getBlockNumOfTimestamp(timestamp=dtStart)
     blockNumOfEnd = 274534282 # edenData.getBlockNumOfTimestamp(timestamp=dtEnd)
 
@@ -356,6 +356,7 @@ def main():
     returned = edenData.getActionsVideoUploaded(contractAccount=eden_account,
                                      startTime=dtStart,
                                      endTime=dtEnd)
+    ret = 9
     #partipants = []
     #partipants.append(Participant(accountName="costaricamae",
     #                              roomID=1,

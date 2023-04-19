@@ -285,13 +285,13 @@ class EdenBot:
 
             if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
                 electionCurrState: ElectCurrTable = self.getElectionState()
-                #self.currentElectionStateHandler.customActions(election=election,
-                #                                               electCurr=electionCurrState,
-                #                                               database=database,
-                #                                               groupManagement=self.groupManagement,
-                #                                               edenData=self.edenData,
-                #                                               communication=self.communication,
-                #                                               modeDemo=self.modeDemo)
+                self.currentElectionStateHandler.customActions(election=election,
+                                                               electCurr=electionCurrState,
+                                                               database=database,
+                                                               groupManagement=self.groupManagement,
+                                                               edenData=self.edenData,
+                                                               communication=self.communication,
+                                                               modeDemo=self.modeDemo)
             elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_SEEDING_V1:
                 self.currentElectionStateHandler.customActions(election=election,
                                                                database=database,
