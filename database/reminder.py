@@ -54,15 +54,18 @@ class ReminderSent(Base):
     reminderID = Column(Integer, ForeignKey(Reminder.reminderID))
     accountName = Column(CHAR(32), ForeignKey(Participant.accountName))
     sendStatus = Column(Integer)  # 0 - not sent, 1 - sent, 2 - error
+    round = Column(Integer)
 
-    def __init__(self, reminderID: int, accountName: str, sendStatus: ReminderSendStatus, reminderSentID: Reminder = None):
+    def __init__(self, reminderID: int, accountName: str, sendStatus: ReminderSendStatus, round: int = None, reminderSentID: Reminder = None):
         """Initialization object"""
         assert isinstance(reminderSentID, (int, type(None)))
         assert isinstance(reminderID, int)
         assert isinstance(accountName, str)
         assert isinstance(sendStatus, Enum)
+        assert isinstance(round, (int, type(None)))
 
         self.reminderSentID = reminderSentID
         self.reminderID = reminderID
         self.accountName = accountName
         self.sendStatus = sendStatus.value
+        self.round = round

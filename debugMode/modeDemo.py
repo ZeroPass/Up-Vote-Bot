@@ -35,7 +35,9 @@ class ModeDemo:
         # if isNextTimestampInLimit(nextTimestamp=nextTimestamp):
         #    setNextTimestamp(nextTimestamp=nextTimestamp)
 
-
+        LOG.success("-------------------------------------")
+        LOG.success("--->DEMO MODE with TIMEFRAME ARRAY<--")
+        LOG.success("-------------------------------------")
 
         LOG.debug("Initialization of ModeDemo with startAndEndDatetime: " + str(startAndEndDatetime) +
                           " and step: " + str(step))
@@ -77,6 +79,10 @@ class ModeDemo:
     def live(cls, edenObj: EdenData, stepBack: int):
         assert isinstance(edenObj, EdenData), "EdenObj is not a EdenData object"
         assert isinstance(stepBack, int), "Step is not an integer"
+        LOG.success("-------------------------------------")
+        LOG.success("--->LIVE MODE<--")
+        LOG.success("-------------------------------------")
+
         if stepBack < 1:
             LOG.exception("ModeDemo; stepBack must be greater than 0")
             raise ModeDemoException("StepBack must be greater than 0")

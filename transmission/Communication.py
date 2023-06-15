@@ -1,71 +1,43 @@
-import asyncio
-import logging
-import os
-import threading
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Union, Any
+from typing import Union
 
 import pyrogram.raw.functions.updates
-from pyrogram.enums import ChatType
-from pyrogram.errors import FloodWait, PeerIdInvalid
-from pyrogram.filters import new_chat_members
-from pyrogram.handlers import MessageHandler, ChatMemberUpdatedHandler, RawUpdateHandler
-from pyrogram.methods.decorators import on_chat_member_updated
-from pyrogram.raw import functions
+from pyrogram.enums import ChatMembersFilter, ChatMemberStatus
+from pyrogram.errors import FloodWait, PeerIdInvalid, ChatAdminRequired
+from pyrogram.handlers import MessageHandler, RawUpdateHandler
 from pyrogram.raw.types import UpdatesTooLong
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand, Message, \
     ChatPreview
 
+from chain.dfuse import Response, ResponseError
+from database.comunityParticipant import CommunityParticipant
+from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS, MemberStatus, PARSE_TG_NAME, ADD_AT_SIGN_IF_NOT_EXISTS
 from constants.parameters import *
-from database import Database
+from database import Database, KnownUser, Election
 from database.participant import Participant
 from database.room import Room
-from dateTimeManagement import DateTimeManagement
 from knownUserManagement import KnownUserData
 from log.log import Log
+from chain.eden import EdenData
 
 from multiprocessing import Process
 
-from pyrogram import Client, emoji, filters, types, idle, raw
+from pyrogram import Client, filters, types, idle, raw
 
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS, REMOVE_AT_SIGN_IF_EXISTS
+
 
 import time
 
-from text.textManagement import GroupCommunicationTextManagement, Button, BotCommunicationManagement, \
-    WellcomeMessageTextManagement, VideCallTextManagement, CommandResponseTextManagement
+from text.textManagement import Button, BotCommunicationManagement, \
+    WellcomeMessageTextManagement, VideCallTextManagement
 
-
-# logging.basicConfig(level=logging.DEBUG)
-# api_id = 48490
-# api_hash = "507315c8796f15903299b47730838c77"
-
-# , /*bot_token="5512475717:AAGp0a451eha7X00wVJ4csCC0Mh_U1J1nxk"
-# async def main():
-#    async with Client("bot1", api_id, api_hash) as app:
-#        await app.send_message("me", "Greetings from **Pyrogram**!")
+from transmissionCustom import CustomMember, AdminRights, Promotion
 
 class SessionType(Enum):
     USER = 1
     BOT = 2
     BOT_THREAD = 3
-
-
-class CustomMember:
-    def __init__(self, userId: str, isBot: bool = False, username: str = None):
-        assert isinstance(userId, str), "userId should be str"
-        assert isinstance(isBot, bool), "isBot should be bool"
-        assert isinstance(username, (str, type(None))), "username should be str or None"
-        self.userId = userId
-        self.username = username
-        self.isBot = isBot
-
-    def __str__(self):
-        return "CustomMember(userId=" + str(self.userId) + \
-               ", isBot=" + "True" if self.isBot else "False" + \
-                                                      ", username=" + str(
-            self.username) if self.username is not None else "None" + ")"
 
 
 class CommunicationException(Exception):
@@ -77,7 +49,7 @@ LOG = Log(className="Communication")
 DATABASE_CONST = None
 
 
-class Communication():
+class Communication:
     # sessions = {}
     sessionUser: Client = None
     sessionBot: Client = None
@@ -85,13 +57,16 @@ class Communication():
     isInitialized: bool = False
     pyrogram: Process = None
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, edenData: EdenData):
         assert isinstance(database, Database), "Database should be Database"
         LOG.info("Init communication")
         self.database = database
         global DATABASE_CONST
         DATABASE_CONST = database
         self.knownUserData: KnownUserData = KnownUserData(database=database)
+
+        #we need it for the SBT call on bot
+        self.edenData: EdenData = edenData
         # threading.Thread.__init__(self, daemon=True)
 
     # def run(self):
@@ -139,8 +114,11 @@ class Communication():
                 BotCommand("start", "Register with the bot"),
                 BotCommand("status", "Check if the Up Vote Bot is running"),
                 BotCommand("donate", "Support the development of Up Vote Bot features"),
-                BotCommand("admin", "Promote yourself to admin in groups created by Up Vote Bot"),
-                BotCommand("recording", "Get the help for the recording feature")])
+                BotCommand("chatid", "Get current chat id (admin + (super)group only)"),
+                BotCommand("check", "Check if user is known to bot (use with parameter <account name> or <telegram id>) (private chat only)"),
+                BotCommand("unknown_users", "List of participants that will participate in next election, but not known to bot (private chat + admin only)"),
+                BotCommand("not_active_sbt_users","List of participants wits SBTs, but not in community group (private chat + admin only)"),
+            ])
 
             self.isInitialized = True
             LOG.debug("... done!")
@@ -155,9 +133,6 @@ class Communication():
                                 name="Pyrogram event handler",
                                 args=(apiId, apiHash, botToken))
         self.pyrogram.start()
-        # asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
-        # task1 = asyncio.run(self.startSessionAsync(apiId=apiId, apiHash=apiHash, botToken=botToken))
-        kva = 8
 
     def startSessionAsync(self, apiId: int, apiHash: str, botToken: str):
         try:
@@ -189,6 +164,11 @@ class Communication():
             )
 
             self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseGetChatID,
+                               filters=filters.command(commands=["chatID"]) & filters.group), group=2
+            )
+
+            self.sessionBotThread.add_handler(
                 MessageHandler(callback=self.actionVideoStarted,
                                filters=filters.video_chat_started), group=2
             )
@@ -201,6 +181,18 @@ class Communication():
             self.sessionBotThread.add_handler(
                 MessageHandler(callback=self.callFeature,
                                filters=filters.command(commands=["call"])), group=2)
+
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseCheck,
+                               filters=filters.command(commands=["check"]) & filters.private), group=2)
+
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseCheckParticipants,
+                                    filters=filters.command(commands=["unknown_users"]) & filters.private), group=2)
+
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseCheckParticipantsSBT,
+                                    filters=filters.command(commands=["not_active_sbt_users"]) & filters.private), group=2)
 
             # self.sessionBotThread.add_handler(
             #    MessageHandler(callback=self.commandResponseRecording,
@@ -591,6 +583,55 @@ class Communication():
             LOG.exception("Exception (in deleteGroup): " + str(e))
             return False
 
+    def removeUserFromGroup(self,  sessionType: SessionType, chatId: (str, int), userId: str) -> bool:
+        assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+        assert isinstance(userId, str), "userId should be str"
+        LOG.info("Removing user: " + str(userId) + " from group: " + str(chatId))
+        try:
+            #if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+            #                                                        telegramID=str(chatId)) is False:
+            #    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+            #    return False
+            if sessionType == SessionType.USER:
+                toReturn: bool = self.sessionUser.ban_chat_member(chat_id=chatId,
+                                             user_id=userId,
+                                             until_date=datetime.now() + timedelta(minutes=1))
+            else:
+                toReturn: bool = self.sessionBot.ban_chat_member(chat_id=chatId,
+                                             user_id=userId,
+                                             until_date=datetime.now() + timedelta(minutes=1))
+            return toReturn
+        except PeerIdInvalid:
+            LOG.exception("Exception (in removeUserFromGroup): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=str(chatId))
+            return False
+        except Exception as e:
+            LOG.exception("Exception (in removeUserFromGroup): " + str(e))
+            return False
+
+    def getGeneralChatLink(self, sessionType: SessionType, chatId: (str, int)) -> str:
+        assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+        try:
+            # we use this function to get same chat link (export_chat_invite_link always generates new link)
+            LOG.debug("Getting general chat link for chat: " + str(chatId))
+            if sessionType == SessionType.USER:
+                chat = self.sessionUser.get_chat(chat_id=chatId)
+            else:
+                chat = self.sessionBot.get_chat(chat_id=chatId)
+
+            if isinstance(chat, types.Chat) is False:
+                raise Exception("Chat is not a Chat object. Probably user/bot is not a member of the chat.")
+
+            if chat.invite_link is None:
+                raise Exception("Chat link is None.")
+
+            return chat.invite_link
+        except Exception as e:
+            LOG.exception("Exception (in getGeneralChatLink): " + str(e))
+            return None
+
     def leaveChat(self, sessionType: SessionType, chatId: (str, int), userId: str) -> bool:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
@@ -606,11 +647,138 @@ class Communication():
             LOG.exception("Exception (in leaveChat): " + str(e))
             return False
 
+    def getMemberInGroup(self, sessionType: SessionType, chatId: int, userId: (str, int)) -> CustomMember:
+        assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
+        assert isinstance(chatId, int), "ChatId should be int"
+        assert isinstance(userId, (str, int)), "UserId should be str or int"
+        LOG.debug("Getting member in group: " + str(chatId) + " with userId: " + str(userId))
+        try:
+            if sessionType == SessionType.BOT and \
+                    self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return None
+            member = None
+            if sessionType == SessionType.USER:
+                member = self.sessionUser.get_chat_member(chat_id=chatId,
+                                                             user_id=userId)
+            else:
+                member = self.sessionBot.get_chat_member(chat_id=chatId,
+                                                            user_id=userId)
+
+            if member is None:
+                LOG.error("Member not found in group: " + str(chatId))
+                return None
+
+            if member.status is ChatMemberStatus.OWNER or member.status is ChatMemberStatus.ADMINISTRATOR:
+                LOG.debug("Member is admin in group: " + str(chatId))
+                adminRights = AdminRights(isAdmin=True,
+                                            canChangeInfo=member.privileges.can_change_info,
+                                            canDeleteMessages=member.privileges.can_delete_messages,
+                                            canEditMessages=member.privileges.can_edit_messages,
+                                            canInviteUsers=member.privileges.can_invite_users,
+                                            canManageChat=member.privileges.can_manage_chat,
+                                            canManageVideoChats=member.privileges.can_manage_video_chats,
+                                            canPinMessages=member.privileges.can_pin_messages,
+                                            canPostMessages=member.privileges.can_post_messages,
+                                            canPromoteMembers=member.privileges.can_promote_members,
+                                            canRestrictMembers=member.privileges.can_restrict_members,
+                                            isAnonymous=member.privileges.is_anonymous)
+
+                promotedBy = member.promoted_by
+                promotion: Promotion = Promotion(userId=str(promotedBy.id), username=promotedBy.username)
+                memberStatus: MemberStatus = MemberStatus.ADMINISTRATOR if member.status \
+                                             is pyrogram.enums.ChatMemberStatus.OWNER else MemberStatus.OWNER
+            else:
+                LOG.debug("Member is not admin in group: " + str(chatId))
+                adminRights = AdminRights(isAdmin=False)
+                promotion: Promotion = None
+                memberStatus: MemberStatus = MemberStatus.MEMBER
+
+
+
+
+            cm: CustomMember = CustomMember(userId=str(member.user.id),
+                                            memberStatus=memberStatus,
+                                            isBot=member.user.is_bot,
+                                            username=member.user.username,
+                                            tag=member.custom_title,
+                                            adminRights=adminRights,
+                                            promotedBy=promotion)
+
+            return cm
+        except Exception as e:
+            LOG.exception("Exception (in getMemberInGroup): " + str(e))
+            return None
+
+    async def getMembersInGroupS(self, client: Client, chatId: (str, int)) -> list[CustomMember]:
+        assert isinstance(client, Client), "client should be Client"
+        assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+        LOG.info("Getting members in group: " + str(chatId))
+        try:
+            if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                         telegramID=str(chatId)) is False:
+                LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                return []
+            membersTG = client.get_chat_members(chat_id=chatId)
+
+
+            members: list[CustomMember] = []
+            async for member in membersTG:
+                if member.user.is_bot:
+                    LOG.trace("Skipping bot: " + str(member.user.id) + " in group: " + str(chatId))
+                    continue
+
+
+                if member.status is ChatMemberStatus.OWNER or member.status is ChatMemberStatus.ADMINISTRATOR:
+                    LOG.debug("Member is admin in group: " + str(chatId))
+                    adminRights = AdminRights(isAdmin=True,
+                                              canChangeInfo=member.privileges.can_change_info,
+                                              canDeleteMessages=member.privileges.can_delete_messages,
+                                              canEditMessages=member.privileges.can_edit_messages,
+                                              canInviteUsers=member.privileges.can_invite_users,
+                                              canManageChat=member.privileges.can_manage_chat,
+                                              canManageVideoChats=member.privileges.can_manage_video_chats,
+                                              canPinMessages=member.privileges.can_pin_messages,
+                                              canPostMessages=member.privileges.can_post_messages,
+                                              canPromoteMembers=member.privileges.can_promote_members,
+                                              canRestrictMembers=member.privileges.can_restrict_members,
+                                              isAnonymous=member.privileges.is_anonymous)
+
+                    promotedBy = member.promoted_by
+                    promotion: Promotion = Promotion(userId=str(promotedBy.id), username=promotedBy.username) if \
+                                            promotedBy is not None else None
+                    memberStatus: MemberStatus = MemberStatus.ADMINISTRATOR if member.status \
+                                                                               is pyrogram.enums.ChatMemberStatus.OWNER else MemberStatus.OWNER
+                else:
+                    LOG.debug("Member is not admin in group: " + str(chatId))
+                    adminRights = AdminRights(isAdmin=False)
+                    promotion: Promotion = None
+                    memberStatus: MemberStatus = MemberStatus.MEMBER
+
+                members.append(CustomMember(userId=str(member.user.id),
+                                            memberStatus=memberStatus,
+                                            isBot=member.user.is_bot,
+                                            username=member.user.username,
+                                            tag=member.custom_title,
+                                            adminRights=adminRights,
+                                            promotedBy=promotion))
+
+            return members
+        except PeerIdInvalid:
+            LOG.exception("Exception (in getMembersInGroup): PeerIdInvalid")
+            self.knownUserData.removeKnownUser(botName=telegram_bot_name, telegramID=chatId)
+            return []
+        except Exception as e:
+            LOG.exception("Exception (in getMembersInGroup): " + str(e))
+            return []
+
     def getMembersInGroup(self, sessionType: SessionType, chatId: (str, int)) -> list[CustomMember]:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
         LOG.info("Getting members in group: " + str(chatId))
         try:
+
             if sessionType == SessionType.BOT and \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
@@ -622,10 +790,46 @@ class Communication():
                 membersTG = self.sessionBot.get_chat_members(chat_id=chatId)
 
             members: list[CustomMember] = []
+
             for member in membersTG:
+                if member.user.is_bot:
+                    LOG.trace("Skipping bot: " + str(member.user.id) + " in group: " + str(chatId))
+                    continue
+
+
+                if member.status is ChatMemberStatus.OWNER or member.status is ChatMemberStatus.ADMINISTRATOR:
+                    LOG.debug("Member is admin in group: " + str(chatId))
+                    adminRights = AdminRights(isAdmin=True,
+                                              canChangeInfo=member.privileges.can_change_info,
+                                              canDeleteMessages=member.privileges.can_delete_messages,
+                                              canEditMessages=member.privileges.can_edit_messages,
+                                              canInviteUsers=member.privileges.can_invite_users,
+                                              canManageChat=member.privileges.can_manage_chat,
+                                              canManageVideoChats=member.privileges.can_manage_video_chats,
+                                              canPinMessages=member.privileges.can_pin_messages,
+                                              canPostMessages=member.privileges.can_post_messages,
+                                              canPromoteMembers=member.privileges.can_promote_members,
+                                              canRestrictMembers=member.privileges.can_restrict_members,
+                                              isAnonymous=member.privileges.is_anonymous)
+
+                    promotedBy = member.promoted_by
+                    promotion: Promotion = Promotion(userId=str(promotedBy.id), username=promotedBy.username) if \
+                        promotedBy is not None else None
+                    memberStatus: MemberStatus = MemberStatus.ADMINISTRATOR if member.status \
+                                                                               is pyrogram.enums.ChatMemberStatus.OWNER else MemberStatus.OWNER
+                else:
+                    LOG.debug("Member is not admin in group: " + str(chatId))
+                    adminRights = AdminRights(isAdmin=False)
+                    promotion: Promotion = None
+                    memberStatus: MemberStatus = MemberStatus.MEMBER
+
                 members.append(CustomMember(userId=str(member.user.id),
+                                            memberStatus=memberStatus,
                                             isBot=member.user.is_bot,
-                                            username=member.user.username))
+                                            username=member.user.username,
+                                            tag=member.custom_title,
+                                            adminRights=adminRights,
+                                            promotedBy=promotion))
 
             return members
         except PeerIdInvalid:
@@ -726,6 +930,143 @@ class Communication():
             return True
         except Exception as e:
             LOG.exception("Exception (in promoteMembers): " + str(e))
+            return False
+
+    def promoteSpecificMember(self, sessionType: SessionType, chatId: (str, int), userId: (str, int),#  participant: Participant,
+                              adminRights: AdminRights) -> bool:
+        try:
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(userId, (str, int)), "userId should be str or int"
+            #assert isinstance(participant, Participant), "participant should be a Participant object"
+            assert isinstance(adminRights, AdminRights), "adminRights should be an AdminRights object"
+            LOG.info("Promoting specific participant in group: " + str(chatId) + " with user id: " + str(userId))
+
+            if sessionType == SessionType.BOT:
+                if isinstance(chatId, type(None)) or \
+                        self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                             telegramID=str(chatId)) is False:
+                    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                    return False
+
+            # remove from admin list
+            promote: bool = False
+            if adminRights.isAdmin == True:
+                promote = True
+                LOG.debug("Promote particiopant to admin")
+            else:
+                LOG.debug("Remove participant from admin list")
+
+            if sessionType == SessionType.USER:
+                result = self.sessionUser.promote_chat_member(chat_id=chatId,
+                                                              user_id=userId,
+                                                              privileges=ChatPrivileges(
+                                                                  can_manage_chat=adminRights.canManageChat,
+                                                                  can_delete_messages=adminRights.canDeleteMessages,
+                                                                  can_manage_video_chats=adminRights.canManageVideoChats,
+                                                                  can_restrict_members=adminRights.canRestrictMembers,
+                                                                  can_promote_members=adminRights.canPromoteMembers,
+                                                                  can_change_info=adminRights.canChangeInfo,
+                                                                  can_invite_users=adminRights.canInviteUsers,
+                                                                  can_pin_messages=adminRights.canPinMessages,
+                                                                  is_anonymous=adminRights.isAnonymous
+                                                              )
+                                                              ) if promote is True else \
+                    self.sessionUser.promote_chat_member(chat_id=chatId,
+                                                              user_id=userId,
+                                                              privileges=ChatPrivileges(
+                                                                  can_manage_chat=False,
+                                                                  can_delete_messages=False,
+                                                                  can_manage_video_chats=False,
+                                                                  can_restrict_members=False,
+                                                                  can_promote_members=False,
+                                                                  can_change_info=False,
+                                                                  can_invite_users=False,
+                                                                  can_pin_messages=False,
+                                                                  is_anonymous=False
+                                                              )
+                                                              )
+
+                LOG.success("Response (promoteSpecificMember): " + str(result))
+
+            else:
+                    result = self.sessionBot.promote_chat_member(chat_id=chatId,
+                                                                  user_id=userId,
+                                                                  privileges=ChatPrivileges(
+                                                                      can_manage_chat=adminRights.canManageChat,
+                                                                      can_delete_messages=adminRights.canDeleteMessages,
+                                                                      can_manage_video_chats=adminRights.canManageVideoChats,
+                                                                      can_restrict_members=adminRights.canRestrictMembers,
+                                                                      can_promote_members=adminRights.canPromoteMembers,
+                                                                      can_change_info=adminRights.canChangeInfo,
+                                                                      can_invite_users=adminRights.canInviteUsers,
+                                                                      can_pin_messages=adminRights.canPinMessages,
+                                                                      is_anonymous=adminRights.isAnonymous
+                                                                  )
+                                                                  ) if promote is True else \
+                        self.sessionBot.promote_chat_member(chat_id=chatId,
+                                                             user_id=userId,
+                                                             privileges=ChatPrivileges(
+                                                                 can_manage_chat=False,
+                                                                 can_delete_messages=False,
+                                                                 can_manage_video_chats=False,
+                                                                 can_restrict_members=False,
+                                                                 can_promote_members=False,
+                                                                 can_change_info=False,
+                                                                 can_invite_users=False,
+                                                                 can_pin_messages=False,
+                                                                 is_anonymous=False
+                                                             )
+                                                             )
+                    LOG.success("Response (promoteSpecificMember): " + str(result))
+            return True
+        except Exception as e:
+            LOG.exception("Exception (in promoteSpecificMember): " + str(e))
+            return False
+
+    def setAdministratorTitle(self, sessionType: SessionType, chatId: (str, int), userId: (str, int), title: str) -> bool:
+        try:
+            assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
+            assert isinstance(chatId, (str, int)), "ChatId should be str or int"
+            assert isinstance(userId, (str, int)), "userId should be str or int"
+            assert isinstance(title, str), "Title should be str"
+            LOG.info("Setting administrator title in (super)group: " + str(chatId)
+                     + " with user id: " + str(userId) + " and title: " + str(title))
+
+            if sessionType == SessionType.BOT:
+                if isinstance(chatId, type(None)) or \
+                        self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
+                                                                             telegramID=str(chatId)) is False:
+                    LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
+                    return False
+
+            #title can be up to 16 characters long
+            if len(title) > 16:
+                title = title[:16 - 3] + '...'
+
+            if title == "":
+                LOG.debug("Remove administrator title")
+
+            if sessionType == SessionType.USER:
+                self.sessionUser.set_administrator_title(chat_id=chatId,
+                                                        user_id=userId,
+                                                        title=title)
+            else:
+                self.sessionBot.set_administrator_title(chat_id=chatId,
+                                                        user_id=userId,
+                                                        title=title)
+            return True
+        except ValueError as e:
+            LOG.exception("Exception (in setAdministratorTitle); ValueError : " + str(e))
+            return False
+        except ChatAdminRequired as e:
+            LOG.exception("Exception (in setAdministratorTitle); ChatAdminRequired(maybe current user is admin but did"
+                          "not raise the goal user to admin): " + str(e))
+            LOG.debug("Only admin can set administrator title. And only if current admin raised the goal user to admin"
+                      "can set administrator title")
+            return False
+        except Exception as e:
+            LOG.exception("Exception (in setChatDescription): " + str(e))
             return False
 
     def setChatTitle(self, chatId: (str, int), title: str) -> bool:
@@ -1092,6 +1433,33 @@ class Communication():
         except Exception as e:
             LOG.exception("Exception (in commandResponseDonate): " + str(e))
 
+    async def commandResponseGetChatID(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on command 'getChatID' from user: " + str(message.chat.username) if not None else "None")
+            chatID = message.chat.id
+            userID = message.from_user.id
+
+            if message.reply_to_top_message_id:
+                messageThreadID = message.reply_to_top_message_id
+            else:
+                messageThreadID = message.reply_to_message_id
+
+            async for m in client.get_chat_members(chatID, filter=ChatMembersFilter.ADMINISTRATORS):
+                try:
+                    LOG.debug("Admin: " + str(m))
+                    adminID = m.user.id
+                    if adminID == userID:
+                        self.knownUserData.setKnownUser(botName=telegram_bot_name, telegramID=message.chat.id,
+                                                        isKnown=True)
+                        await client.send_message(chat_id=chatID,
+                                                  reply_to_message_id=messageThreadID,
+                                                  text="Group's telegram ID: " + str(chatID))
+                except Exception as e:
+                    LOG.exception("Exception (in commandResponseGetChatID.inline for loop): " + str(e))
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseGetChatID): " + str(e))
+
+
     async def actionVideoStarted(self, client: Client, message: Message):
         try:
             chatId = message.chat.id
@@ -1208,6 +1576,458 @@ class Communication():
         except Exception as e:
             LOG.exception("Exception (in testtest): " + str(e))
 
+    async def commandResponseCheck(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on command 'getChatID' from user: " + str(message.chat.username) if not None else "None")
+            chatID = message.chat.id
+            userID = message.from_user.id
+
+            if  len(message.text.split(" ")) != 2:
+                await client.send_message(chat_id=chatID,
+                                          text="Command must be formatted: \n /check < accountName/telegram >")
+                return
+
+            accountName: str = message.text.split(" ")[1]
+            if accountName == "":
+                await client.send_message(chat_id=chatID,
+                                          text="Command must be formatted: \n /check < accountName/telegram >")
+                return
+
+            participants: list[Participant] = self.database.getParticipantByContract(contractAccount=eden_account,
+                                                                                     fromDate=datetime.now() - timedelta(
+                                                                                         days=1000)
+                                                                                     )
+            if participants is None or len(participants) == 0:
+                await client.send_message(chat_id=chatID,
+                                          text="Something went wrong. No participants found in database")
+                return
+            for participant in participants:
+                if PARSE_TG_NAME(participant.telegramID).lower() == \
+                    PARSE_TG_NAME(accountName).lower():
+                    #found using telegramID
+
+                    knownUser: KnownUser =self.knownUserData.getKnownUserFromOptimized(botName=telegram_bot_name,
+                                                                 telegramID=PARSE_TG_NAME(name=participant.telegramID))
+
+                    await client.send_message(chat_id=chatID,
+                                              #reply_to_message_id=messageThreadID,
+                                              text="User with this telegramID ** is known** to bot. \nEden account: **"
+                                                   + participant.accountName + "**"
+                                              if knownUser is not None else
+                                                "User with this telegramID **not known** to bot. \nEden account: **"
+                                                   + participant.accountName + "**")
+                    return
+
+                elif participant.accountName.lower() == accountName.lower():
+                    #found using accountName
+                    knownUser: KnownUser = self.knownUserData.getKnownUserFromOptimized(botName=telegram_bot_name,
+                                                                                        telegramID=PARSE_TG_NAME(
+                                                                                            name=participant.telegramID))
+
+                    await client.send_message(chat_id=chatID,
+                                              # reply_to_message_id=messageThreadID,
+                                              text="User with this account name is **known** to bot. \nTelegram account: **"
+                                                   + participant.telegramID + "**"
+                                              if knownUser is not None else
+                                              "User with this account name is **not known** to bot. \nTelegram account: **"
+                                                   + participant.telegramID + "**")
+                    return
+
+            await client.send_message(chat_id=chatID,
+                                      # reply_to_message_id=messageThreadID,
+                                      text="Given account name or telegramID not found in database")
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseGetChatID): " + str(e))
+
+    def cleanUsername(self, username):
+        assert isinstance(username, str), "username is not a string: {}".format(username)
+        # Lowercase the username and strip leading '@'
+        return username.lstrip('@').lower()
+
+    def usernameInList(self, username, userList):
+        assert isinstance(username, str), "username is not a string"
+        assert isinstance(userList, list), "userList is not a list"
+        cleanedUsername = self.cleanUsername(username)
+
+        # Clean all usernames in the list
+        cleanedUserList = [self.cleanUsername(user) for user in userList]
+
+        # Check if the cleaned username is in the cleaned list
+        return cleanedUsername in cleanedUserList
+
+    async def checkIfUserHasAdminRightsInGroupOrBotAdmin(self, client: Client, chatId: int, username: str):
+        assert isinstance(chatId, int), "chatId is not a int"
+        assert isinstance(username, str), "userId is not a str"
+        try:
+            LOG.debug("Check if user has admin rights in group or user is admin in bot")
+
+            if self.usernameInList(username, telegram_admin_ultimate_rights_id):
+                return True
+
+            if self.usernameInList(username, telegram_admins_id):
+                return True
+
+
+            groupChatMember = await client.get_chat_member(chat_id=chatId,  user_id=username)
+
+
+            if groupChatMember is None:
+                LOG.error("Member not found in group: " + str(chatId))
+                return False
+
+            if groupChatMember.status is ChatMemberStatus.OWNER or groupChatMember.status is ChatMemberStatus.ADMINISTRATOR:
+                return True
+
+            return False
+
+        except Exception as e:
+            LOG.exception("Exception (in checkIfUserHasAdminRightsInGroupOrBotAdmin): " + str(e))
+            return False
+
+
+
+    async def commandResponseCheckParticipants(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on command 'checkParticipants' from user: " + str(message.chat.username) if not None else "None")
+            chatID = message.chat.id
+            userID = message.from_user.id
+
+            if message.from_user.username is None:
+                raise Exception("User has no username")
+
+            username: str = message.from_user.username
+
+            hasAccess: bool = await self.checkIfUserHasAdminRightsInGroupOrBotAdmin(
+                client=client,
+                chatId=int(community_group_id),
+                username=username
+            )
+            if not hasAccess:
+                LOG.error("User has no access to this command")
+                await client.send_message(chat_id=chatID,
+                                          text="You do not have access to this command")
+                return
+
+            if message.reply_to_top_message_id:
+                messageThreadID = message.reply_to_top_message_id
+            else:
+                messageThreadID = message.reply_to_message_id
+
+
+            election: Election = self.database.getLastElection(contract=eden_account)
+            if election is None:
+                raise Exception("No election found in database")
+
+            dummyElections: Election = self.database.getDummyElection(election=election)
+            if dummyElections is None:
+                raise Exception("No dummy elections found in database")
+
+            participants: list[Participant] = self.database.getMembers(election=dummyElections)
+            if participants is None:
+                raise Exception("No participants found in database")
+
+            knownUsers: list[KnownUser] = self.database.getKnownUsers(botName=telegram_bot_name)
+            if knownUsers is None:
+                raise Exception("No known users found in database")
+
+            toSend: str = "Users that are **not known** to bot, but they will participate in next elections: \n"
+            await client.send_message(chat_id=chatID,
+                                      reply_to_message_id=messageThreadID,
+                                      text=toSend)
+            toSend = "```python \n"
+            toSendIndex: int = 0
+            for room, participant in participants:
+                if participant.participationStatus == False:
+                    #only participants that will participate in next elections
+                    continue
+                #iterate over known users
+                isFound: bool = False
+                for knownUser in knownUsers:
+                    if participant.telegramID is None:
+                        continue
+                    if PARSE_TG_NAME(participant.telegramID).lower() == PARSE_TG_NAME(knownUser.userID).lower():
+                        if knownUser.isKnown:
+                            # if user is known, and not banned
+                            isFound = True
+                        break
+                if isFound == False:
+                    #add to send list, because user is known
+                    participantToStr: str = "Telegram id: " + str(participant.telegramID)
+                    participantToStr += ", AccountName: " + (
+                        str(participant.accountName) if participant.accountName is not None else "")
+                    toSend += participantToStr + "\n"
+                    toSendIndex += 1
+                    if toSendIndex > 30:
+                        toSend += "\n ```"
+                        isSent: bool = await client.send_message(chat_id=chatID,
+                                                            reply_to_message_id=messageThreadID,
+                                                            text=toSend)
+
+                        toSend = "```python \n"
+                        toSendIndex = 0
+                        if isSent:
+                            LOG.success("Message sent")
+                        else:
+                            LOG.error("Message not sent")
+            if toSendIndex > 0:
+                toSend += "\n ```"
+                isSent: bool = await client.send_message(chat_id=chatID,
+                                                    reply_to_message_id=messageThreadID,
+                                                    text=toSend)
+                if isSent:
+                    LOG.success("Message sent")
+                else:
+                    LOG.error("Message not sent")
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseCheckParticipants): " + str(e))
+    """
+    #next function is duplicated from communityGroup - because of circular imports
+    def merge(self, communityParticipantsNFT: list[CommunityParticipant], participantsDB: list[Participant]) \
+            -> list[CommunityParticipant]:
+        try:
+            LOG.debug("Merge community participants with participants from database to one list - to have NFT data"
+                      "and telegram data in one list")
+            for communityParticipantNFT in communityParticipantsNFT:
+                LOG.info("Community participant: " + str(communityParticipantNFT) + " ... looking for telegramID")
+                isFound: bool = False
+                for participantDB in participantsDB:
+                    if communityParticipantNFT.accountName == participantDB.accountName and \
+                            participantDB.telegramID is not None and \
+                            participantDB.telegramID != "":
+                        LOG.info("Found telegramID: " + str(participantDB.telegramID))
+                        communityParticipantNFT.telegramID = participantDB.telegramID
+                        #creating custom member
+                        #communityParticipantNFT.customMember = CustomMember(userId='-1',
+                        #                                          username=communityParticipantNFT.telegramID,
+                        #                                          memberStatus=MemberStatus.OTHER,
+                        #                                          )
+                        isFound = True
+                        break
+
+                if isFound is False:
+                    #not found telegramID
+                    communityParticipantNFT.telegramID = "-1"
+                    #communityParticipantNFT.customMember = CustomMember(userId='-1',
+                    #                                                    memberStatus=MemberStatus.OTHER,
+                    #                                                    isUnknown=True)
+            return communityParticipantsNFT
+        except Exception as e:
+            LOG.exception("Error in merge: " + str(e))
+            raise CommunicationException("Error in merge: " + str(e))
+    """
+    # next function is duplicated from communityGroup - because of circular imports
+    def getUsersFromDatabase(self, contractAccount: str, executionTime: datetime, rangeInMonths: int):
+        assert isinstance(contractAccount, str), "contractAccount must be type of str"
+        assert isinstance(executionTime, datetime), "executionTime must be type of datetime"
+        assert isinstance(rangeInMonths, int), "rangeInMonths must be type of int"
+        try:
+            LOG.debug(
+                "Get users from database with execution time " + str(executionTime - timedelta(days=rangeInMonths)))
+            # desc order by account name(1) and election date(2)
+            participants: list[Participant] = self.database.getParticipantByContract(contractAccount=contractAccount,
+                                                                                     fromDate=executionTime - timedelta(
+                                                                                         days=rangeInMonths))
+            if participants is None:
+                raise CommunicationException(
+                    "Communication. There was an error when getting participants from database")
+            return participants
+
+        except Exception as e:
+            LOG.exception("Error in getUsersFromDatabase: " + str(e))
+            raise CommunicationException("Error in getUsersFromDatabase: " + str(e))
+
+    def merge(self, communityParticipantsNFT: list[CommunityParticipant], participantsDB: list[Participant],
+              participantsInGroup: list[CustomMember]) \
+            -> list[CommunityParticipant]:
+        assert isinstance(communityParticipantsNFT, list), "communityParticipantsNFT must be type of list"
+        assert isinstance(participantsDB, list), "participantsDB must be type of list"
+        assert isinstance(participantsInGroup, list), "participantsInGroup must be type of list"
+        try:
+            LOG.debug("Merge community participants with participants from database to one list - to have NFT data"
+                      "and telegram data in one list")
+            for communityParticipantNFT in communityParticipantsNFT:
+                LOG.info("Community participant: " + str(communityParticipantNFT) + " ... looking for telegramID")
+                isFound: bool = False
+                for participantDB in participantsDB:
+                    if communityParticipantNFT.accountName == participantDB.accountName and \
+                            participantDB.telegramID is not None and \
+                            participantDB.telegramID != "":
+                        LOG.info("Found telegramID: " + str(participantDB.telegramID))
+                        communityParticipantNFT.telegramID = participantDB.telegramID
+                        isFound = True
+                        break
+
+                if isFound is False:
+                    #not found telegramID
+                    communityParticipantNFT.telegramID = "-1"
+
+            LOG.debug("Merge community participants with participants from group to one list is completed - "
+                      "to have NFT data and telegram data in one list. Now we will check which participants are not"
+                      "in group and add them to list")
+
+            inGroup: list[CommunityParticipant] = []
+            for communityParticipantNFT in communityParticipantsNFT:
+                assert isinstance(communityParticipantNFT, CommunityParticipant), \
+                "communityParticipantNFT must be type of CommunityParticipant"
+
+                if communityParticipantNFT.telegramID == "-1" or communityParticipantNFT.telegramID == "":
+                    LOG.trace("Participant " + str(communityParticipantNFT) + " has unknown telegramID")
+                    continue
+
+                found: list[Participant] = [x for x in participantsInGroup if
+                                            REMOVE_AT_SIGN_IF_EXISTS(communityParticipantNFT.telegramID.lower()) ==
+                                            x.username]
+
+                if found is not None and len(found) > 0:
+                    LOG.debug("Participant " + str(found) + " is in group")
+                    continue
+                else:
+                    LOG.debug("Participant " + str(communityParticipantNFT) + " is in the group")
+                    inGroup.append(communityParticipantNFT)
+
+
+            LOG.debug("Merge community participants with participants from group to one list is completed - Size: " + \
+                        str(len(inGroup)))
+            return inGroup
+        except Exception as e:
+            LOG.exception("Error in merge: " + str(e))
+            raise CommunicationException("Error in merge: " + str(e))
+
+
+    # next function is duplicated from communityGroup - because of circular imports
+    async def getUsersWithNFTAndNotInGroup(self, contractAccount: str, executionTime: datetime, rangeInDays: int,
+                                     client: Client, chatId: (str,int) ) -> \
+            list[CommunityParticipant]:
+        assert isinstance(contractAccount, str), "contractAccount must be type of str"
+        assert isinstance(executionTime, datetime), "executionTime must be type of datetime"
+        assert isinstance(rangeInDays, int), "endDate must be type of int"
+        assert isinstance(client, Client), "client must be type of Client"
+        assert isinstance(chatId, (str, int)), "chatId must be type of str or int"
+        try:
+            if rangeInDays < 0:
+                raise CommunicationException("rangeInDays must be positive")
+            LOG.info("Get users with NFT with execution time " + str(executionTime)
+                     + " and date range" + str(rangeInDays))
+
+            endDate: datetime = executionTime.replace(microsecond=0)
+            startDate: datetime = endDate - timedelta(days=rangeInDays)
+
+            LOG.debug("Get NFT between " + str(startDate) + " and " + str(endDate))
+
+            givenSBT: Response = self.edenData.getGivenSBT(contractAccount=contractAccount,
+                                                           startTime=startDate,
+                                                           endTime=endDate)
+            if isinstance(givenSBT, ResponseError):
+                raise CommunicationException("There was an error when getting given SBT: " + str(givenSBT.error))
+
+            communityParticipants: list[CommunityParticipant] = self.edenData.SBTParser(sbtReport=givenSBT.data)
+            #community pactitipants has only SBT data from now
+
+            if communityParticipants is None:
+                raise CommunicationException("There was an error when parsing given SBT: " + str(givenSBT.error))
+            LOG.debug(
+                "Community participants has been parsed. Number of participants: " + str(len(communityParticipants)))
+
+            # get the participants from the database
+            participants: list[Participant] = self.getUsersFromDatabase(contractAccount=contractAccount,
+                                                                        executionTime=executionTime,
+                                                                        rangeInMonths=round(rangeInDays * 1.5 / 30))
+
+            #get current participants in the community group
+            participantsInGroup: list[CustomMember] = await self.getMembersInGroupS(client=client,
+                                                                                    chatId=int(chatId))
+            if len(participantsInGroup) == 0:
+                LOG.exception("There was an error when getting participants from the group or group is just empty")
+                raise CommunicationException("There was an error when getting participants from the group or group"
+                                             "is just empty")
+
+            # merge the participants from the database with the community participants - not known participants from
+            # the database will have telegramID = -1
+            communityParticipants: list[CommunityParticipant] = self.merge(communityParticipantsNFT=communityParticipants,
+                                                                           participantsDB=participants,
+                                                                           participantsInGroup=participantsInGroup)
+            return communityParticipants
+        except Exception as e:
+            LOG.exception("Error in getUsersWithNFTAndNotInGroup: " + str(e))
+            raise CommunicationException("Error in getUsersWithNFTAndNotInGroup: " + str(e))
+
+
+    async def commandResponseCheckParticipantsSBT(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on command 'checkParticipantsSBT' from user: " + str(message.chat.username) if not None else "None")
+            chatID = message.chat.id
+            userID = message.from_user.id
+
+            if message.from_user.username is None:
+                raise Exception("User has no username")
+
+            username: str = message.from_user.username
+
+            hasAccess: bool = await self.checkIfUserHasAdminRightsInGroupOrBotAdmin(
+                client=client,
+                chatId=int(community_group_id),
+                username=username
+            )
+            if not hasAccess:
+                LOG.error("User has no access to this command")
+                await client.send_message(chat_id=chatID,
+                                          text="You do not have access to this command")
+                return
+
+            if message.reply_to_top_message_id:
+                messageThreadID = message.reply_to_top_message_id
+            else:
+                messageThreadID = message.reply_to_message_id
+
+            RANGE_IN_DAYS = 31 * 9
+            executionTime = datetime.now() - timedelta(hours=6)
+            participantsGoalState: list[CommunityParticipant] = \
+                await self.getUsersWithNFTAndNotInGroup(contractAccount=eden_account,
+                                                 rangeInDays=RANGE_IN_DAYS,
+                                                 executionTime=executionTime,
+                                                 client=client,
+                                                 chatId=community_group_id,
+                                                 )
+            if participantsGoalState is None:
+                raise Exception("There was an error when getting participants with NFT")
+
+            toSend: str = "Users that should be in community group (they have SBT):\n"
+
+            await client.send_message(chat_id=chatID,
+                                reply_to_message_id=messageThreadID,
+                                text=toSend)
+
+            toSend = "```python \n"
+            toSendIndex: int = 0
+            for participant in participantsGoalState:
+                #add to send list, because user is known
+                participantToStr: str = "Telegram id: " + str(participant.telegramID)
+                participantToStr += ", AccountName: " + (
+                    str(participant.accountName) if participant.accountName is not None else "")
+                toSend += participantToStr + "\n"
+                toSendIndex += 1
+                if toSendIndex > 9:
+                    toSend += "\n ```"
+                    await client.send_message(chat_id=chatID,
+                                              reply_to_message_id=messageThreadID,
+                                              text=toSend)
+                    toSend = "```python \n"
+                    toSendIndex = 0
+            if toSendIndex > 0:
+                toSend += "\n ```"
+                isSent: bool = await client.send_message(chat_id=chatID,
+                                                         reply_to_message_id=messageThreadID,
+                                                         text=toSend)
+                if isSent:
+                    LOG.success("Message sent")
+                else:
+                    LOG.error("Message not sent")
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseCheckParticipants): " + str(e))
+
     """async def commandResponseRecording(self, client: Client, message: Message):
         try:
             chatId = message.chat.id
@@ -1288,36 +2108,11 @@ class Communication():
     def idle(self):
         idle()
 
-
-def runPyrogram():
-    comm = Communication()
-    comm.start(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    # chatID = comm.createSuperGroup(name="test1", description="test1")
-    # print("Newly created chat id: " + str(chatID)) #test1 - 1001893075719
-
-    # comm.sendPhoto(sessionType=SessionType.BOT,
-    #               chatId="test",
-    #               caption="test",
-    #               photoPath=open('../../assets/startVideoPreview1.png'))
-
-    chatID = -1001893075719
-    botID = 1
-    botName = "@up_vote_demo_bot"
-    userID = 1
-    # first intecation
-
-
 def main():
     ###########################################
     # multiprocessing
-    pyogram = Process(target=runPyrogram)
-    pyogram.start()
+    kva = 9
     #############################################
-
-    while True:
-        time.sleep(3)
-        print("main Thread")
-    i = 9
 
 
 if __name__ == "__main__":

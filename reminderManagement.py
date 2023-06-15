@@ -24,7 +24,7 @@ from transmission import SessionType, Communication
 
 import gettext
 
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmissionCustom import ADD_AT_SIGN_IF_NOT_EXISTS
 
 _ = gettext.gettext
 __ = gettext.ngettext
@@ -94,10 +94,11 @@ class ReminderManagement:
                                     dateTimeBefore=roundEnd - timedelta(minutes=item[0]))
                 self.database.createReminder(reminder=reminder, csession=session)
 
-            session.close()
+            self.database.removeCcession(session=session)
             LOG.debug("Reminders created")
         except Exception as e:
-            session.close()
+            self.database.rollbackCcession(session=session)
+            self.database.removeCcession(session=session)
             LOG.exception("Exception thrown when called createRemindersIFNotExists; Description: " + str(e))
 
     def setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:

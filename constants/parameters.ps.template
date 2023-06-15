@@ -75,6 +75,13 @@ eden_support_url_env: str = "https://t.me/EdenOSinfo"  # just info if user is no
 
 # attomic assets data
 atomic_assets_account_env: str = "atomicassets"
+atomic_assets_SBT_account_env: str = "sbts4edeneos"
+
+#managing community group
+
+# community group id
+community_group_id_env: str = ""
+
 
 # blocks.io
 blocksIoLinkToTheContract_env: str = \
@@ -87,7 +94,9 @@ database_password_env: str = ""
 database_host_env: str = ""
 database_port_env: int = 1
 
-telegram_admins_id: list = ['']  # admins must start intecation with bot, unsless it wont work
+telegram_admins_id: list = ['']  # admins must start interaction with bot, unless it wont work
+telegram_admin_ultimate_rights_id: list = ['']  # admins must start interaction with bot, unless it wont work
+
 
 # TG Sessions
 
@@ -161,6 +170,10 @@ eden_year = env.get('EDEN_YEAR_ENV', eden_year_env)
 
 eden_support_url = env.get('EDEN_SUPPORT_URL_ENV', eden_support_url_env)
 atomic_assets_account = env.get('EDEN_ASSETS_ACCOUNT_ENV', atomic_assets_account_env)
+
+atomic_assets_SBT_account = env.get('EDEN_ASSETS_SBT_ACCOUNT_ENV', atomic_assets_SBT_account_env)
+
+community_group_id = env.get('COMMUNITY_GROUP_ID_ENV', community_group_id_env)
 
 blocksIoLinkToTheContract = env.get('BLOKS_IO_LINK_TO_THE_CONTRACT_ENV', blocksIoLinkToTheContract_env)
 

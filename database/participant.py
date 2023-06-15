@@ -40,6 +40,16 @@ class Participant(Base):
         self.nftTemplateID = nftTemplateID
         self.participantName = participantName
 
+    @classmethod
+    def deepCopy(cls, participant):
+        assert isinstance(participant, Participant), "participant must be type of Participant"
+        return cls(accountName=participant.accountName,
+                   roomID=participant.roomID,
+                   participationStatus=participant.participationStatus,
+                   telegramID=participant.telegramID,
+                   nftTemplateID=participant.nftTemplateID,
+                   participantName=participant.participantName)
+
     def __str__(self):
         return f"Participant: {self.accountName}, {self.roomID}, {self.participationStatus}, {self.telegramID}, " \
                f"{self.nftTemplateID}, {self.participantName}"

@@ -4,10 +4,10 @@ from enum import Enum
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from chain import EdenData
-from chain.dfuse import DfuseConnection, GraphQLApi
+from chain.dfuse import DfuseConnection, GraphQLApi, ResponseSuccessful
 from chain.stateElectionState import ElectCurrTable
 from constants import alert_message_time_upload_video, ReminderGroup, time_span_for_notification_upload_video, \
-    telegram_bot_name, default_language, CurrentElectionState
+    telegram_bot_name, default_language, CurrentElectionState, eden_account
 from database import Database, Election, Reminder, ReminderSent, ReminderSendStatus
 from database.election import ElectionRound
 from database.participant import Participant
@@ -20,7 +20,7 @@ import gettext
 
 from text.textManagement import VideoReminderTextManagement, Button
 from transmission import Communication, SessionType
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmissionCustom import ADD_AT_SIGN_IF_NOT_EXISTS
 
 _ = gettext.gettext
 __ = gettext.ngettext
@@ -180,16 +180,16 @@ class AfterElectionReminderManagement:
             raise AfterElectionReminderManagementException("Exception (in getTextForVideoUploadReminder): " + str(e))
 
     def sendAndSyncWithDatabaseUploadVideoNotif(self,
-                                                member: Participant,
+                                                participants: list[Participant],
                                                 room: Room,
                                                 election: Election,
                                                 reminder: Reminder,
                                                 reminderSentList: list[ReminderSent],
                                                 deadlineInMinutes: int,
-                                                modeDemo: ModeDemo = None) -> bool:
+                                                modeDemo: ModeDemo = None):
         """Send reminder and write to database"""
         try:
-            assert isinstance(member, Participant), "member is not instance of Participant"
+            assert isinstance(participants, list), "participants is not instance of list"
             assert isinstance(room, Room), "room is not instance of Room"
             assert isinstance(election, Election), "election is not instance of Election"
             assert isinstance(reminder, Reminder), "reminder is not instance of Reminder"
@@ -199,17 +199,28 @@ class AfterElectionReminderManagement:
 
             LOG.trace("Send and sync with database. "
                       "Election id: " + str(election.electionID) +
-                      ", member: " + str(member) +
                       ", room: " + str(room))
 
-            foundReminders: list[ReminderSent] = [x for x in reminderSentList if x.accountName == member.accountName]
+            particiapntsToNotify: list[Participant] = []
+            for participant in participants:
+                if isinstance(participant, Participant) is False:
+                    LOG.exception("participant is not instance of Participant")
+                    raise AfterElectionReminderManagementException("participant is not instance of Participant")
 
-            # if participant is found in reminderSentList + status is sent then skip
-            if len(foundReminders) > 0:
-                LOG.debug("Participant is found in reminderSentList + status is 'SEND'")
-                LOG.info("Reminder already sent to telegramID: " + str(member.telegramID))
+                foundReminders: list[ReminderSent] = [x for x in reminderSentList if x.accountName == participant.accountName and
+                                                                                     x.round == room.round]
+
+                # if participant is found in reminderSentList + status is sent then skip
+                if len(foundReminders) > 0:
+                    LOG.debug("Participant is found in reminderSentList + status is 'SEND'")
+                    LOG.info("Reminder already sent to telegramID: " + str(participant.telegramID))
+                    continue
+                else:
+                    particiapntsToNotify.append(participant)
+
+            if len(particiapntsToNotify) == 0:
+                LOG.info("No participants to notify. Everybody already notified")
                 return
-
             # prepare and send notification to the user
             # RawActionWeb().electVideo(round=reminder.round,
             #                                             voter=member.accountName,
@@ -245,38 +256,56 @@ class AfterElectionReminderManagement:
             )
 
             sendResponse: bool = False
+            for member in particiapntsToNotify:
+                try:
+                    cSession = self.database.createCsesion(expireOnCommit=False)
+                    LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
+                    member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
+                    sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
+                                                                  chatId=member.telegramID,
+                                                                  text=uploadReminderText,
+                                                                  inlineReplyMarkup=replyMarkup)
 
-            try:
-                cSession = self.database.createCsesion(expireOnCommit=False)
-                LOG.trace("Live mode is enabled, sending message to: " + member.telegramID)
-                member.telegramID = ADD_AT_SIGN_IF_NOT_EXISTS(member.telegramID)
-                sendResponse = self.communication.sendMessage(sessionType=SessionType.BOT,
-                                                              chatId=member.telegramID,
-                                                              text=uploadReminderText,
-                                                              inlineReplyMarkup=replyMarkup)
+                    LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
+                             + ". Saving to the database under electionID: " + str(election.electionID))
 
-                LOG.info("LiveMode; Is message sent successfully to " + member.telegramID + ": " + str(sendResponse)
-                         + ". Saving to the database under electionID: " + str(election.electionID))
-
-                response: bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
-                                                                                accountName=member.accountName,
-                                                                                sendStatus=ReminderSendStatus.SEND if sendResponse is True
-                                                                                else ReminderSendStatus.ERROR,
-                                                                                cSession=cSession)
-                if response is True:
-                    self.database.commitCcession(session=cSession)
-                else:
+                    response: bool = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
+                                                                                    accountName=member.accountName,
+                                                                                    sendStatus=ReminderSendStatus.SEND if sendResponse is True
+                                                                                    else ReminderSendStatus.ERROR,
+                                                                                    round=room.round,
+                                                                                    cSession=cSession)
+                    if response is True:
+                        self.database.commitCcession(session=cSession)
+                    else:
+                        self.database.rollbackCcession(session=cSession)
+                    self.database.removeCcession(session=cSession)
+                except Exception as e:
+                    LOG.exception("Exception in sendAndSyncWithDatabaseUploadVideoNotification.inside. Description: " +
+                                  str(e))
                     self.database.rollbackCcession(session=cSession)
-                self.database.removeCcession(session=cSession)
-            except Exception as e:
-                LOG.exception("Exception in sendAndSyncWithDatabaseUploadVideoNotification.inside. Description: " +
-                              str(e))
-                self.database.rollbackCcession(session=cSession)
-                self.database.removeCcession(session=cSession)
-            return sendResponse
-
+                    self.database.removeCcession(session=cSession)
         except Exception as e:
             LOG.exception("Exception (in sendAndSyncWithDatabaseUploadVideoNotification): " + str(e))
+
+    def videoUploadTimeframe(self, electionDate: datetime, executionTime: datetime) -> tuple[datetime]:
+        """Check if it is time to send reminder"""
+        try:
+            assert isinstance(electionDate, datetime), "electionDate is not instance of datetime"
+            assert isinstance(executionTime, datetime), "executionTime is not instance of datetime"
+
+            LOG.trace("Get video upload timeframe. "
+                      "ElectionDate: " + str(electionDate) +
+                      "executionTime: " + str(executionTime)
+                      )
+            if executionTime <= electionDate:
+                LOG.exception("Execution time is less or equal to election date. Something is wrong")
+                raise AfterElectionReminderManagementException("Execution time is less or equal to election date. Something is wrong")
+
+            return electionDate, executionTime
+        except Exception as e:
+            LOG.exception("Exception (in videoUploadTimeframe): " + str(e))
+            raise AfterElectionReminderManagementException("Exception (in videoUploadTimeframe): " + str(e))
 
     def isVideoReminderTimeframe(self, executionTime: datetime, electionDate: datetime, deadlineInMinutes: int) -> bool:
         """Check if it is time to send reminder"""
@@ -341,7 +370,6 @@ class AfterElectionReminderManagement:
                 LOG.debug("It is not time to send reminder")
                 return
 
-
             reminders = self.database.getReminders(election=previousElection, reminderGroup1=ReminderGroup.UPLOAD_VIDEO)
             if reminders is not None:
                 for item in reminders:
@@ -363,8 +391,22 @@ class AfterElectionReminderManagement:
                             #  update known users - just to be sure that all known users are in local database
                             self.communication.updateKnownUserData(botName=telegram_bot_name)
 
+                            #get all video upload actions from blockchain
+                            startTime, endTime = self.videoUploadTimeframe(electionDate=electCurr.getLastElectionTime(),
+                                                                           executionTime=executionTime)
+
+                            actionsVideoUploadResponse: list = self.getActionsVideoUploadedFromChain(account=eden_account,
+                                                            startTime=startTime,
+                                                            endTime=endTime)
+                            if isinstance(actionsVideoUploadResponse, ResponseSuccessful) is False:
+                                LOG.exception("actionsVideoUploadResponse is not ResponseSuccessful.")
+
+                            actionsVideoUpload: list = actionsVideoUploadResponse.data
+
+                            currentRoom: Room = None
+                            usersInCurrentRoom: list[Participant] = []
                             for room, member in roomsAndMembers:
-                                if room.roomIndex == ElectionRound.FINAL.value:
+                                if room.round == ElectionRound.FINAL.value:
                                     LOG.debug("Skip sending reminder to participants of final room")
                                     continue
 
@@ -372,17 +414,51 @@ class AfterElectionReminderManagement:
                                     LOG.debug("Member " + str(member) + " has no known telegramID, skip sending")
                                     continue
 
-                                isSent: bool = \
-                                    self.sendAndSyncWithDatabaseUploadVideoNotif(member=member,
-                                                                                 room=room,
+                                if currentRoom is None:
+                                    #first iteration
+                                    currentRoom = room
+
+                                if room.roomID != currentRoom.roomID:
+                                    #roomChanged - check if they already sent video and send reminder if needed
+
+                                    if self.checkIfGroupSentVideo(actionVideoReport=actionsVideoUpload,
+                                                                      round=currentRoom.round,
+                                                                      participants=usersInCurrentRoom) is False:
+                                        LOG.debug("Group (roomId: " + str(currentRoom.roomID) +
+                                                  ") has not sent a video yet. Send reminder to all participants")
+                                        self.sendAndSyncWithDatabaseUploadVideoNotif(participants=usersInCurrentRoom,
+                                                                                 room=currentRoom,
                                                                                  election=previousElection,
                                                                                  reminder=reminder,
                                                                                  reminderSentList=reminderSentList,
                                                                                  deadlineInMinutes=deadlineInMinutes,
                                                                                  modeDemo=modeDemo)
-                                if isSent:
-                                    LOG.info("Reminder (for user: " + member.accountName + " sent to telegramID: "
-                                             + member.telegramID)
+                                    else:
+                                        LOG.debug("Group particiapants (roomId: " + str(room.roomID) + ") have  got "
+                                                  "a video. Do not send reminder to particiapnts")
+                                    currentRoom = room
+                                    usersInCurrentRoom.clear()
+
+                                #add member to current room
+                                usersInCurrentRoom.append(member)
+
+                            if currentRoom is not None and usersInCurrentRoom is not None:
+                                #send reminder to last room
+                                if not self.checkIfGroupSentVideo(actionVideoReport=actionsVideoUpload,
+                                                                  round=currentRoom.round,
+                                                                  participants=usersInCurrentRoom) is False:
+                                    LOG.debug("Group (roomId: " + str(currentRoom.roomID) +
+                                              ") has not sent a video yet. Send reminder to all participants")
+                                    self.sendAndSyncWithDatabaseUploadVideoNotif(participants=usersInCurrentRoom,
+                                                                                 room=currentRoom,
+                                                                                 election=previousElection,
+                                                                                 reminder=reminder,
+                                                                                 reminderSentList=reminderSentList,
+                                                                                 deadlineInMinutes=deadlineInMinutes,
+                                                                                 modeDemo=modeDemo)
+                                else:
+                                    LOG.debug("Group (roomId: " + str(currentRoom.roomID) + ") has already sent a video. "
+                                              "Do not send reminder to particiapnts")
 
                         else:
                             LOG.debug("... reminder is not needed!")
@@ -391,20 +467,67 @@ class AfterElectionReminderManagement:
         except Exception as e:
             LOG.exception("Exception thrown when called sendReminderIfNeeded; Description: " + str(e))
 
-    def getActionsVideoUploaded(self, account: str, startTime: int, endTime: int) -> list:  # made by bot
+    def getActionsVideoUploadedFromChain(self, account: str, startTime: int, endTime: int) -> list:
         assert isinstance(account, str), "account must be type of str"  # where smart contract is deployed
         assert isinstance(startTime, datetime), "startTime must be type of datetime"
-        assert isinstance(endTime, int), "endTime must be type of datetime"
+        assert isinstance(endTime, datetime), "endTime must be type of datetime"
         try:
             LOG.debug("Check if video is uploaded on account: " + account +
                       " from start time: " + str(startTime) +
                       " to end time: " + str(endTime))
 
-            actionsVideoUploaded = self.graphQLApi.getActionsVideoUploaded(contractAccount=account,
-                                                                           startTime=startTime,
-                                                                           endTime=endTime)
+            for i in range(0, 3):
+                actionsVideoUploaded = self.edenData.getActionsVideoUploaded(contractAccount=account,
+                                                                         startTime=startTime,
+                                                                         endTime=endTime)
+                if isinstance(actionsVideoUploaded, ResponseSuccessful):
+                    return actionsVideoUploaded
             return actionsVideoUploaded
         except Exception as e:
             LOG.exception("Error in AfterElectionReminderManagement.getActionsVideoUploaded: " + str(e))
             raise AfterElectionReminderManagementException(
                 "Error in AfterElectionReminderManagement.getActionsVideoUploaded: " + str(e))
+
+    def checkIfGroupSentVideo(self, actionVideoReport: list, round: int, participants: list[Participant]):
+        assert isinstance(actionVideoReport, list), "actionVideoReport must be type of list"
+        assert isinstance(round, int), "round must be type of int"
+        assert isinstance(participants, list), "participants must be type of list"
+        try:
+            LOG.debug("checkIfGroupSentVideo; Round: " + str(round) + "; Participants: " + str(participants))
+            if round < 0:
+                LOG.exception("Round must be positive number")
+                raise Exception("Round must be positive number")
+            if len(participants) == 0:
+                LOG.exception("Participants list is empty")
+                raise Exception("Participants list is empty")
+            for participant in participants:
+                if isinstance(participant, Participant) is False:
+                    LOG.exception("Participants list must contain only Participant objects")
+                    raise Exception("Participants list must contain only Participant objects")
+
+            TRACE = 'trace'
+            MATCHING_ACTION = 'matchingActions'
+            DATA = 'data'
+            ROUND = 'round'
+            VOTER = 'voter'
+
+            for action in actionVideoReport:
+                if TRACE not in action or MATCHING_ACTION not in action[TRACE]:
+                    LOG.error("checkIfGroupSentVideo; Trace not in action: " + str(action))
+                    continue
+                subactions = action[TRACE][MATCHING_ACTION]
+                for subaction in subactions:
+                    if DATA not in subaction or \
+                        ROUND not in subaction[DATA] or \
+                        VOTER not in subaction[DATA]:
+                        LOG.error("checkIfGroupSentVideo; Data not in subaction: " + str(subaction))
+                        continue
+                    roundInSubaction = subaction[DATA][ROUND]
+                    voterInSubaction = subaction[DATA][VOTER]
+                    if roundInSubaction == round:
+                        if any(voterInSubaction == participant.accountName for participant in participants):
+                            return True
+            return False
+        except Exception as e:
+            LOG.exception("Error in AfterElectionReminderManagement.checkIfGroupSentVideo: " + str(e))
+            raise Exception("Error in AfterElectionReminderManagement.checkIfGroupSentVideo: " + str(e))

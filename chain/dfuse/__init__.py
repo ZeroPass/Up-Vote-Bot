@@ -14,7 +14,6 @@ __all__ = [
     'Response',
     'DfuseError',
     'ResponseException',
-
     'GraphQLApi',
     'GraphQLApiException'
 ]

@@ -9,7 +9,7 @@ from chain.eden import EdenData
 from database.participant import Participant
 from chain.atomicAssets import AtomicAssetsData
 from transmission import Communication
-from transmission.name import PARSE_TG_NAME
+from transmissionCustom import PARSE_TG_NAME
 
 
 class ParticipantListManagementException(Exception):
@@ -266,32 +266,6 @@ class ParticipantsManagement:
             raise ParticipantsManagementException(
                 "Exception thrown when called getMembersFromDBTotal; Description: " + str(e))
 
-    def getTelegramID(self, accountName: str, nftTemplateID: int, atomicAssetsData: AtomicAssetsData) -> str:
-        """Get telegram ID from nft template ID"""
-        assert isinstance(accountName, str), "accountName is not a string"
-        assert isinstance(nftTemplateID, int), "nftTemplateID is not an int"
-        assert isinstance(atomicAssetsData, AtomicAssetsData), "atomicAssetsData is not an AtomicAssetsData object"
-        try:
-            LOG.debug("Get telegram ID from nft template ID")
-            participant = self.database.getParticipant(accountName=accountName)
-            if isinstance(participant, Participant):
-                LOG.debug("Participant found in database")
-                if participant.telegramID != "":
-                    LOG.debug("Telegram ID (" + participant.telegramID + ") found in database, do not call API")
-                    return participant.telegramID
-
-            LOG.info("Get telegram id with nft template id: " + str(nftTemplateID))
-            response = atomicAssetsData.getTGfromTemplateID(templateID=nftTemplateID)
-            if isinstance(response, ResponseSuccessful):
-                return PARSE_TG_NAME(response.data)
-            else:
-                LOG.info("Error: " + str(response))
-                raise ParticipantsManagementException("Error: " + str(response.error))
-        except Exception as e:
-            LOG.exception(str(e))
-            # raise ParticipantsManagementException("Exception thrown when called getTelegramID; Description: " + str(e))
-            return "-1"
-
     def updateTelegramIDIfNotExists(self, participant: Participant, atomicAssetsData: AtomicAssetsData) -> bool:
         """Get telegram ID if not exists, return true if telegram ID is set otherwise false"""
         assert isinstance(participant, Participant), "Participant is not instance of Participant"
@@ -396,28 +370,6 @@ class ParticipantsManagement:
 
 def main():
     print("Hello World!")
-    database = Database()
-    comm = Communication(database=database)
-    dfuseConnection = DfuseConnection(dfuseApiKey=dfuse_api_key, database=database)
-
-    dfuseObj = EdenData(dfuseConnection=dfuseConnection)
-    pm = ParticipantsManagement(edenData=dfuseObj, database=database, communication=comm)
-    room = Room(roomID=1,
-                predisposedBy="",
-                round=1,
-                shareLink="",
-                electionID=1,
-                roomIndex=0,
-                roomNameLong="fds",
-                roomNameShort="fds",
-                roomTelegramID="fds",
-                isPredisposed=False)
-
-
-    neki = pm.getMembersFromChain(height=272109435, room=room)
-    reje = 0
-    #ker = pm.getParticipantsFromChainAndMatchWithDatabase()
-
 
 if __name__ == "__main__":
     main()

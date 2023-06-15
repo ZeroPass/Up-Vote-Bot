@@ -25,7 +25,7 @@ from text.textManagement import GroupCommunicationTextManagement
 from dateTimeManagement.dateTimeManagement import DateTimeManagement
 
 from transmission import Communication, SessionType
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmissionCustom import ADD_AT_SIGN_IF_NOT_EXISTS
 
 import math
 
@@ -62,7 +62,7 @@ class GroupCalculation:
         :return: list of rounds
         """
         assert isinstance(increaseFactor, float), "increaseFactor is not a float"
-        assert increaseFactor > 1.0, "increaseFactor is not greater than 1.0"
+        assert increaseFactor >= 1.0, "increaseFactor is not greater than 1.0"
         LOGgroupCalculation.debug("Get dictionary of group sizes in rounds. Dictionary key is the round number, "
                                   "value is the group size and number of participants in the group."
                                   "Number of participants: " + str(self.numberOfParticipants))
@@ -817,10 +817,10 @@ class GroupManagement:
             #    welcomeMessage += gCtextManagement.newLine()
             #    welcomeMessage += gCtextManagement.demoMessageInCreateGroup()
 
-            welcomeMessage += gCtextManagement.newLine()
-            welcomeMessage += gCtextManagement.newLine()
-            welcomeMessage += \
-                "Now join the Zoom link provided on the [Eden members portal](https://genesis.eden.eoscommunity.org/election)."
+            #welcomeMessage += gCtextManagement.newLine()
+            #welcomeMessage += gCtextManagement.newLine()
+            #welcomeMessage += \
+            #    "Now join the Zoom link provided on the [Eden members portal](https://genesis.eden.eoscommunity.org/election)."
 
             self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,
@@ -957,6 +957,14 @@ class GroupManagement:
 
 def main():
     print("Main function")
+    gc1 = GroupCalculation(numberOfParticipants=76)
+    yes = gc1.calculate(increaseFactor=1.0)
+    print (str(yes))
+    kva = gc1.getNumberOfGroups(round=0)
+    kva1 = gc1.getNumberOfGroups(round=1)
+
+    kva2 = gc1.getNumberOfGroups(round=2)
+    neki = 7
 
 
 if __name__ == "__main__":
