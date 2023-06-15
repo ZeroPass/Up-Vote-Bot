@@ -20,7 +20,7 @@ import gettext
 
 from text.textManagement import VideoReminderTextManagement, Button
 from transmission import Communication, SessionType
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmissionCustom import ADD_AT_SIGN_IF_NOT_EXISTS
 
 _ = gettext.gettext
 __ = gettext.ngettext
@@ -369,7 +369,6 @@ class AfterElectionReminderManagement:
                                              deadlineInMinutes=deadlineInMinutes) is False:
                 LOG.debug("It is not time to send reminder")
                 return
-
 
             reminders = self.database.getReminders(election=previousElection, reminderGroup1=ReminderGroup.UPLOAD_VIDEO)
             if reminders is not None:

@@ -138,6 +138,9 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
                                                                            electCurr=electCurr,
                                                                            modeDemo=modeDemo)
 
+            # group managament - only when there is no election in progress
+            #TODO here
+
         except Exception as e:
             LOG.exception("Exception thrown when called CurrentElectionStateHandlerRegistratrionV1.customActions; "
                           "Description: " + str(e))

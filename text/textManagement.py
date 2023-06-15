@@ -155,7 +155,16 @@ class EndOfRoundTextManagement(TextManagement):
         assert isinstance(inviteLink, str), "inviteLink must be a str"
         return Button(text="Upload on the portal", value=inviteLink),
 
+class CommunityGroupManagement(TextManagement):
+    def __init__(self, language: Language = Language.ENGLISH):
+        super().__init__(language)
 
+    def invitationToGroup(self) -> str:
+        return _("You have a valid Eden SBT, that makes you eligible to participate in members only group." + self.newLine()
+                + "See you there!")
+    def invitationToGroupButton(self, inviteLink: str) -> Button:
+        assert isinstance(inviteLink, str), "inviteLink must be a str"
+        return Button(text="Join the community group", value=inviteLink),
 
 class VideCallTextManagement(TextManagement):
     def __init__(self, language: Language = Language.ENGLISH):

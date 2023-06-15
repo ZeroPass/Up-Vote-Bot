@@ -25,7 +25,7 @@ from text.textManagement import GroupCommunicationTextManagement
 from dateTimeManagement.dateTimeManagement import DateTimeManagement
 
 from transmission import Communication, SessionType
-from transmission.name import ADD_AT_SIGN_IF_NOT_EXISTS
+from transmissionCustom import ADD_AT_SIGN_IF_NOT_EXISTS
 
 import math
 
@@ -817,10 +817,10 @@ class GroupManagement:
             #    welcomeMessage += gCtextManagement.newLine()
             #    welcomeMessage += gCtextManagement.demoMessageInCreateGroup()
 
-            welcomeMessage += gCtextManagement.newLine()
-            welcomeMessage += gCtextManagement.newLine()
-            welcomeMessage += \
-                "Now join the Zoom link provided on the [Eden members portal](https://genesis.eden.eoscommunity.org/election)."
+            #welcomeMessage += gCtextManagement.newLine()
+            #welcomeMessage += gCtextManagement.newLine()
+            #welcomeMessage += \
+            #    "Now join the Zoom link provided on the [Eden members portal](https://genesis.eden.eoscommunity.org/election)."
 
             self.communication.sendMessage(chatId=chatID,
                                            sessionType=SessionType.BOT,

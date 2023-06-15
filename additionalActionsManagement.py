@@ -11,8 +11,9 @@ from debugMode.modeDemo import Mode, ModeDemo
 from log import Log
 from text.textManagement import EndOfRoundTextManagement, Button
 from transmission import Communication, SessionType
-from transmission.Communication import CustomMember
-from transmission.name import REMOVE_AT_SIGN_IF_EXISTS
+from transmissionCustom import CustomMember
+
+from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS
 
 
 # This class is used to do additional actions at the end of the elections like:

@@ -661,7 +661,34 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting participant by telegramid: " + str(e))
             return None
 
-    def getKnownUsers(self, botName: str) -> list[Participant]:
+    def getParticipantByContract(self, contractAccount: str, fromDate: datetime) -> list[Participant]:
+        assert isinstance(contractAccount, str), "contractAccount is not a string"
+        assert isinstance(fromDate, datetime), "fromDate is not a datetime"
+        try:
+            # participant must be listed in descending order by election date - to eliminate old versions of
+            # participants from the list - also searching will be faster
+            session = self.createCsesion()
+
+            result = session.query(Participant) \
+                .join(Room, Room.roomID == Participant.roomID) \
+                .join(Election, Election.electionID == Room.electionID) \
+                .join(ElectionStatus, ElectionStatus.electionStatusID == Election.status) \
+                .order_by(Election.date.desc()) \
+                .filter(Election.date >= fromDate,
+                        Election.contract == contractAccount,
+                        ElectionStatus.status == CurrentElectionState.CURRENT_ELECTION_STATE_CUSTOM_FREE_GROUPS.value
+                        ) \
+                .all()
+
+            toReturn = result if len(result) > 0 else None
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting participant by contract: " + str(e))
+            return None
+
+    def getKnownUsers(self, botName: str) -> list[KnownUser]:
         assert isinstance(botName, str), "botName is not a string"
         try:
             session = self.createCsesion()

@@ -9,16 +9,18 @@ from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerR
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
 from chain.stateElectionState import ElectCurrTable
+from community import CommunityList, CommunityListState, CommunityGroup
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
-    eden_account, telegram_user_bot_name, telegram_bot_name
+    eden_account, telegram_user_bot_name, telegram_bot_name, community_group_id
 from database import Database, Election, ElectionStatus, Reminder
+from database.comunityParticipant import CommunityParticipant
+from transmissionCustom import CustomMember, AdminRights, MemberStatus, Promotion
+from sbt import SBT
 from database.election import ElectionRound
 from log import Log
 from datetime import datetime, timedelta
 from debugMode.modeDemo import ModeDemo, Mode
 from groupManagement import GroupManagement
-
-from random import *
 
 from transmission import Communication, SessionType
 
@@ -76,7 +78,7 @@ class EdenBot:
 
             # create communication object
             LOG.debug("Initialization of telegram bot...")
-            self.communication = Communication(database=database)
+            self.communication = Communication(database=database, edenData=edenData)
 
             # to run callback part of pyrogram library on separated thread - not as separated executable file
             self.communication.startCommAsyncSession(apiId=telegramApiID, apiHash=telegramApiHash, botToken=botToken)
@@ -89,6 +91,9 @@ class EdenBot:
             self.sayHelloFromUserBotToBot(userBotUsername=telegram_user_bot_name,
                                           botUsername=telegram_bot_name)
 
+            while True:
+                time.sleep(1)
+
             LOG.debug(" ...and group management object ...")
             self.groupManagement = GroupManagement(edenData=edenData,
                                                    database=self.database,
@@ -96,7 +101,6 @@ class EdenBot:
                                                    mode=mode)
 
             LOG.debug("... is finished")
-
             # set current election state
             self.currentElectionStateHandler: CurrentElectionStateHandler = None
             self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
@@ -253,6 +257,44 @@ class EdenBot:
             LOG.exception("Exception in getElectionState. Description: " + str(e))
             return None
 
+    def groupMaintance(self, communityGroup: CommunityGroup, contactAccount: str, communityGroupID: int, electionCurrState: ElectCurrTable):
+        assert isinstance(communityGroup, CommunityGroup), "communityGroup is not an instance of CommunityGroup"
+        assert isinstance(contactAccount, str), "contactAccount is not a string"
+        assert isinstance(communityGroupID, int), "communityGroupID is not an integer"
+        assert isinstance(electionCurrState, ElectCurrTable), "electionCurrState is not an instance of ElectCurrTable"
+        try:
+            LOG.debug("Group maintance for group: " + str(communityGroupID))
+            #executionTime = datetime.now() - timedelta(hours=1)
+            executionTime = self.modeDemo.getCurrentBlockTimestamp() if self.modeDemo.isLiveMode() is True \
+                else datetime.now() - timedelta(hours=3)
+            TOKEN_NAME = "groupMaintenance"
+
+            #if testing is true, run it no matter what
+            needToRun: bool = False if communityGroup.testing == False else True
+            if self.database.checkIfTokenExists(name=TOKEN_NAME):
+                #if token does not exist, run it first time sunday at 12 PM
+                if executionTime.weekday() == 6 and executionTime.hour == 12:
+                    expiration = (executionTime + timedelta(days=7)).replace(minute=0)
+                    self.database.writeToken(name=TOKEN_NAME, value=str(1), expireBy=expiration)
+                    LOG.debug("Token is written as current time is Sunday 12 AM")
+                    needToRun = True
+            else:
+                if self.database.checkIfTokenExpired(name=TOKEN_NAME, executionTime=executionTime):
+                    expiration = (executionTime + timedelta(days=7)).replace(minute=0)
+                    self.database.writeToken(name=TOKEN_NAME, value=str(1), expireBy=expiration)
+                    needToRun = True
+
+            if needToRun:
+                LOG.debug("Run group maintenance...")
+                communityGroup.do(contactAccount=contactAccount,
+                                  executionTime=executionTime,
+                                  communityGroupID=communityGroupID,
+                                  electionCurrState=electionCurrState)
+
+        except Exception as e:
+            LOG.exception("Exception in groupMaintance. Description: " + str(e))
+            return None
+
     def setCurrentElectionStateAndCallCustomActions(self, contract: str, database: Database):
         try:
             assert isinstance(contract, str), "contract is not a string"
@@ -284,7 +326,39 @@ class EdenBot:
             currentElectionState = self.currentElectionStateHandler.currentElectionState
 
             if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
+                #######################
+                #test mode
+                cg: CommunityGroup = CommunityGroup(edenData=self.edenData,
+                                                     communication=self.communication,
+                                                     database=database,
+                                                     mode=self.modeDemo,
+                                                     testing=False)
+
+
+                #should be called only one time at the beginning of running the bot
+                communityGroupIdInt: int = None
+                try:
+                    if isinstance(community_group_id, str):
+                        communityGroupIdInt = int(community_group_id)
+                    elif isinstance(community_group_id, int):
+                        communityGroupIdInt = community_group_id
+                    else:
+                        raise Exception("ChatId is not str or int")
+                except Exception as e:
+                    LOG.exception("Not int value stored in string: " + str(e))
+                    return None
+
                 electionCurrState: ElectCurrTable = self.getElectionState()
+
+
+                self.groupMaintance(communityGroup=cg,
+                                    contactAccount=contract,
+                                    communityGroupID=communityGroupIdInt,
+                                    electionCurrState=electionCurrState)
+
+                return
+                #######################
+
                 self.currentElectionStateHandler.customActions(election=election,
                                                                electCurr=electionCurrState,
                                                                database=database,
@@ -352,6 +426,8 @@ class EdenBot:
                         raise EdenBotException("Unknown Mode(LIVE, DEMO) or Mode.Demo and ModeDemo is None ")
 
                     # defines current election state and write it to the database
+                    #just temp
+                    #return
                     self.setCurrentElectionStateAndCallCustomActions(contract=eden_account, database=self.database)
 
                 except Exception as e:
@@ -430,9 +506,12 @@ def mainPyrogramTestMode():
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
 
-    comm.sendMessage(sessionType=SessionType.BOT,
-                     chatId="",
-                     text="test")
+
+    nekije = 9
+
+    #comm.sendMessage(sessionType=SessionType.BOT,
+    #                 chatId="",
+    #                 text="test")
 
     # comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="te423423st")
     # comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
@@ -450,6 +529,87 @@ def mainPyrogramTestMode():
 
 
 def main1():
+    #######################
+    cp1 = CommunityParticipant(accountName="accountName",
+                               roomID=0,
+                               participationStatus=False,
+                               telegramID="telegramID",
+                               nftTemplateID=-1,
+                               participantName="participantName",
+                               sbt=SBT(round=0, received=datetime.now()),
+                               customMember=CustomMember(userId='0',
+                                                         memberStatus=MemberStatus.MEMBER,
+                                                         isBot=True,
+                                                         tag="tag",
+                                                         username="userName",
+                                                         adminRights=AdminRights(isAdmin=False))
+                               )
+    cp2 = CommunityParticipant(accountName="accountName2",
+                               roomID=0,
+                               participationStatus=False,
+                               telegramID="telegramID",
+                               nftTemplateID=-1,
+                               participantName="participantName",
+                               sbt=SBT(round=0, received=datetime.now()),
+                               customMember=CustomMember(userId='0',
+                                                         memberStatus=MemberStatus.MEMBER,
+                                                         isBot=True,
+                                                         tag="tag",
+                                                         username="userName",
+                                                         adminRights=AdminRights(isAdmin=False))
+                               )
+    cp3admin = CommunityParticipant(accountName="accountName3",
+                               roomID=0,
+                               participationStatus=False,
+                               telegramID="telegramID",
+                               nftTemplateID=-1,
+                               participantName="participantName",
+                               sbt=SBT(round=0, received=datetime.now()),
+                               customMember=CustomMember(userId='0',
+                                                         memberStatus=MemberStatus.MEMBER,
+                                                         isBot=True,
+                                                         tag="tag",
+                                                         username="userName",
+                                                         adminRights=AdminRights(isAdmin=True),
+                                                         promotedBy=Promotion(userId='0',username="kva")
+                                                         )
+                               )
+
+    cp3nonAdmin = CommunityParticipant(accountName="accountName3",
+                               roomID=0,
+                               participationStatus=False,
+                               telegramID="telegramID",
+                               nftTemplateID=-1,
+                               participantName="participantName",
+                               sbt=SBT(round=0, received=datetime.now()),
+                               customMember=CustomMember(userId='0',
+                                                         memberStatus=MemberStatus.MEMBER,
+                                                         isBot=True,
+                                                         tag="tag",
+                                                         username="userName",
+                                                         adminRights=AdminRights(isAdmin=False))
+                               )
+
+    #cl = CommunityList()
+    #cl.append(CommunityListState.CURRENT, cp3admin)
+    #cl.append(CommunityListState.GOAL, cp3nonAdmin)
+    #cl.append(CommunityListState.GOAL, cp1)
+
+    #kva = cl.usersThatAreNotInGroupButShouldBe()
+    #kva2 = cl.usersThatAreNotYetAdminsButShouldBe()
+    #kva1 = cl.usersThatAreAdminsButShouldNotBe()
+
+
+    #print(str(cl.getState(CommunityListState.CURRENT)))
+    #for item in cl.getState(CommunityListState.CURRENT):
+    #    print(str(item))
+
+    #print(str(cl.getState(CommunityListState.GOAL)))
+    #kva = 9
+
+    #######################
+
+
     database = Database()
     election: Election = Election(electionID=10,
                                   status=ElectionStatus(electionStatusID=7,
@@ -457,6 +617,8 @@ def main1():
                                   date=datetime.now(),
                                   contract=eden_account
                                   )
+
+    #test = database.getParticipantByContract(contractAccount=eden_account, fromDate=datetime.now() - timedelta(days=100))
 
     #kva = database.getMembers(election=election)
     #kva1 = kva.Room
@@ -467,9 +629,9 @@ def main1():
 
     kva = 8
 
-    #self.pyrogram = Process(target=self.startSessionAsync,
+    #pyrogram = Process(target=startSessionAsync,
     #                            name="Pyrogram event handler",
-    #                            args=(apiId, apiHash, botToken))
+    #                            args=(telegram_api_id, telegram_api_hash, telegram_bot_token))
     #                             self.pyrogram.start()
     #
     #
@@ -477,13 +639,37 @@ def main1():
 
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
-    for i in range(0, 4):
-        for j in range(0, 25):
-            kva = Process(target=comm.sendMessage,
-                    name="Pyrogram event handler",
-                    args=(SessionType.BOT, "", "A:" + str(i) + " " + str(j))
-                    )
-            kva.start()
+
+
+    #LOG.debug(str(comeon))
+    #while True:
+    #    time.sleep(1)
+
+    je2to = comm.getMembersInGroup(sessionType=SessionType.BOT, chatId=-1001936614825)
+
+    inviteLink = comm.getGeneralChatLink(sessionType=SessionType.BOT, chatId=-1001936614825)
+    for item in je2to:
+        if item.userId == '50613956':
+            ejga = comm.promoteSpecificMember(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId,
+                                       adminRights=AdminRights(isAdmin=False))
+
+
+            ejgb = comm.setAdministratorTitle(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId,
+                                              title="1234567890123456")
+            kva = 7
+            #comm.removeUserFromGroup(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId)
+
+
+    neki = comm.getInvitationLink(sessionType=SessionType.BOT, chatId=-1001936614825)
+
+    nekije = 9
+    #for i in range(0, 4):
+    #    for j in range(0, 25):
+    #        kva = Process(target=comm.sendMessage,
+    #                name="Pyrogram event handler",
+    #                args=(SessionType.BOT, "", "A:" + str(i) + " " + str(j))
+    #                )
+    #        kva.start()
             #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="B:" + str(i) + " " + str(j))
             #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="C:" + str(i) + " " + str(j))
         #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="test")

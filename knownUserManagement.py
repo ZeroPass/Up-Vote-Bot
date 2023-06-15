@@ -3,10 +3,9 @@ from datetime import datetime
 from chain import EdenData
 from database import Database, KnownUser
 from dateTimeManagement import DateTimeManagement
-from debugMode.modeDemo import ModeDemo
 from log import Log
-from transmission import Communication
-from transmission.name import REMOVE_AT_SIGN_IF_EXISTS
+
+from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS
 
 
 class KnownUserManagementException(Exception):

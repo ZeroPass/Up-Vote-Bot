@@ -206,13 +206,6 @@ class AtomicAssetsData:
 
 def main():
     print("Hello World!")
-     #database = Database(databaseName="a", password="", port=50, host="", user="")
-    dfuseObj = AtomicAssetsData(dfuseApiKey=dfuse_api_key)
-    kva = dfuseObj.getTGNameOfUser(accountName='lukaperrrcic')
-    kva1 = dfuseObj.getParticipantTG(asset_id='1406')
-    kva2 = dfuseObj.getTGfromTemplateID(templateID=1406)
-
-    ret = 9
 
 
 if __name__ == "__main__":
