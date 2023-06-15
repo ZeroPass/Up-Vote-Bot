@@ -2,6 +2,9 @@
 We are running the [Up Vote Bot in Telegram](https://t.me/Up_Vote_Bot).  
 Read about the progress and donate at [pomelo.io/grants/bot4eden](https://pomelo.io/grants/bot4eden).
 
+## Dockerization
+- Dockerization for bot is available [here](https://github.com/ZeroPass/Up-Vote-Bot-Dockerized).
+
 
 ## Additional info:
 - Bot has badge/text - 'has access to messages' - we cannot remove it because of admin rights (also changing privacy mode (in Botfather chat) to ONE cannot remove this badge). If bot has admin rights, it gets the badge automatic (https://core.telegram.org/bots/faq#what-messages-will-my-bot-get).
