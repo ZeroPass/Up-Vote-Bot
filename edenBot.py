@@ -11,7 +11,7 @@ from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerR
 from chain.stateElectionState import ElectCurrTable
 from community import CommunityList, CommunityListState, CommunityGroup
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
-    eden_account, telegram_user_bot_name, telegram_bot_name, community_group_id
+    eden_account, telegram_user_bot_name, telegram_bot_name, community_group_id, community_group_testing
 from database import Database, Election, ElectionStatus, Reminder
 from database.comunityParticipant import CommunityParticipant
 from transmissionCustom import CustomMember, AdminRights, MemberStatus, Promotion
@@ -91,8 +91,17 @@ class EdenBot:
             self.sayHelloFromUserBotToBot(userBotUsername=telegram_user_bot_name,
                                           botUsername=telegram_bot_name)
 
-            while True:
-                time.sleep(1)
+            LOG.debug("Creating community group management object ...")
+
+            # make sure that testing is set correct!
+            self.communityGroupManagement: CommunityGroup = CommunityGroup(edenData=self.edenData,
+                                                communication=self.communication,
+                                                database=database,
+                                                mode=self.modeDemo,
+                                                testing=community_group_testing)
+
+            #while True:
+            #    time.sleep(1)
 
             LOG.debug(" ...and group management object ...")
             self.groupManagement = GroupManagement(edenData=edenData,
@@ -257,20 +266,22 @@ class EdenBot:
             LOG.exception("Exception in getElectionState. Description: " + str(e))
             return None
 
-    def groupMaintance(self, communityGroup: CommunityGroup, contactAccount: str, communityGroupID: int, electionCurrState: ElectCurrTable):
-        assert isinstance(communityGroup, CommunityGroup), "communityGroup is not an instance of CommunityGroup"
+    def groupMaintenance(self, contactAccount: str, communityGroupID: int, electionCurrState: ElectCurrTable):
         assert isinstance(contactAccount, str), "contactAccount is not a string"
         assert isinstance(communityGroupID, int), "communityGroupID is not an integer"
         assert isinstance(electionCurrState, ElectCurrTable), "electionCurrState is not an instance of ElectCurrTable"
         try:
-            LOG.debug("Group maintance for group: " + str(communityGroupID))
+            LOG.debug("Group maintenance for group: " + str(communityGroupID))
             #executionTime = datetime.now() - timedelta(hours=1)
+
+            #we are going back for 3 hours because of different time zones and also graphQL has some problems
+            # when we are trying to search until current time
             executionTime = self.modeDemo.getCurrentBlockTimestamp() if self.modeDemo.isLiveMode() is True \
                 else datetime.now() - timedelta(hours=3)
             TOKEN_NAME = "groupMaintenance"
 
             #if testing is true, run it no matter what
-            needToRun: bool = False if communityGroup.testing == False else True
+            needToRun: bool = False if self.communityGroupManagement.testing == False else True
             if self.database.checkIfTokenExists(name=TOKEN_NAME):
                 #if token does not exist, run it first time sunday at 12 PM
                 if executionTime.weekday() == 6 and executionTime.hour == 12:
@@ -286,13 +297,13 @@ class EdenBot:
 
             if needToRun:
                 LOG.debug("Run group maintenance...")
-                communityGroup.do(contactAccount=contactAccount,
-                                  executionTime=executionTime,
-                                  communityGroupID=communityGroupID,
-                                  electionCurrState=electionCurrState)
+                self.communityGroupManagement.do(contactAccount=contactAccount,
+                                                  executionTime=executionTime,
+                                                  communityGroupID=communityGroupID,
+                                                  electionCurrState=electionCurrState)
 
         except Exception as e:
-            LOG.exception("Exception in groupMaintance. Description: " + str(e))
+            LOG.exception("Exception in groupMaintenance. Description: " + str(e))
             return None
 
     def setCurrentElectionStateAndCallCustomActions(self, contract: str, database: Database):
@@ -326,15 +337,6 @@ class EdenBot:
             currentElectionState = self.currentElectionStateHandler.currentElectionState
 
             if currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_REGISTRATION_V1:
-                #######################
-                #test mode
-                cg: CommunityGroup = CommunityGroup(edenData=self.edenData,
-                                                     communication=self.communication,
-                                                     database=database,
-                                                     mode=self.modeDemo,
-                                                     testing=False)
-
-
                 #should be called only one time at the beginning of running the bot
                 communityGroupIdInt: int = None
                 try:
@@ -350,14 +352,12 @@ class EdenBot:
 
                 electionCurrState: ElectCurrTable = self.getElectionState()
 
+                #call only when election is in registration state, because of the complexity of the function
+                self.groupMaintenance(communityGroup=self.communityGroupManagement,
+                                      contactAccount=contract,
+                                      communityGroupID=communityGroupIdInt,
+                                      electionCurrState=electionCurrState)
 
-                self.groupMaintance(communityGroup=cg,
-                                    contactAccount=contract,
-                                    communityGroupID=communityGroupIdInt,
-                                    electionCurrState=electionCurrState)
-
-                return
-                #######################
 
                 self.currentElectionStateHandler.customActions(election=election,
                                                                electCurr=electionCurrState,
@@ -590,24 +590,6 @@ def main1():
                                                          adminRights=AdminRights(isAdmin=False))
                                )
 
-    #cl = CommunityList()
-    #cl.append(CommunityListState.CURRENT, cp3admin)
-    #cl.append(CommunityListState.GOAL, cp3nonAdmin)
-    #cl.append(CommunityListState.GOAL, cp1)
-
-    #kva = cl.usersThatAreNotInGroupButShouldBe()
-    #kva2 = cl.usersThatAreNotYetAdminsButShouldBe()
-    #kva1 = cl.usersThatAreAdminsButShouldNotBe()
-
-
-    #print(str(cl.getState(CommunityListState.CURRENT)))
-    #for item in cl.getState(CommunityListState.CURRENT):
-    #    print(str(item))
-
-    #print(str(cl.getState(CommunityListState.GOAL)))
-    #kva = 9
-
-    #######################
 
 
     database = Database()
@@ -618,23 +600,6 @@ def main1():
                                   contract=eden_account
                                   )
 
-    #test = database.getParticipantByContract(contractAccount=eden_account, fromDate=datetime.now() - timedelta(days=100))
-
-    #kva = database.getMembers(election=election)
-    #kva1 = kva.Room
-    #kva2 = kva.Participant
-
-    #reminder: Reminder = Reminder(reminderID=8, electionID=2, dateTimeBefore=datetime.now(), round=0)
-    #test = database.electionGroupsCreated(election=election, round=0, numRooms=20)
-
-    kva = 8
-
-    #pyrogram = Process(target=startSessionAsync,
-    #                            name="Pyrogram event handler",
-    #                            args=(telegram_api_id, telegram_api_hash, telegram_bot_token))
-    #                             self.pyrogram.start()
-    #
-    #
 
 
     comm = Communication(database=database)

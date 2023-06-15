@@ -81,6 +81,8 @@ atomic_assets_SBT_account_env: str = "sbts4edeneos"
 
 # community group id
 community_group_id_env: str = ""
+community_group_testing_env: bool = True # if False, bot will do actions in community group(adding users, removing users,
+# setting users for admin, removing from admin list, setting tags, etc)
 
 
 # blocks.io
@@ -174,6 +176,7 @@ atomic_assets_account = env.get('EDEN_ASSETS_ACCOUNT_ENV', atomic_assets_account
 atomic_assets_SBT_account = env.get('EDEN_ASSETS_SBT_ACCOUNT_ENV', atomic_assets_SBT_account_env)
 
 community_group_id = env.get('COMMUNITY_GROUP_ID_ENV', community_group_id_env)
+community_group_testing = env.get('COMMUNITY_GROUP_TESTING_ENV', community_group_testing_env)
 
 blocksIoLinkToTheContract = env.get('BLOKS_IO_LINK_TO_THE_CONTRACT_ENV', blocksIoLinkToTheContract_env)
 

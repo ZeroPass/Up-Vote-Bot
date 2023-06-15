@@ -763,25 +763,25 @@ class CommunityGroup:
             LOG.debug("Start process of managing community group.")
 
             LOG.debug("Start removing users from community group")
-            #self.removeUsers(communityGroupID=communityGroupID, communityList=communityList,
-            #                 adminTelegram=adminTelegram)
+            self.removeUsers(communityGroupID=communityGroupID, communityList=communityList,
+                             adminTelegram=adminTelegram)
             LOG.success("Users without SBT token has been removed successfully")
 
             LOG.debug("Start adding users to community group")
-            #self.sendInvitationLink(communityGroupID=communityGroupID, communityList=communityList,
-            #                        adminTelegram=adminTelegram)
+            self.sendInvitationLink(communityGroupID=communityGroupID, communityList=communityList,
+                                    adminTelegram=adminTelegram)
             LOG.success("Process of adding users (or they got invitation)  has been successfully finished")
 
 
             LOG.debug("Start adding users to admin group")
-            #self.addUsersToAdminGroup(communityGroupID=communityGroupID, communityList=communityList,
-            #                          adminTelegram=adminTelegram)
+            self.addUsersToAdminGroup(communityGroupID=communityGroupID, communityList=communityList,
+                                      adminTelegram=adminTelegram)
             LOG.success("Users that are chief delegates or part of maintaining team has been added as administrator"
                         " successfully")
 
             LOG.debug("Set admin tags in group")
-            #self.setTagsInGroup(communityGroupID=communityGroupID, communityList=communityList,
-            #                    adminTelegram=adminTelegram)
+            self.setTagsInGroup(communityGroupID=communityGroupID, communityList=communityList,
+                                adminTelegram=adminTelegram)
             LOG.success("Admin tags in gropu has been set successfully")
 
             LOG.debug("Start removing users from admin group")
@@ -955,13 +955,6 @@ class CommunityGroup:
         assert isinstance(adminTelegram, str), "adminTelegram must be type of string"
         assert isinstance(participants, list), "participants must be type of list"
         try:
-            """userId=str(member.user.id),
-                memberStatus=memberStatus,
-                isBot=member.user.is_bot,
-                username=member.user.username,
-                tag=member.custom_title,
-                adminRights=adminRights,
-                promotedBy=promotion))"""
 
             LOG.debug("Start process of sending state to admin")
             toSend: str = "Current state of community group:\n"
@@ -1017,34 +1010,6 @@ class CommunityGroup:
             LOG.info("Check if bot has admin rights in community group - if anyone in the past"
                      " removed the bot from group of admins")
 
-            ###################
-            """self.communication.promoteSpecificMember(sessionType=SessionType.BOT,
-                                                     chatId=communityGroupID,
-                                                     userId="@lukapercic",
-                                                     adminRights=AdminRights(isAdmin=True,
-                                                                             canManageChat=True,
-                                                                             canDeleteMessages=True,
-                                                                             canManageVideoChats=True,
-                                                                             canRestrictMembers=True,
-                                                                             canPromoteMembers=True,
-                                                                             canChangeInfo=True,
-                                                                             canPostMessages=True,
-                                                                             canEditMessages=True,
-                                                                             canInviteUsers=True,
-                                                                             canPinMessages=True,
-                                                                             isAnonymous=False))
-
-            self.communication.getMemberInGroup(sessionType=SessionType.BOT,
-                                                chatId=communityGroupID,
-                                                userId="@lukapercic")
-
-            while True:
-                time.sleep(1)
-            """
-            ####################
-
-
-
             RANGE_IN_DAYS_NFT = 31 * 9
             RANGE_IN_DAYS_INDUCTED = 31 * 3
 
@@ -1063,7 +1028,7 @@ class CommunityGroup:
             inductedAccounts: list[Participant] = self.getActionInducted(contractAccount=contactAccount,
                                    executionTime=executionTime,
                                    rangeInDays=RANGE_IN_DAYS_INDUCTED)
-            #telegram and account name are only important thing in inductedAccounts
+            #only important thing in inductedAccounts are parameters telegram and account name
 
             if inductedAccounts is None:
                 raise CommunityGroupException("There was an error when getting participants who called inducted "
@@ -1079,9 +1044,9 @@ class CommunityGroup:
             LOG.debug("...getting participants in community group...")
             participantsInGroup: list[CustomMember] = self.getUsersFromCommunityGroup(communityGroupID=communityGroupID)
 
-            #self.sendCurrentGroupStateToAdmin(adminTelegram=telegram_admins_id[0],
-            #                                  participants=participantsInGroup
-            #                                  )
+            self.sendCurrentGroupStateToAdmin(adminTelegram=telegram_admins_id[0],
+                                              participants=participantsInGroup
+                                              )
 
             if participantsInGroup is None:
                 raise CommunityGroupException("There was an error when getting users from community group")
