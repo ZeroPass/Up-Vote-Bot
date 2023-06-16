@@ -353,8 +353,7 @@ class EdenBot:
                 electionCurrState: ElectCurrTable = self.getElectionState()
 
                 #call only when election is in registration state, because of the complexity of the function
-                self.groupMaintenance(communityGroup=self.communityGroupManagement,
-                                      contactAccount=contract,
+                self.groupMaintenance(contactAccount=contract,
                                       communityGroupID=communityGroupIdInt,
                                       electionCurrState=electionCurrState)
 
@@ -451,10 +450,11 @@ def main():
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
     startEndDatetimeList = [
+        #(datetime(2022, 6, 7, 11, 52), datetime(2022, 6, 7, 11, 53)),  # just to add old election
         #(datetime(2022, 10, 7, 11, 52), datetime(2022, 10, 7, 11, 59)),  # add user
-        #(datetime(2022, 10, 7, 12, 0), datetime(2022, 10, 7, 12, 2)),  # notification 25 hours before
+        #(datetime(2022, 10, 7, 11, 59), datetime(2022, 10, 7, 12, 1)),  # notification 25 hours before
         #(datetime(2022, 10, 7, 12, 57), datetime(2022, 10, 7, 12, 58)),  # adding users
-        #(datetime(2022, 10, 7, 12, 59), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hoavtomat picaurs before
+        #(datetime(2022, 10, 7, 12, 59), datetime(2022, 10, 7, 13, 2)),  # notification - 24 hours before
         #(datetime(2022, 10, 8, 11, 58), datetime(2022, 10, 8, 12, 2)),  # notification - in one hour
         #(datetime(2022, 10, 8, 12, 57), datetime(2022, 10, 8, 12, 59)),  # notification - in few minutes
         #(datetime(2022, 10, 8, 12, 59), datetime(2022, 10, 8, 13, 2)),  # start
@@ -472,10 +472,10 @@ def main():
     ]
 
     # 120 blocks per minute
-    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-    #                    edenObj=edenData,
-    #                    step=1  # 1.5 min
-    #                    )
+    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+                        edenObj=edenData,
+                        step=1  # 1.5 min
+                        )
     # live!
     modeDemo = ModeDemo.live(edenObj=edenData,
                              stepBack=10)

@@ -396,9 +396,9 @@ class GroupManagement:
                     roomIndexToCreate = max(alreadyCreatedRooms, key=attrgetter('roomIndex')).roomIndex + 1 if \
                         len(alreadyCreatedRooms) > 0 else 0
 
-                    if len(alreadyCreatedRooms) < data['groups']:
+                    if len(alreadyCreatedRooms) < int(data['groups']):
                         LOG.debug("Not enough rooms created for this round. Create new rooms.")
-                        numOfGroupsToCreate = data['groups'] - len(alreadyCreatedRooms)
+                        numOfGroupsToCreate = int(data['groups']) - len(alreadyCreatedRooms)
 
                         extendedRooms: list[ExtendedRoom] = []
                         total = min(numOfGroupsToCreate, newRoomsLeft)
