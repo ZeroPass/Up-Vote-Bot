@@ -100,9 +100,6 @@ class EdenBot:
                                                 mode=self.modeDemo,
                                                 testing=community_group_testing)
 
-            #while True:
-            #    time.sleep(1)
-
             LOG.debug(" ...and group management object ...")
             self.groupManagement = GroupManagement(edenData=edenData,
                                                    database=self.database,
@@ -282,7 +279,7 @@ class EdenBot:
 
             #if testing is true, run it no matter what
             needToRun: bool = False if self.communityGroupManagement.testing == False else True
-            if self.database.checkIfTokenExists(name=TOKEN_NAME):
+            if self.database.checkIfTokenExists(name=TOKEN_NAME) == False:
                 #if token does not exist, run it first time sunday at 12 PM
                 if executionTime.weekday() == 6 and executionTime.hour == 12:
                     expiration = (executionTime + timedelta(days=7)).replace(minute=0)
@@ -472,10 +469,10 @@ def main():
     ]
 
     # 120 blocks per minute
-    modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
-                        edenObj=edenData,
-                        step=1  # 1.5 min
-                        )
+    #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
+    #                    edenObj=edenData,
+    #                    step=1  # 1.5 min
+    #                    )
     # live!
     modeDemo = ModeDemo.live(edenObj=edenData,
                              stepBack=10)

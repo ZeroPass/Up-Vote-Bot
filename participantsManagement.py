@@ -195,8 +195,12 @@ class ParticipantsManagement:
             accounts: dict[str, ParticipantListItem] = plm.getAll()
             for key, value in accounts.copy().items():
                 if value.hasValue() == ListItemValue.BOTH:
-                    if value.compare() and value.participantDB.telegramID != "":  # custom compare - not all values are compared
-                        accounts.pop(key)
+                    if value.compare(): # custom compare - not all values are compared
+                        # in next line do not compare if telegramID has -1..when telegramID is -1, it means that
+                        # participant does not set telegramID in chain! Set as empty string in DB when you want to update
+                        # telegramID from chain to DB
+                        if not(value.participantDB.telegramID == ""): #or value.participantDB.telegramID == "-1"
+                            accounts.pop(key)
 
 
             # accounts dict: only accounts that are different in chain and db left
@@ -285,7 +289,10 @@ class ParticipantsManagement:
                     return True
                 else:
                     LOG.info("Error: " + str(response))
-                    participant.telegramID = "-1"
+                    if response.error == "No telegram in social data":
+                        participant.telegramID = "-1"
+                    else:
+                        participant.telegramID = ""
                     return False
         except Exception as e:
             LOG.exception(str(e))

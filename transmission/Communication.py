@@ -714,8 +714,8 @@ class Communication:
     async def getMembersInGroupS(self, client: Client, chatId: (str, int)) -> list[CustomMember]:
         assert isinstance(client, Client), "client should be Client"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
-        LOG.info("Getting members in group: " + str(chatId))
         try:
+            LOG.info("Getting members in group(s): " + str(chatId))
             if self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
                 LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
@@ -776,9 +776,8 @@ class Communication:
     def getMembersInGroup(self, sessionType: SessionType, chatId: (str, int)) -> list[CustomMember]:
         assert isinstance(sessionType, SessionType), "sessionType should be SessionType"
         assert isinstance(chatId, (str, int)), "ChatId should be str or int"
-        LOG.info("Getting members in group: " + str(chatId))
         try:
-
+            LOG.info("Getting members in group: " + str(chatId))
             if sessionType == SessionType.BOT and \
                     self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                          telegramID=str(chatId)) is False:
@@ -1668,9 +1667,9 @@ class Communication:
             if self.usernameInList(username, telegram_admins_id):
                 return True
 
-
+            LOG.debug("Getting group members in " + str(chatId))
             groupChatMember = await client.get_chat_member(chat_id=chatId,  user_id=username)
-
+            LOG.debug("...received")
 
             if groupChatMember is None:
                 LOG.error("Member not found in group: " + str(chatId))
@@ -1956,7 +1955,7 @@ class Communication:
 
     async def commandResponseCheckParticipantsSBT(self, client: Client, message: Message):
         try:
-            LOG.success("Response on command 'checkParticipantsSBT' from user: " + str(message.chat.username) if not None else "None")
+            LOG.debug("Response on command 'checkParticipantsSBT' from user: " + str(message.chat.username) if not None else "None")
             chatID = message.chat.id
             userID = message.from_user.id
 
@@ -1971,6 +1970,7 @@ class Communication:
                 username=username
             )
             if not hasAccess:
+                LOG.debug("User has no access to this command")
                 LOG.error("User has no access to this command")
                 await client.send_message(chat_id=chatID,
                                           text="You do not have access to this command")
@@ -1993,7 +1993,7 @@ class Communication:
             if participantsGoalState is None:
                 raise Exception("There was an error when getting participants with NFT")
 
-            toSend: str = "Users that should be in community group (they have SBT):\n"
+            toSend: str = "Users that should be (but not yet) in community group (they have SBT), :\n"
 
             await client.send_message(chat_id=chatID,
                                 reply_to_message_id=messageThreadID,
