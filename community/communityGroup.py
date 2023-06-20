@@ -489,15 +489,13 @@ class CommunityGroup:
                                participants=toRemove,
                                add=False)
 
-
-
             for communityParticipant in toRemove:
                 try:
                     assert isinstance(communityParticipant, CommunityParticipant), \
                         "communityParticipant must be type of CommunityParticipant"
                     if communityParticipant.telegramID == "":
-                        LOG.debug("User has no telegramID. Skip removing him from community group")
-                        continue
+                        LOG.debug("User has no telegramID. Replace with ID, not tg id")
+                        communityParticipant.telegramID = communityParticipant.accountName
 
                     if self.testing:
                         LOG.debug("account " + str(communityParticipant.accountName) + ", tg " + communityParticipant.telegramID)
@@ -755,10 +753,12 @@ class CommunityGroup:
             LOG.exception("Error in setTagsInGroup: " + str(e))
             raise CommunityGroupException("Error in setTagsInGroup: " + str(e))
 
-    def manipulateCommunityGroup(self, communityGroupID: int, communityList: CommunityList, adminTelegram: str):
+    def manipulateCommunityGroup(self, communityGroupID: int, communityList: CommunityList, adminTelegram: str,
+                                 sendInvitationLink: bool):
         assert isinstance(communityGroupID, int), "communityGroupID must be type of int"
         assert isinstance(communityList, CommunityList), "communityList must be type of CommunityList"
         assert isinstance(adminTelegram, str), "adminTelegram must be type of str"
+        assert isinstance(sendInvitationLink, bool), "sendInvitationLink must be type of bool"
         try:
             LOG.debug("Start process of managing community group.")
 
@@ -768,9 +768,13 @@ class CommunityGroup:
             LOG.success("Users without SBT token has been removed successfully")
 
             LOG.debug("Start adding users to community group")
-            self.sendInvitationLink(communityGroupID=communityGroupID, communityList=communityList,
+            if sendInvitationLink:
+                self.sendInvitationLink(communityGroupID=communityGroupID, communityList=communityList,
                                     adminTelegram=adminTelegram)
-            LOG.success("Process of adding users (or they got invitation)  has been successfully finished")
+                LOG.success("Process of adding users (or they got invitation)  has been successfully finished")
+            else:
+                LOG.debug("Sending invitation link is skipped")
+
 
 
             LOG.debug("Start adding users to admin group")
@@ -1012,6 +1016,7 @@ class CommunityGroup:
 
             RANGE_IN_DAYS_NFT = 31 * 9
             RANGE_IN_DAYS_INDUCTED = 31 * 3
+            RANGE_IN_DAYS_WHEN_INVITATION_LINK = 19 #actualy 2 weeks but we add 5 days for safety
 
             self.addGroupToKnownUsersAndCheckAdminRight(communityGroupID=communityGroupID)
 
@@ -1070,8 +1075,15 @@ class CommunityGroup:
             for item in currentState:
                 communityList.append(state=CommunityListState.CURRENT, item=item)
 
+            if electionCurrState.getLastElectionTime() + timedelta(days=RANGE_IN_DAYS_WHEN_INVITATION_LINK) > executionTime:
+                LOG.info("Time to send invitation link to community group")
+                sendInvitationLink: bool = True
+            else:
+                sendInvitationLink: bool = False
+
             self.manipulateCommunityGroup(communityGroupID=communityGroupID, communityList=communityList,
-                                          adminTelegram=telegram_admins_id[0])
+                                          adminTelegram=telegram_admins_id[0],
+                                          sendInvitationLink=sendInvitationLink)
 
         except Exception as e:
             LOG.exception("Error in do: " + str(e))
