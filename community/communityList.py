@@ -84,7 +84,13 @@ class CommunityList:
                                                       nftTemplateID=inductedU.nftTemplateID,
                                                       participantName=inductedU.participantName))
 
-
+            #remove duplicates
+            for foundP in found:
+                foundParticipant: list[CommunityParticipant] = [x for x in found
+                                                                if x.accountName == foundP.accountName]
+                if len(foundParticipant) > 1:
+                    LOG.debug("Removing duplicate " + foundP.accountName + " from found list")
+                    found.remove(foundP)
             return found
         except Exception as e:
             LOG.exception("CommunityList.usersThatAreNotInGroupButShouldBe; exception: " + str(e))
@@ -161,11 +167,6 @@ class CommunityList:
                     continue
                 if currentU.customMember is not None and currentU.customMember.adminRights.isAdmin is True:
                    #(currentU.customMember.tag is not None and currentU.customMember.tag != "" ):
-
-                    if currentU.customMember.promotedBy is not None:
-                        kvb = str(currentU.customMember.promotedBy.username).lower()
-                        kva = str(REMOVE_AT_SIGN_IF_EXISTS(telegram_bot_name)).lower()
-                        LOG.debug(kva + " " + kvb + " " + str(kva == kvb))
                     #another check because of redability - if promoted by other admin, we can skip him
                     if currentU.customMember.promotedBy is not None and \
                         str(currentU.customMember.promotedBy.username).lower() != str(REMOVE_AT_SIGN_IF_EXISTS(telegram_bot_name)).lower():

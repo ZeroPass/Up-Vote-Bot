@@ -1019,7 +1019,6 @@ class CommunityGroup:
             RANGE_IN_DAYS_WHEN_INVITATION_LINK = 19 #actualy 2 weeks but we add 5 days for safety
 
             self.addGroupToKnownUsersAndCheckAdminRight(communityGroupID=communityGroupID)
-
             LOG.debug("...getting participants with NFT (goal state - not current members of community group...)")
             participantsGoalState: list[CommunityParticipant] = \
                 self.getUsersWithNFT(contractAccount=contactAccount,
