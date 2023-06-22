@@ -1947,6 +1947,14 @@ class Communication:
             communityParticipants: list[CommunityParticipant] = self.merge(communityParticipantsNFT=communityParticipants,
                                                                            participantsDB=participants,
                                                                            participantsInGroup=participantsInGroup)
+            # remove duplicates
+            for foundP in communityParticipants:
+                foundParticipant: list[CommunityParticipant] = [x for x in communityParticipants
+                                                                if x.accountName == foundP.accountName]
+                if len(foundParticipant) > 1:
+                    LOG.debug("Removing duplicate " + foundP.accountName + " from found list")
+                    communityParticipants.remove(foundP)
+
             return communityParticipants
         except Exception as e:
             LOG.exception("Error in getUsersWithNFTAndNotInGroup: " + str(e))

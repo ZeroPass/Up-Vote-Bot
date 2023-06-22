@@ -93,6 +93,9 @@ class EdenBot:
 
             LOG.debug("Creating community group management object ...")
 
+            #while True:
+            #    time.sleep(2)
+
             # make sure that testing is set correct!
             self.communityGroupManagement: CommunityGroup = CommunityGroup(edenData=self.edenData,
                                                 communication=self.communication,
