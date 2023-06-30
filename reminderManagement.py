@@ -371,8 +371,8 @@ class ReminderManagement:
                 LOG.debug("Member (" + str(member) + ") is not going to participate and reminder "
                                                      "is for 'not attended members'")
                 return _("Hey! \n"
-                         "I am here to remind you that Eden election is starting %s."
-                         " \n You are not attending this election, so you will not be able to participate.\n\n"
+                         "I am here to remind you that Eden election is starting %s.\n"
+                         "You are not registered to attend this election, so you will not be able to participate.\n\n"
                          "You can change your attendance status by pressing the button below text:.") % \
                        (nearestDateTimeText)
             else:
