@@ -3,8 +3,6 @@ import time
 
 import datetime as datetime
 
-from networkx import contracted_edge
-
 from chain import EdenData
 from chain.dfuse import *
 from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
