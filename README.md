@@ -12,3 +12,10 @@ Read about the progress and donate at [pomelo.io/grants/bot4eden](https://pomelo
 - Sending limit is around 30 messages per second (https://core.telegram.org/bots/faq#how-can-i-message-all-of-my-bot-39s-subscribers-at-once)
 - We detected the limit of 'group creation action' (around 50 groups per dey per bot)
 - Renaming group has limit around 8 groups in one actions set (rename every ~30 seconds)
+
+## Delay
+- There are 2 types of upcoming event messages
+  - X min till the end of round,
+  - X hours/days till the start of elections.
+- When the message was sent to the user, app writes the record (with commit) on database -single row. For faster exection it should write in bulk and create one commit.
+  
