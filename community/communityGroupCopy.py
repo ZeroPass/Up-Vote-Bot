@@ -101,6 +101,7 @@ class CommunityGroup:
         try:
             response: Response = self.edenData.getMembers()
 
+            members: list[Participant] = list()
             if isinstance(response, ResponseSuccessful):
                 ranks:dict = {}
                 for key, value in response.data.items():
@@ -136,7 +137,7 @@ class CommunityGroup:
 
     def merge(self,
               membersWithRank: dict,
-              votes: list[dict],
+              #communityParticipantsNFT: list[CommunityParticipant],
               participantsDB: list[Participant]) \
             -> list[CommunityParticipant]:
         try:
@@ -147,29 +148,16 @@ class CommunityGroup:
                 LOG.info("Participant from database: " + str(participantDB))
                 communityParticipantNFT: CommunityParticipant = CommunityParticipant.fromParticipantOnly(participantDB)
                 isFound: bool = False
-                #rank - last elections
                 for account, rank in membersWithRank.items():
                     if participantDB.accountName == account:
-                        sbt: SBT = SBT(round=rank, received=datetime.now())
+                        sbt: SBT = SBT(round=rank, received=datetime.now()) #received is not important
+                        communityParticipantNFT.sbt = sbt
                         isFound = True
-                        break
+                        continue
                 if isFound is False:
-                    #check also votes
-                    for vote in votes:
-                        if participantDB.accountName == vote['voter']:
-                            sbt: SBT = SBT(round=vote['round'], received=None) # if received is None, it means that
-                            isFound = True
-                            break
-                            # participant has access to group but no admin rights
-                # votes - last X months/elections
-                """if isFound is False:
                     #not found rank
                     sbt: SBT = SBT(round=-1, received=datetime.now())
-                communityParticipantNFT.sbt = sbt
-                merged.append(communityParticipantNFT)"""
-                if isFound:
-                    communityParticipantNFT.sbt = sbt
-                    merged.append(communityParticipantNFT)
+                merged.append(communityParticipantNFT)
 
             return merged
 
@@ -213,38 +201,7 @@ class CommunityGroup:
             LOG.exception("Error in merge: " + str(e))
             raise CommunityGroupException("Error in merge: " + str(e))
 
-    def mergeActionVotes(self, votes: list[dict], participantsDB: list[Participant]) \
-            -> list[Participant]:
-        try:
-            LOG.debug("Merge accounts(EOS) with participants from database to one list - to have who votes (with lvl) and "
-                      "and telegram data in one list")
-
-            toReturn: list[Participant] = []
-            for vote in votes:
-                if isinstance(vote, dict) is False:
-                    LOG.error("Vote is not dict")
-                    continue
-
-                if isinstance(vote['voter'], str) is False:
-                    LOG.error("Vote['voter'] is not str")
-                    continue
-
-                if isinstance(vote['round'], int) is False:
-                    LOG.error("Vote['round'] is not int")
-                    continue
-                LOG.info("Vote with voter: " + vote['voter'] + " ... looking for telegramID")
-                for participantDB in participantsDB:
-                    if vote['voter'] == participantDB.accountName and \
-                            participantDB.telegramID is not None and \
-                            participantDB.telegramID != "":
-                        toReturn.append(Participant.deepCopy(participantDB))
-                        break
-            return toReturn
-        except Exception as e:
-            LOG.exception("Error in merge: " + str(e))
-            return None
-
-    """def getUsersWithNFT(self, contractAccount: str, executionTime: datetime, rangeInDays: int) -> \
+    def getUsersWithNFT(self, contractAccount: str, executionTime: datetime, rangeInDays: int) -> \
             list[CommunityParticipant]:
         assert isinstance(contractAccount, str), "contractAccount must be type of str"
         assert isinstance(executionTime, datetime), "executionTime must be type of datetime"
@@ -279,52 +236,12 @@ class CommunityGroup:
             # get the participants from the database
             participants: list[Participant] = self.getUsersFromDatabase(contractAccount=contractAccount,
                                                                         executionTime=executionTime,
-                                                                        rangeInMonths=3) #round(rangeInDays * 1.5 / 30))
+                                                                        rangeInMonths=round(rangeInDays * 1.5 / 30))
             # merge the participants from the database with the community participants - not known participants from
             # the database will have telegramID = -1
-            communityParticipants: list[CommunityParticipant] = self.merge(
+            communityParticipants = self.merge(
                 membersWithRank=membersRank,
                 #communityParticipantsNFT=communityParticipants,
-                participantsDB=participants)
-            return communityParticipants
-        except Exception as e:
-            LOG.exception("Error in getUsersWithNFT: " + str(e))
-            raise CommunityGroupException("Error in getUsersWithNFT: " + str(e))"""
-
-    def getUsersWhoVote(self, contractAccount: str, executionTime: datetime, rangeInDays: int) -> \
-            list[CommunityParticipant]:
-        assert isinstance(contractAccount, str), "contractAccount must be type of str"
-        assert isinstance(executionTime, datetime), "executionTime must be type of datetime"
-        assert isinstance(rangeInDays, int), "endDate must be type of int"
-        try:
-            if rangeInDays < 0:
-                raise CommunityGroupException("rangeInDays must be positive")
-            LOG.info("Get users who vote with execution time " + str(executionTime)
-                     + " and date range" + str(rangeInDays))
-
-            endDate: datetime = executionTime.replace(microsecond=0)
-            startDate: datetime = endDate - timedelta(days=rangeInDays)
-
-            LOG.debug("Get NFT between " + str(startDate) + " and " + str(endDate))
-            membersRank: dict = self.getMembersRankFromChain()
-            communityParticipantsVotes: list[dict] = \
-                self.getActionElectVote(contractAccount=contractAccount,
-                                        executionTime=executionTime,
-                                        rangeInDays=rangeInDays)
-
-            if communityParticipantsVotes is None:
-                raise CommunityGroupException("There was an error when parsing votes: ")
-            LOG.debug(
-                "Community participants have been parsed. Number of participants: " + str(len(communityParticipantsVotes)))
-
-            # get the participants from the database
-            participants: list[Participant] = self.getUsersFromDatabase(contractAccount=contractAccount,
-                                                                        executionTime=executionTime,
-                                                                        rangeInMonths=3) #round(rangeInDays * 1.5 / 30))
-
-            communityParticipants: list[CommunityParticipant] = self.merge(
-                membersWithRank=membersRank,
-                votes=communityParticipantsVotes,
                 participantsDB=participants)
             return communityParticipants
         except Exception as e:
@@ -378,54 +295,6 @@ class CommunityGroup:
         except Exception as e:
             LOG.exception("Error in getActionInducted: " + str(e))
             raise CommunityGroupException("Error in getActionInducted: " + str(e))
-
-
-    def getActionElectVote(self,
-                          contractAccount: str,
-                          executionTime: datetime,
-                          rangeInDays: int) -> \
-            list[dict]:
-        assert isinstance(contractAccount, str), "contractAccount must be type of str"
-        assert isinstance(executionTime, datetime), "executionTime must be type of datetime"
-        assert isinstance(rangeInDays, int), "endDate must be type of int"
-        try:
-            if rangeInDays < 0:
-                raise CommunityGroupException("rangeInDays must be positive")
-            LOG.info("Get users that sends votes on election; execution time " + str(executionTime)
-                     + " and date range" + str(rangeInDays))
-
-            endDate: datetime = executionTime.replace(microsecond=0)
-            startDate: datetime = endDate - timedelta(days=rangeInDays)
-
-            LOG.debug("Get actions between " + str(startDate) + " and " + str(endDate))
-
-            votesActions: Response = self.edenData.getActionElectVote(contractAccount=contractAccount,
-                                                                  startTime=startDate,
-                                                                  endTime=endDate)
-            if isinstance(votesActions, ResponseError):
-                raise CommunityGroupException("There was an error when getting actions: " + str(votesActions.error))
-
-            accounts: list[dict] = self.edenData.actionElectVoteParser(report=votesActions.data)
-
-            if accounts is None:
-                raise CommunityGroupException("There was an error when parsing votes: "
-                                              + str(votesActions.error))
-            LOG.debug("Accounts have been parsed. Number of participants: " + str(len(accounts)))
-            return accounts
-            """participants: list[Participant] = self.getUsersFromDatabase(contractAccount=contractAccount,
-                                                                        executionTime=executionTime,
-                                                                        rangeInMonths=round(rangeInDays * 4.5 / 30))
-            # merge inducted accounts with participants from database - only matched account will be in list
-            mergedParticipants: list[Participant] = self.mergeActionVotes(votes=accounts,
-                                               participantsDB=participants)
-            if mergedParticipants is None:
-                raise CommunityGroupException("There was an error when merging users that give votes with participants "
-                                              "from database")
-
-            return mergedParticipants"""
-        except Exception as e:
-            LOG.exception("Error in getActionElectVote: " + str(e))
-            return None
 
     def addGroupToKnownUsersAndCheckAdminRight(self, communityGroupID: int):
         assert isinstance(communityGroupID, int), "communityGroupID must be type of int"
@@ -799,7 +668,7 @@ class CommunityGroup:
                         "communityParticipant must be type of CommunityParticipant"
 
                     if communityParticipant.telegramID == "":
-                        LOG.debug("User has no telegramID. Skip removing depromoting")
+                        LOG.debug("User has no telegramID. Skip adding him to community group")
                         continue
 
                     if self.testing:
@@ -916,7 +785,7 @@ class CommunityGroup:
                         "communityParticipant must be type of CommunityParticipant"
 
                     if communityParticipant.telegramID == "":
-                        LOG.debug("User has no telegramID. Skip setting tags for him")
+                        LOG.debug("User has no telegramID. Skip adding him to community group")
                         continue
 
                     if self.testing:
@@ -964,18 +833,14 @@ class CommunityGroup:
             LOG.success("Users without SBT token has been removed successfully")
 
             LOG.debug("Start adding users to community group")
-            if sendInvitationLink or True:
+            if sendInvitationLink:
                 self.sendInvitationLink(communityGroupID=communityGroupID, communityList=communityList,
                                     adminTelegram=adminTelegram)
                 LOG.success("Process of adding users (or they got invitation)  has been successfully finished")
             else:
                 LOG.debug("Sending invitation link is skipped")
 
-            LOG.debug("Start removing users from admin group")
-            self.removeUsersFromAdminGroup(communityGroupID=communityGroupID, communityList=communityList,
-                                           adminTelegram=adminTelegram)
-            LOG.success("Users that are no longer chief delegates or part of maintaining team has been removed from"
-                        " administrator group")
+
 
             LOG.debug("Start adding users to admin group")
             self.addUsersToAdminGroup(communityGroupID=communityGroupID, communityList=communityList,
@@ -988,6 +853,11 @@ class CommunityGroup:
                                 adminTelegram=adminTelegram)
             LOG.success("Admin tags in group has been set successfully")
 
+            LOG.debug("Start removing users from admin group")
+            self.removeUsersFromAdminGroup(communityGroupID=communityGroupID, communityList=communityList,
+                                           adminTelegram=adminTelegram)
+            LOG.success("Users that are no longer chief delegates or part of maintaining team has been removed from"
+                        " administrator group")
 
         except Exception as e:
             LOG.exception("Error in manipulateCommunityGroup: " + str(e))
@@ -1076,11 +946,11 @@ class CommunityGroup:
                                                  memberStatus=MemberStatus.MEMBER)
 
             # remove duplicates from base list
-            #for participant in duplicates:
-            #    for goalParticiapnt in participantsGoal:
-            #        if participant.isSameWithoutCustomMember(other=goalParticiapnt):
-            #            participantsGoal.remove(goalParticiapnt)
-            #            break
+            for participant in duplicates:
+                for goalParticiapnt in participantsGoal:
+                    if participant.isSameWithoutCustomMember(other=goalParticiapnt):
+                        participantsGoal.remove(goalParticiapnt)
+                        break
 
             return participantsGoal
         except Exception as e:
@@ -1152,29 +1022,13 @@ class CommunityGroup:
 
             self.addGroupToKnownUsersAndCheckAdminRight(communityGroupID=communityGroupID)
             LOG.debug("...getting participants with NFT (goal state - not current members of community group...)")
-
-            #######
-
-            #self.getActionElectVote(contractAccount=contactAccount,
-            #                        executionTime=executionTime,
-            #                        rangeInDays=RANGE_IN_DAYS_NFT)
-
             participantsGoalState: list[CommunityParticipant] = \
-                self.getUsersWhoVote(contractAccount=contactAccount,
-                                     rangeInDays=RANGE_IN_DAYS_NFT,
-                                     executionTime=executionTime
-                                     )
-
-            """participantsGoalState: list[CommunityParticipant] = \
                 self.getUsersWithNFT(contractAccount=contactAccount,
                                      rangeInDays=RANGE_IN_DAYS_NFT,
                                      executionTime=executionTime
-                                     )"""
+                                     )
             if participantsGoalState is None:
                 raise CommunityGroupException("There was an error when getting participants with NFT")
-
-
-            #############
 
             LOG.debug("...getting participants who called inducted method on contract(last 3 months)...")
             inductedAccounts: list[Participant] = self.getActionInducted(contractAccount=contactAccount,

@@ -101,6 +101,22 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getCurrentElectionState; Description: " + str(e))
 
+    """def getMemberState(self, height: int = None):
+        try:
+            LOG.info("Get member state on height: " + str(height) if height is not None else "<current/live>")
+            ACCOUNT = eden_account
+            TABLE = 'member'
+            PRIMARY_KEY = 'member'
+            SCOPE = None
+
+            return self.dfuseConnection.getTableRow(account=ACCOUNT,
+                                                    table=TABLE,
+                                                    primaryKey=PRIMARY_KEY,
+                                                    scope=SCOPE,
+                                                    height=height)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getMemberState; Description: " + str(e))"""
     def getParticipants(self, height: int = None):
         try:
             LOG.info("Get election state on height: " + str(height) if height is not None else "<current/live>")
@@ -277,8 +293,8 @@ class EdenData:
 
             graphql: GraphQLApi = GraphQLApi(dfuseConnection=self.dfuseConnection)
             return graphql.getGivenSBT(account=contractAccount,
-                                       startBlockNum=259815910,  # startTimeBlockNum,
-                                       endBlockNum=307999372  # endTimeBlockNum
+                                       startBlockNum= startTimeBlockNum,
+                                       endBlockNum= endTimeBlockNum
                                        )
         except Exception as e:
             LOG.exception(str(e))
@@ -345,6 +361,68 @@ class EdenData:
         except Exception as e:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getActionsInducted; Description: " + str(e))
+
+    def getActionElectVote(self, contractAccount: str, startTime: datetime, endTime: datetime):
+        assert isinstance(contractAccount, str), "contractAccount is not of type str"
+        assert isinstance(startTime, datetime), "startTime is not of type datetime"
+        assert isinstance(endTime, datetime), "endTime is not of type datetime"
+        try:
+            if startTime > endTime:
+                return ResponseError("Start time is after end time")
+
+            startTimeResponse = self.getBlockNumOfTimestamp(timestamp=startTime)
+            if isinstance(startTimeResponse, ResponseSuccessful):
+                startTimeBlockNum = startTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of start time:" + str(startTime))
+
+            endTimeResponse = self.getBlockNumOfTimestamp(timestamp=endTime)
+            if isinstance(endTimeResponse, ResponseSuccessful):
+                endTimeBlockNum = endTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of end time:" + str(endTime))
+
+            if isinstance(startTimeBlockNum, int) == False or isinstance(endTimeBlockNum, int) == False:
+                return ResponseError("Could not get block number of start time or end time - wrong type")
+
+            graphql: GraphQLApi = GraphQLApi(dfuseConnection=self.dfuseConnection)
+            return graphql.getActionElectVote(account=contractAccount,
+                                              startBlockNum=startTimeBlockNum,
+                                              endBlockNum=endTimeBlockNum)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getActionElectVote; Description: " + str(e))
+
+    def getActionElectSeed(self, contractAccount: str, startTime: datetime, endTime: datetime):
+        assert isinstance(contractAccount, str), "contractAccount is not of type str"
+        assert isinstance(startTime, datetime), "startTime is not of type datetime"
+        assert isinstance(endTime, datetime), "endTime is not of type datetime"
+        try:
+            if startTime > endTime:
+                return ResponseError("Start time is after end time")
+
+            startTimeResponse = self.getBlockNumOfTimestamp(timestamp=startTime)
+            if isinstance(startTimeResponse, ResponseSuccessful):
+                startTimeBlockNum = startTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of start time:" + str(startTime))
+
+            endTimeResponse = self.getBlockNumOfTimestamp(timestamp=endTime)
+            if isinstance(endTimeResponse, ResponseSuccessful):
+                endTimeBlockNum = endTimeResponse.data
+            else:
+                return ResponseError("Could not get block number of end time:" + str(endTime))
+
+            if isinstance(startTimeBlockNum, int) == False or isinstance(endTimeBlockNum, int) == False:
+                return ResponseError("Could not get block number of start time or end time - wrong type")
+
+            graphql: GraphQLApi = GraphQLApi(dfuseConnection=self.dfuseConnection)
+            return graphql.getActionElectSeed(account=contractAccount,
+                                              startBlockNum=startTimeBlockNum,
+                                              endBlockNum=endTimeBlockNum)
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called getActionElectSeed; Description: " + str(e))
 
 
     def checkIfGroupSentVideo(self, actionVideoReport: list, round: int, participants: list[Participant]):
@@ -446,7 +524,7 @@ class EdenData:
     def actionInductedParser(self, report: list) -> list[CommunityParticipantDB]:
         assert isinstance(report, list), "report must be type of dict"
         try:
-            LOG.debug("SBTRowParser")
+            LOG.debug("actionInductedParser")
             TRACE = 'trace'
             MATCHING_ACTION = 'matchingActions'
             CREATED_ACTION = 'createdActions'
@@ -475,6 +553,95 @@ class EdenData:
         except Exception as e:
             LOG.exception(str(e))
             raise Exception("Exception thrown when called actionInductedParser; Description: " + str(e))
+            return None
+
+    def actionElectVoteParser(self, report: list) -> list[dict]:
+        assert isinstance(report, list), "report must be type of dict"
+        try:
+            LOG.debug("ActionElectVoteParser")
+            TRACE = 'trace'
+            MATCHING_ACTION = 'matchingActions'
+            CREATED_ACTION = 'createdActions'
+            DATA = 'data'
+            VOTER= 'voter'
+            ROUND = 'round'
+
+            toReturn: list[tuple] = []
+
+            for action in report:
+                if TRACE not in action or MATCHING_ACTION not in action[TRACE]:
+                    LOG.error("action Elect Vote Parser; Trace not in action: " + str(action))
+                    continue
+                matchingActions = action[TRACE][MATCHING_ACTION]
+                for matchingAction in matchingActions:
+                    if DATA not in matchingAction:
+                        LOG.error("action Elect Vote Parser; Created action not in matching action: " + str(matchingAction))
+                        continue
+                    data = matchingAction[DATA]
+                    if VOTER not in data:
+                        LOG.error("action Elect Vote Parser; Voted not in data: " + str(matchingAction))
+                        continue
+                    if ROUND not in data:
+                        LOG.error("action Elect Vote Parser; Round not in data: " + str(matchingAction))
+                        continue
+                    LOG.success("Vote found: " + str(data[VOTER]))
+                    voter: str = data[VOTER]
+                    roundV: int = data[ROUND]
+                    toReturn.append({"voter": voter, "round": roundV})
+            return toReturn
+        except Exception as e:
+            LOG.exception(str(e))
+            raise Exception("Exception thrown when called actionElectVoteParser; Description: " + str(e))
+            return None
+
+    def groupDatesInSpecificRange(self, dates: list[datetime], rangeInDays: int = 10) -> list[list[datetime]]:
+        assert isinstance(dates, list), "dates must be type of list"
+        assert isinstance(rangeInDays, int), "rangeInDays must be type of int"
+        # Ensure the dates are sorted
+        dates.sort()
+        grouped_dates = [[dates[0]]]
+
+        for date in dates[1:]:
+            # If the date is within 10 days of the last date in the current group, add it to the current group
+            if date - grouped_dates[-1][-1] <= timedelta(days=rangeInDays):
+                grouped_dates[-1].append(date)
+            # Otherwise, start a new group with the current date
+            else:
+                grouped_dates.append([date])
+
+        return grouped_dates
+
+    def actionElectSeedParser(self, report: list) -> list[dict]:
+        assert isinstance(report, list), "report must be type of dict"
+        try:
+            LOG.debug("actionElectSeedParser")
+            TRACE = 'trace'
+            BLOCK = 'block'
+            TIMESTAMP= 'timestamp'
+
+            dates: list[datetime] = []
+
+            for action in report:
+                if TRACE not in action or BLOCK not in action[TRACE]:
+                    LOG.error("action Elect Seed Parser; Trace not in action: " + str(action))
+                    continue
+                block = action[TRACE][BLOCK]
+                if TIMESTAMP not in block:
+                    LOG.error("action Elect Seed Parser; Timestamp not in block.")
+                    continue
+                timestamp: str = block[TIMESTAMP]
+                print (timestamp)
+                try:
+                    dt = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+                except ValueError:
+                    dt = datetime.strptime(timestamp, '%Y-%m-%dT%H:%M:%SZ')
+                dates.append(dt)
+
+            grouped = self.groupDatesInSpecificRange(dates=dates, rangeInDays=10)
+            return len(grouped)
+        except Exception as e:
+            LOG.exception(str(e))
+            raise Exception("Exception thrown when called actionElectSeedParser; Description: " + str(e))
             return None
 
 

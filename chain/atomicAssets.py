@@ -4,7 +4,7 @@ from datetime import datetime
 import requests
 
 from chain.dfuse import DfuseConnection, ResponseError, Response, ResponseSuccessful
-from constants import atomic_assets_account, dfuse_api_key
+from constants import atomic_assets_account, dfuse_api_key, atomic_assets_url
 from database import Database
 from log.log import Log
 
@@ -69,8 +69,8 @@ class AtomicAssetsData:
             LOG.info("Get telegram ID from template id on height: " + str(templateID) if height is not None else "<current/live>")
 
             COLLECTION_NAME = 'genesis.eden'
-            url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
-            #url = requests.get("https://jungle-aa.edenia.cloud/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            #url = requests.get("https://eos.api.atomicassets.io/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
+            url = requests.get(atomic_assets_url + "/atomicassets/v1/templates/" + COLLECTION_NAME + "/" + str(templateID))
 
             if url.status_code == 200:
                 jsonData = json.loads(url.text)
@@ -95,7 +95,7 @@ class AtomicAssetsData:
             LOG.info("Get participant telegram ID on height: " + str(height) if height is not None else "<current/live>")
 
 
-            url = requests.get("https://eos.api.atomicassets.io/atomicmarket/v1/assets/" + asset_id)
+            url = requests.get(atomic_assets_url + "/atomicmarket/v1/assets/" + asset_id)
 
             if url.status_code == 200:
                 jsonData = json.loads(url.text)
@@ -143,8 +143,9 @@ class AtomicAssetsData:
         assert isinstance(collectionName, str), "collectionName must be type of str"
         try:
             LOG.info("Get template from templateID: " + str(templateID) + " and collection: " + collectionName)
-            url = requests.get(
-                "https://eos.api.atomicassets.io/atomicassets/v1/templates/" + collectionName + "/" + str(templateID))
+
+            url = requests\
+                .get(atomic_assets_url + "/atomicassets/v1/templates/" + collectionName + "/" + str(templateID))
             if url.status_code == 200:
                 jsonData = json.loads(url.text)
                 if jsonData['success']:
@@ -157,47 +158,10 @@ class AtomicAssetsData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called getTemplateFromTemplateID; Description: " + str(e))
 
-    def getTemplatesCreateTimeFromAccount(self, accountName: str, collectionName: str) -> Response:
-        assert isinstance(accountName, str), "accountName must be type of str"
-        assert isinstance(collectionName, str), "collectionName must be type of str"
-        try:
-            LOG.info("Get templates(create time) from account: " + accountName + " and collection: " + collectionName)
-            url = requests.get(
-                "https://eos.api.atomicassets.io/atomicassets/v1/accounts/" + accountName + "/" + collectionName)
-            list: datetime = []
-            if url.status_code == 200:
-                jsonData = json.loads(url.text)
-                if jsonData['success']:
-                    LOG.success("Succeeded")
-                    templates = jsonData['data']['templates']
-                    for template in templates:
-                        templateID = template['template_id']
-                        createdAtTimeResponse: Response = self.getTemplateFromTemplateID(templateID=templateID,
-                                                                                        collectionName=collectionName)
-                        if isinstance(createdAtTimeResponse, ResponseSuccessful):
-                            list.append(createdAtTimeResponse.data)
-                        else:
-                            LOG.error("Error when getting template from templateID: " + str(templateID))
 
-                    if True:
-                        return ResponseSuccessful(socialJson['telegram'])
-                    else:
-                        return ResponseError("No telegram in social data")
-                # otherwise return error
-            return ResponseError("Error when getting templates id from account")
-
-            return data
-        except Exception as e:
-            LOG.exception(str(e))
-            return ResponseError("Exception thrown when called getElectionState; Description: " + str(e))
 
     def getLatestSBTOfUser(self):
         try:
-            #account, collection name
-            #https://eos.api.atomicassets.io/atomicassets/v1/accounts/lukaperrrcic/sbts4edeneos'
-            # collection_name, templateID
-            #https://eos.api.atomicassets.io/atomicassets/v1/templates/sbts4edeneos/8361'
-            #atomic_assets_SBT_account
             LOG.info("Get latest SBT of user")
         except Exception as e:
             LOG.exception(str(e))

@@ -84,9 +84,8 @@ class RawActionWeb:
         return url
 
 def main():
-    raw = RawActionWeb()
-    neki = raw.electOpt()
-    nek3 = raw.electVote(round=1, voter="nejc", candidate="candidatena")
-    ja = 8
+    test = 8
+
+
 if __name__ == "__main__":
     main()

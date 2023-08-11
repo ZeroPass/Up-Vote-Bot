@@ -1,11 +1,16 @@
 import asyncio
+from datetime import datetime, timedelta
 from typing import Union
 
 import pyrogram
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from chain import EdenData
+from chain.stateElectionState import ElectCurrTable
+from constants import telegram_bot_name
 from database import Database, Election, ExtendedRoom
+from database.election import ElectionRound
+from database.participant import Participant
 from database.room import Room
 from debugMode.modeDemo import Mode, ModeDemo
 from log import Log
@@ -20,6 +25,9 @@ from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS
 # - Cleaning unused groups/channels
 # - Removing the bot and user bot from used the groups/channels
 
+class AfterElectionAdditionalActionsException(Exception):
+    pass
+
 class AfterEveryRoundAdditionalActionsException(Exception):
     pass
 
@@ -29,10 +37,300 @@ class FinalRoundAdditionalActionsException(Exception):
 
 class AdditionalActionManagementException(Exception):
     pass
-
+LOG_aeaa = Log(className="AfterElectionAdditionalActions")
 LOG_aeraa = Log(className="AfterEveryRoundAdditionalActions")
 LOG_fraa = Log(className="FinalRoundAdditionalActions")
 LOG = Log(className="AdditionalActionManagement")
+
+
+class AfterElectionAdditionalActions:
+    def __init__(self, election: Election, edenData: EdenData, database: Database, communication: Communication,
+                 modeDemo: ModeDemo):
+        assert isinstance(election, Election), "election is not an Election object"
+        assert isinstance(edenData, EdenData), "edenData is not an EdenData object"
+        assert isinstance(database, Database), "database is not a Database object"
+        assert isinstance(communication, Communication), "communication is not a Communication object"
+        assert isinstance(modeDemo, ModeDemo), "modeDemo is not a ModeDemo object"
+        self.election = election
+        self.edenData = edenData
+        self.database = database
+        self.communication = communication
+        self.modeDemo = modeDemo
+        self.executionTime = self.setExecutionTime(modeDemo=modeDemo)
+        LOG_aeaa.debug("AfterElectionAdditionalActions object created")
+
+    def setExecutionTime(self, modeDemo: ModeDemo = None) -> datetime:
+        """Set execution time; if modeDemo is defined then use datetime from modeDemo.blockHeight
+        otherwise
+        use time of the node as main time of server"""
+        if modeDemo is None:
+            # in live mode time of blockchain is also time of server
+            blockchainTime: datetime = self.dateTimeManagement.getTime()
+            return blockchainTime
+        else:
+            # in demo mode time of block is also time of server
+            blockchainTime: datetime = modeDemo.getCurrentBlockTimestamp()
+            return blockchainTime
+
+    def isInTimeframe(self, executionTime: datetime, electionDate: datetime, deadlineInMinutes: int,
+                      executionTimeframeInMinutes: int) -> bool:
+        """Check if it is time to do an action"""
+        try:
+            assert isinstance(executionTime, datetime), "executionTime is not instance of datetime"
+            assert isinstance(electionDate, datetime), "electionDate is not instance of datetime"
+            assert isinstance(deadlineInMinutes, int), "deadlineInMinutes is not instance of int"
+            assert isinstance(executionTimeframeInMinutes, int), "executionTimeframeInMinutes is not instance of int"
+
+            LOG.trace("Check if it is time to do action. "
+                      "executionTime: " + str(executionTime) +
+                      ", electionDate: " + str(electionDate) +
+                      ", deadlineInMinutes: " + str(deadlineInMinutes) +
+                      ", executionTimeframeInMinutes: " + str(executionTimeframeInMinutes)
+                      )
+
+            lowerEnd: datetime = electionDate + timedelta(minutes=deadlineInMinutes)
+            higherEnd: datetime = lowerEnd + timedelta(minutes=executionTimeframeInMinutes)
+
+            if  executionTime>= lowerEnd and executionTime <= higherEnd:
+                LOG.info("We are in the timeframe to do action")
+                return True
+            else:
+                LOG.info("We are NOT in the timeframe to do action")
+                return False
+        except Exception as e:
+            LOG.exception("Exception (in isInTimeframe): " + str(e))
+            raise AfterElectionAdditionalActionsException("Exception (in isInTimeframe): " + str(e))
+
+    def getRoomsFromDatabase(self, election: Election, predisposedBy: str) -> list[Room]:
+        """Get participants from database"""
+        try:
+            assert isinstance(election, Election), "election is not an Election object"
+            assert isinstance(predisposedBy, str), "predisposedBy is not an str object"
+            LOG.info("Get members from database")
+            rooms: list[Room] = self.database.getAllRoomsByElection(election=election, predisposedBy=predisposedBy)
+            if rooms is not None:
+                return rooms
+            else:
+                raise Exception("Participants are not set in the database. Something went wrong.")
+                return None
+        except Exception as e:
+            LOG.exception("Exception thrown when called getRoomsFromDatabase; Description: " + str(e))
+            raise AfterElectionAdditionalActionsException("Exception thrown when called getRoomsFromDatabase; Description: " + str(e))
+
+    def getCDroomFromDatabase(self, election: Election, predisposedBy: str) -> list[Room]:
+        """Get participants from database"""
+        try:
+            assert isinstance(election, Election), "election is not an Election object"
+            assert isinstance(predisposedBy, str), "predisposedBy is not an str object"
+            LOG.info("Get members from database")
+            rooms: list[Room] = \
+                self.database.getRoomsElectionFilteredByRound(election=election,
+                                                              round=ElectionRound.FINAL.value,
+                                                              predisposedBy=predisposedBy)
+            if rooms is not None:
+                return rooms
+            else:
+                raise Exception("Participants are not set in the database. Something went wrong.")
+                return None
+        except Exception as e:
+            LOG.exception("Exception thrown when called getCDroomFromDatabase; Description: " + str(e))
+            raise AfterElectionAdditionalActionsException("Exception thrown when called getCDroomFromDatabase; Description: " + str(e))
+
+
+    def leavingTheRoom(self, sessionType: SessionType, room: Room)-> bool:
+        """Leave the room"""
+        try:
+            assert isinstance(sessionType, SessionType), "sessionType is not an SessionType object"
+            assert isinstance(room, Room), "room is not an Room object"
+            LOG.info("Leaving the room")
+            if room.roomTelegramID is None:
+                LOG.error("room.roomTelegramID is None. Something went wrong when getting the room from database.")
+                return
+
+            if self.communication.isInChat(sessionType=sessionType, chatId=room.roomTelegramID) is True:
+                response: bool = self.communication.leaveChat(sessionType=sessionType, chatId=room.roomTelegramID)
+                if response is True:
+                    LOG.info("Bot left the room")
+                    return True
+                else:
+                    LOG.error("Bot did not leave the room or not in the room")
+                    return False
+
+            else:
+                LOG.info("Bot is not in the room or check failed")
+                return False
+        except Exception as e:
+            LOG.exception("Exception thrown when called leavingTheRoom; Description: " + str(e))
+            raise AfterElectionAdditionalActionsException("Exception thrown when called leavingTheRoom; Description: " + str(e))
+
+    def removeBotFromGroupAfterElectionAfterDefinedMinutes(self, executionTime: datetime,
+                                        previousElection: Election,
+                                        deadlineInMinutes: int,
+                                        electCurr: ElectCurrTable,
+                                        telegramBotName: str,
+                                        telegramUserBotName: str):
+        assert isinstance(executionTime, datetime), "executionTime is not a datetime object"
+        assert isinstance(previousElection, Election), "currentElection is not an Election object"
+        assert isinstance(deadlineInMinutes, int), "deadlineInMinutes is not an integer"
+        assert isinstance(electCurr, ElectCurrTable), "electCurr is not an ElectCurrTable object"
+        assert isinstance(telegramBotName, str), "telegramBotName is not a string"
+        assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
+        try:
+            LOG_aeaa.debug("In removeBotFromGroupAfterElection")
+            if self.isInTimeframe(executionTime=executionTime,
+                                 electionDate=electCurr.getLastElectionTime(),
+                                 deadlineInMinutes=deadlineInMinutes,
+                                 executionTimeframeInMinutes=60) is False:
+                LOG_aeaa.debug("It is not time to remove bot from groups. Do not do anything")
+                return
+
+            LOG.info("... is between time span for notification. Send it if not sent yet")
+            # get all rooms from database for previous election
+            rooms: list[Room] = self.getRoomsFromDatabase(election=previousElection,
+                                                          predisposedBy=telegramUserBotName)
+
+            for room in rooms:
+                LOG.info("Removing bot from room: " + str(room.roomID))
+                if room.isArchived is True:
+                    LOG.info("Room is already archived. Do not do anything")
+                    continue
+                LOG.info("Removing bot from room: " + str(room.roomID))
+                isArchived: bool = self.leavingTheRoom(sessionType=SessionType.BOT, room=room)
+                if isArchived is True:
+                    LOG.info("Room is archived. Set as archived in database and remove from known users")
+                    self.database.archiveRoom(room=room)
+                    self.communication.knownUserData.removeKnownUser(botName=telegramBotName,
+                                                                     telegramID=room.roomTelegramID)
+        except Exception as e:
+            LOG_aeaa.exception("Error in removeBotFromGroupAfterElection: " + str(e))
+            AfterElectionAdditionalActionsException("Error in "
+                "AfterElectionAdditionalActions.removeBotFromGroupAfterElection: " + str(e))
+
+    def removeBotFromCDgroup(self,
+                             executionTime: datetime,
+                             previousElection: Election,
+                             deadlineInMinutes: int,
+                             electCurr: ElectCurrTable,
+                             telegramBotName: str,
+                             telegramUserBotName: str):
+        assert isinstance(executionTime, datetime), "executionTime is not a datetime object"
+        assert isinstance(previousElection, Election), "currentElection is not an Election object"
+        assert isinstance(deadlineInMinutes, int), "deadlineInMinutes is not an integer"
+        assert isinstance(electCurr, ElectCurrTable), "electCurr is not an ElectCurrTable object"
+        assert isinstance(telegramBotName, str), "telegramBotName is not a string"
+        assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
+        try:
+            LOG_aeaa.debug("In removeBotFromCDgroup")
+            if self.isInTimeframe(executionTime=executionTime,
+                                 electionDate=electCurr.getLastElectionTime(),
+                                 deadlineInMinutes=deadlineInMinutes,
+                                 executionTimeframeInMinutes=60) is False:
+
+                LOG_aeaa.debug("It is not time to remove bot from groups. Do not do anything")
+                return
+
+            LOG.info("... is between time span for notification. Send it if not sent yet")
+            # get all rooms from database for previous election
+            rooms: list[Room] = self.getCDroomFromDatabase(election=previousElection,
+                                                          predisposedBy=telegramUserBotName)
+            for room in rooms:
+                LOG.info("Removing bot from room: " + str(room.roomID))
+                if room.isArchived is True:
+                    LOG.info("Room is already archived. Do not do anything")
+                    continue
+                LOG.info("Removing bot from room: " + str(room.roomID))
+                userLeft: bool = self.leavingTheRoom(sessionType=SessionType.USER, room=room)
+                botLeft: bool = self.leavingTheRoom(sessionType=SessionType.BOT, room=room)
+
+                LOG.debug("userLeft: " + str(userLeft) + " botLeft: " + str(botLeft))
+                if botLeft is True:
+                    # when bot left the room, the room should be archived
+                    LOG.info("Set as archived in database and remove from known users")
+                    self.database.archiveRoom(room=room)
+                    self.communication.knownUserData.removeKnownUser(botName=telegramBotName,
+                                                                     telegramID=room.roomTelegramID)
+
+        except Exception as e:
+            LOG_aeaa.exception("Error in removeBotFromCDgroup: " + str(e))
+            AfterElectionAdditionalActionsException("Error in "
+                "AfterElectionAdditionalActions.removeBotFromCDgroup: " + str(e))
+
+    def do(self, election: Election, telegramUserBotName: str, telegramBotName: str, electCurr: ElectCurrTable):
+        assert isinstance(election, Election), "election is not an Election object"
+        assert isinstance(telegramUserBotName, str), "telegramUserBotName is not a string"
+        assert isinstance(telegramBotName, str), "telegramBotName is not a string"
+        assert isinstance(electCurr, ElectCurrTable), "electCurr is not an ElectCurrTable object"
+        try:
+            LOG_aeaa.debug("In AfterElectionAdditionalActions.do")
+
+            if electCurr is None:
+                LOG.error("electCurr is None. Something went wrong when getting/parsing elect.Curr table.")
+                return
+            if electCurr.getLastElectionTime() is None or \
+                    isinstance(electCurr.getLastElectionTime(), datetime) is False:
+                LOG_aeaa.error("electCurr.getLastElectionTime() is not datetime. Something went wrong when getting/parsing "
+                          "elect.Curr table. Do not do anything")
+                return
+
+            # get last election if exists in database
+            previousElection: Election = self.database.getElectionByDate(contract=election.contract,
+                                                                         date=electCurr.getLastElectionTime())
+
+            if previousElection is None:
+                LOG_aeaa.error("previousElection is not found in the database. Do not do anything")
+                return
+
+            # remove bot from all groups 15 days after election
+            self.removeBotFromGroupAfterElectionAfterDefinedMinutes(
+                                                 executionTime=self.executionTime,
+                                                 electCurr=electCurr, # from contract
+                                                 previousElection=previousElection,
+                                                 deadlineInMinutes=15 * 24 * 60, # 15 days * 24 hours * 60 minutes
+                                                 telegramBotName=telegramBotName,
+                                                 telegramUserBotName=telegramUserBotName)
+
+            # remove bot and user bot from CD group 1 day after election
+            self.removeBotFromCDgroup(executionTime=self.executionTime,
+                                      electCurr=electCurr,  # from contract
+                                      previousElection=previousElection,
+                                      deadlineInMinutes= 24 * 60,  # 1 day = 24 hours * 60 minutes
+                                      telegramBotName=telegramBotName,
+                                      telegramUserBotName=telegramUserBotName)
+
+        except Exception as e:
+            LOG_aeaa.exception("Error in AfterEveryRoundAdditionalActions.do: " + str(e))
+
+    def removeBotFromAllGroups(self):
+        LOG_aeaa.debug("removeBotFromAllGroups started")
+        for group in self.edenData.groups:
+            try:
+                asyncio.get_event_loop().run_until_complete(self.communication.leaveChat(
+                    sessionType=SessionType.BOT,
+                    chatId=group.id))
+            except pyrogram.errors.exceptions.bad_request_400.ChatAdminRequired:
+                LOG_aeaa.debug("removeBotFromAllGroups: ChatAdminRequired")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.ChatNotModified:
+                LOG_aeaa.debug("removeBotFromAllGroups: ChatNotModified")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.ChatWriteForbidden:
+                LOG_aeaa.debug("removeBotFromAllGroups: ChatWriteForbidden")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.PeerIdInvalid:
+                LOG_aeaa.debug("removeBotFromAllGroups: PeerIdInvalid")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.PeerIdNotSupported:
+                LOG_aeaa.debug("removeBotFromAllGroups: PeerIdNotSupported")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.UserIsBlocked:
+                LOG_aeaa.debug("removeBotFromAllGroups: UserIsBlocked")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.UserNotParticipant:
+                LOG_aeaa.debug("removeBotFromAllGroups: UserNotParticipant")
+                pass
+            except pyrogram.errors.exceptions.bad_request_400.UserNotMutualContact:
+                LOG_aeaa.debug("removeBotFromAllGroups: User")
+
 
 
 class AfterEveryRoundAdditionalActions:
@@ -270,7 +568,7 @@ class AfterEveryRoundAdditionalActions:
             LOG_aeraa.exception("Error in AfterEveryRoundAdditionalActions.do: " + str(e))
 
     def doAfterSomeTimeRunsOut(self):
-        #TODO: imlement actions after some time runs out, to send message about running video call after 10 minutes
+        #TODO: implement actions after some time runs out, to send message about running video call after 10 minutes
         pass
 class FinalRoundAdditionalActions:
     def __init__(self, election: Election, edenData: EdenData, database: Database, communication: Communication,

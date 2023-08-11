@@ -22,3 +22,5 @@ app/constants/parameters.py
 Dockerfile
 
 constants/parameters.py
+
+constants/parametersS.py

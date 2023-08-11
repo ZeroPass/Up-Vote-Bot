@@ -252,3 +252,138 @@ class GraphQLApi:
         except Exception as e:
             LOG.exception("Error in GraphQLApi.getActionInducted: " + str(e))
             return ResponseError(error="Error in GraphQLApi.getActionInducted: " + str(e))
+
+    def getActionElectVote(self, account: str, startBlockNum: int, endBlockNum: int) -> Response:
+        assert isinstance(account, str), "account must be type of str"  # where smart contract is deployed
+        assert isinstance(startBlockNum, int), "startBlockNum must be type of int"
+        assert isinstance(endBlockNum, int), "endBlockNum must be type of int"
+        try:
+            # function returns list of json objects
+            LOG.debug("Get all elections votes 'action:electVote' : " + account +
+                      " from block: " + str(startBlockNum) +
+                      " to block: " + str(endBlockNum))
+
+            graphQlStub = self.stub
+
+            _ACTION: str = "searchTransactionsForward"
+            _CURSOR: str = "cursor"
+
+            query: str = '''
+                        query ($query: String!, $cursor: String, $limit: Int64, $low: Int64, $high:Int64) {
+                          ''' + _ACTION + '''(query: $query, limit: $limit, cursor: $cursor, lowBlockNum: $low, highBlockNum: $high) {
+                          cursor,
+                            results {
+                              trace {
+                                matchingActions {
+                                  data
+                                }
+                              } 
+                            }
+                            cursor
+                          }
+                        }
+                '''
+
+            toReturn: list = []
+
+            variables = Struct()
+            variables["query"] = "account:" + account + " action:electvote"
+            variables["low"] = startBlockNum
+            variables["high"] = endBlockNum
+            variables[_CURSOR] = ""  # at the beginning cursor is empty
+            variables["limit"] = 30
+
+            while True:
+                queryResponse = graphQlStub.Execute(Request(query=query, variables=variables))  # variables=variables
+                LOG.info("Query response: " + str(queryResponse))
+                for rawResult in queryResponse:
+                    if rawResult.errors:
+                        # something went wrong
+                        result = json.loads(rawResult.data)
+                        LOG.error("An error occurred while getting data from GraphQL" + str(rawResult.errors))
+                        return ResponseError(error="An error occurred while getting data from GraphQL" +
+                                                   str(rawResult.errors))
+                    else:
+                        # everything is ok
+                        result = json.loads(rawResult.data)
+                        if len(result[_ACTION]['results']) == 0:
+                            # no more data - return what we have
+                            return ResponseSuccessful(data=toReturn)
+                        else:
+                            # there is more data - add it to the list and continue from the last cursor\
+                            LOG.success("-------->Result: " + str(result[_ACTION]['results']))
+                            LOG.success("-------->Cursor: " + str(result[_ACTION][_CURSOR]))
+                            toReturn.extend(result[_ACTION]['results'])
+                            variables[_CURSOR] = result[_ACTION][_CURSOR]
+
+        except Exception as e:
+            LOG.exception("Error in GraphQLApi.getActionElectVote: " + str(e))
+            return ResponseError(error="Error in GraphQLApi.getActionElectVote: " + str(e))
+
+    def getActionElectSeed(self, account: str, startBlockNum: int, endBlockNum: int) -> Response:
+        assert isinstance(account, str), "account must be type of str"  # where smart contract is deployed
+        assert isinstance(startBlockNum, int), "startBlockNum must be type of int"
+        assert isinstance(endBlockNum, int), "endBlockNum must be type of int"
+        try:
+            # function returns list of json objects
+            LOG.debug("Get all electSeed actions 'action:electVote' : " + account +
+                      " from block: " + str(startBlockNum) +
+                      " to block: " + str(endBlockNum))
+
+            graphQlStub = self.stub
+
+            _ACTION: str = "searchTransactionsForward"
+            _CURSOR: str = "cursor"
+
+            query: str = '''
+                        query ($query: String!, $cursor: String, $limit: Int64, $low: Int64, $high:Int64) {
+                          ''' + _ACTION + '''(query: $query, limit: $limit, cursor: $cursor, lowBlockNum: $low, highBlockNum: $high) {
+                          cursor,
+                            results {
+                              trace {
+                                block {
+                                  num
+                                  confirmed
+                                  timestamp
+                                }
+                              }
+                            }
+                          }
+                    }
+                '''
+
+            toReturn: list = []
+
+            variables = Struct()
+            variables["query"] = "account:" + account + " action:electseed"
+            variables["low"] = startBlockNum
+            variables["high"] = endBlockNum
+            variables[_CURSOR] = ""  # at the beginning cursor is empty
+            variables["limit"] = 30
+
+            while True:
+                queryResponse = graphQlStub.Execute(Request(query=query, variables=variables))  # variables=variables
+                LOG.info("Query response: " + str(queryResponse))
+                for rawResult in queryResponse:
+                    if rawResult.errors:
+                        # something went wrong
+                        result = json.loads(rawResult.data)
+                        LOG.error("An error occurred while getting data from GraphQL" + str(rawResult.errors))
+                        return ResponseError(error="An error occurred while getting data from GraphQL" +
+                                                   str(rawResult.errors))
+                    else:
+                        # everything is ok
+                        result = json.loads(rawResult.data)
+                        if len(result[_ACTION]['results']) == 0:
+                            # no more data - return what we have
+                            return ResponseSuccessful(data=toReturn)
+                        else:
+                            # there is more data - add it to the list and continue from the last cursor\
+                            LOG.success("-------->Result: " + str(result[_ACTION]['results']))
+                            LOG.success("-------->Cursor: " + str(result[_ACTION][_CURSOR]))
+                            toReturn.extend(result[_ACTION]['results'])
+                            variables[_CURSOR] = result[_ACTION][_CURSOR]
+
+        except Exception as e:
+            LOG.exception("Error in GraphQLApi.getActionElectSeed: " + str(e))
+            return ResponseError(error="Error in GraphQLApi.getActionElectSeed: " + str(e))

@@ -11,7 +11,7 @@ from database.election import ElectionRound
 # from chain.electionStateObjects import CurrentElectionStateHandlerActive, CurrentElectionStateHandlerFinal
 from debugMode.modeDemo import Mode, ModeDemo
 from log import Log
-from constants import eden_season, eden_year, eden_portal_url_action, telegram_bot_name, default_language, \
+from constants import eden_portal_url_action, telegram_bot_name, default_language, \
     telegram_admins_id, CurrentElectionState, start_video_preview_path, ReminderGroup, \
     time_span_for_notification_time_is_up, telegram_user_bot_name
 from database import Database, Election, ExtendedParticipant, ExtendedRoom, Reminder, ReminderSent, database
@@ -163,10 +163,10 @@ class GroupCalculation:
 
 
 class RoomName:
-    def __init__(self, round: int, roomIndex: int, season: int = None, isLastRound: int = False, year: int = None):
+    def __init__(self, round: int, roomIndex: int, season: int, isLastRound: int = False, year: int = None):
         self.round = round
         self.roomIndex = roomIndex
-        self.season = season if season is not None else eden_season
+        self.season = season
         self.isLastRound = isLastRound
         self.year = year if year is not None else datetime.now().year
         LOGroomName.debug(
@@ -318,6 +318,7 @@ class GroupManagement:
                                        duration: timedelta,
                                        newRoomsInIteration: int,
                                        totalParticipants: int,
+                                       contract: str,
                                        increaseFactor: float = 1.0,
                                        createChiefDelegateGroup: bool = False):
         """Create groups that will be ready when election is in progress
@@ -325,6 +326,7 @@ class GroupManagement:
             - numberOfParticipants: to calculate how many groups should be created
             - duration: time between creating new groups , probably the best would be every 24 hours
             - newRoomsInIteration: how many maximal groups should be created in one iteration
+            - contract: contract address
             - increaseFactor: how much participants (in %) should be added to calculation of number of groups
             - createAlsoChiefDelegateGroup: if True, also create group for chief delegates
             """
@@ -336,6 +338,7 @@ class GroupManagement:
             assert isinstance(duration, timedelta), "duration variable must be timedelta"
             assert isinstance(newRoomsInIteration, int), "newRoomsInIteration variable must be an int"
             assert isinstance(totalParticipants, int), "totalGroups variable must be an int"
+            assert isinstance(contract, str), "contract variable must be a string"
             assert isinstance(increaseFactor, float), "increaseFactor variable must be a float"
             assert isinstance(createChiefDelegateGroup, bool), "createChiefDelegateGroup variable must be a bool"
 
@@ -343,6 +346,7 @@ class GroupManagement:
                       ", total participants: " + str(totalParticipants) +
                       ", duration: " + str(duration) +
                       ", new rooms in iteration: " + str(newRoomsInIteration) +
+                      ", contract: " + str(contract) +
                       ", increase factor: " + str(increaseFactor) +
                       ", create chief delegate group: " + str(createChiefDelegateGroup))
 
@@ -402,13 +406,24 @@ class GroupManagement:
 
                         extendedRooms: list[ExtendedRoom] = []
                         total = min(numOfGroupsToCreate, newRoomsLeft)
+
+                        # get continuous election number
+                        electionSeedData = self.edenData.getActionElectSeed(contractAccount=contract,
+                                                                            startTime=datetime(2021, 1, 1, 0, 0, 0),
+                                                                            endTime=datetime.now() - timedelta(days=1))
+                        numberOfPreviousElections: int = self.edenData.actionElectSeedParser(report=electionSeedData.data)
+                        if numberOfPreviousElections is None:
+                            raise GroupManagementException("Something went wrong. NumberOfPreviousElections is None")
+
+                        currentElectionNumber: int = numberOfPreviousElections + 1
+
                         for i in range(total):
                             try:
                                 # get the name of the group
                                 roomName: RoomName = RoomName(round=round,
                                                               roomIndex=roomIndexToCreate,
-                                                              season=eden_season,
-                                                              year=eden_year,
+                                                              season=currentElectionNumber,
+                                                              year=int(datetime.now().year),
                                                               isLastRound=isLastRound)
 
                                 shortName: str = roomName.nameShort()
@@ -539,13 +554,28 @@ class GroupManagement:
             raise GroupManagementException(
                 "Exception thrown when called GroupManagement.getFreePreelectionRoom; Description: " + str(e))
 
+    def nextElectionID(self) -> int:
+        try:
+            numberOfPreviousElections: int = self.edenData.actionElectSeedParser(report=electionSeedData.data)
+            if numberOfPreviousElections is None:
+                raise GroupManagementException("Something went wrong. NumberOfPreviousElections is None")
+
+            currentElectionNumber: int = numberOfPreviousElections + 1
+            return currentElectionNumber
+        except Exception as e:
+            LOG.exception("Exception thrown when called "
+                                           "GroupManagement.nextElectionID; Description: " + str(e))
+            return None
+
     def createOfflineGroupsWithParticipants(self, election: Election, round: int, numParticipants: int, numGroups: int,
+                                            contract: str,
                                             isLastRound: bool = False,
                                             height: int = None) -> list[ExtendedRoom]:
         assert isinstance(election, Election), "election must be an Election object"
         assert isinstance(round, int), "round must be an int"
         assert isinstance(numParticipants, int), "numParticipants must be an int"
         assert isinstance(numGroups, int), "numGroups must be an int"
+        assert isinstance(contract, str), "contract must be a str"
         assert isinstance(isLastRound, bool), "isLastRound must be a bool"
         assert isinstance(height, (int, type(None))), "height must be an int or None"
         """Create groups"""
@@ -561,6 +591,10 @@ class GroupManagement:
             #roomArrayAlreadyCreated: RoomArray = RoomArray()
             roomArrayNewGroups: RoomArray = RoomArray()
             roomArrayPrecreatedGroups: RoomArray = RoomArray()
+
+            # predefined election number if we need to create new groups
+            currentElectionNumber: int = None
+
             for index in range(numGroups):  # from 0 to numGroups -1
                 if self.database.isGroupCreated(election=election,
                                                 round=round,
@@ -595,11 +629,13 @@ class GroupManagement:
                     else:
                         LOG.debug("Free (created in the past) room NOT found. Create new one")
 
+
+
                         # get the name of the group
                         roomName: RoomName = RoomName(round=round,
                                                       roomIndex=index,
-                                                      season=eden_season,
-                                                      year=eden_year,
+                                                      season=currentElectionNumber,
+                                                      year=int(datetime.now().year),
                                                       isLastRound=isLastRound)
 
                         room: ExtendedRoom = ExtendedRoom(electionID=election.electionID,
@@ -727,7 +763,7 @@ class GroupManagement:
             # From this point the user bot is not allowed - bot has all rights and can do everything it needs to be done
             #
 
-            # fist one rule! - interact only with people that interact with bot before
+            # fist one rule! - interact only with people that interacted with bot before
 
             membersWithInteractionWithCurrentBot: list[str] = \
                 [item for item in extendedRoom.getMembersTelegramIDsIfKnown()
@@ -862,6 +898,7 @@ class GroupManagement:
             raise GroupManagementException("Exception thrown when called sendInBot; Description: " + str(e))
 
     def groupInitialization(self, election: Election, round: int, numParticipants: int, numGroups: int,
+                            contract: str,
                             isLastRound: bool = False, height: int = None) -> Room:
         """Create, rename add user to group
             Return Room object if we are in the last round, otherwise return None
@@ -871,6 +908,7 @@ class GroupManagement:
             assert isinstance(round, int), "round is not an int object"
             assert isinstance(numParticipants, int), "numParticipants is not an int object"
             assert isinstance(numGroups, int), "numGroups is not an int object"
+            assert isinstance(contract, str), "contract is not a str object"
             assert isinstance(isLastRound, bool), "isLastRound is not a bool object"
             # should be called only when state is CurrentElectionStateHandlerActive or CurrentElectionStateHandlerFinal
             LOG.info(message="should be called only when state is CurrentElectionStateHandlerActive "
@@ -882,6 +920,7 @@ class GroupManagement:
                                                                                  round=round,
                                                                                  numParticipants=numParticipants,
                                                                                  numGroups=numGroups,
+                                                                                 contract = contract,
                                                                                  isLastRound=isLastRound,
                                                                                  height=height)
 
@@ -910,7 +949,9 @@ class GroupManagement:
         except Exception as e:
             LOG.exception("Exception thrown when called groupInitialization; Description: " + str(e))
 
-    def manage(self, election: Election, round: int, numParticipants: int, numGroups: int, isLastRound: bool = False,
+    def manage(self, election: Election, round: int, numParticipants: int, numGroups: int,
+               contract: str,
+               isLastRound: bool = False,
                height: int = None):
         """Staring point of the group management code"""
         # call only when CurrentElectionState is CurrentElectionStateHandlerActive or CurrentElectionStateHandlerFinal
@@ -918,6 +959,7 @@ class GroupManagement:
         assert isinstance(round, int), "round is not an int object"
         assert isinstance(numParticipants, int), "numParticipants is not an int object"
         assert isinstance(numGroups, int), "numGroups is not an int object"
+        assert isinstance(contract, str), "contract is not a str object"
         assert isinstance(isLastRound, (bool, type(None))), "isLastRound is not a bool object or None"
         assert isinstance(height, (int, type(None))), "height is not an int object or None"
         try:
@@ -933,6 +975,7 @@ class GroupManagement:
                                                               numParticipants=numParticipants,
                                                               numGroups=numGroups,
                                                               isLastRound=isLastRound,
+                                                              contract=contract,
                                                               height=height)
                 # if room is not None or isLastRound is True:
                 # last round (only last round return no None value - just Chief Delegates group created

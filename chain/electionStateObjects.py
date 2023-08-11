@@ -1,6 +1,7 @@
 from enum import Enum
 
-from additionalActionsManagement import AfterEveryRoundAdditionalActions, FinalRoundAdditionalActions
+from additionalActionsManagement import AfterEveryRoundAdditionalActions, FinalRoundAdditionalActions, \
+    AfterElectionAdditionalActions
 from chain import EdenData
 from chain.stateElectionState import ElectCurrTable
 from constants import pre_created_groups_created_groups_in_one_round, \
@@ -72,6 +73,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
     def customActions(self, election: Election, database: Database, groupManagement: GroupManagement,
                       edenData: EdenData,
                       communication: Communication,
+                      contract: str,
                       electCurr: ElectCurrTable = None,
                       modeDemo: ModeDemo = None):
         assert isinstance(election, Election), "election must be type of Election"
@@ -79,6 +81,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
         assert isinstance(groupManagement, GroupManagement), "groupManagement must be type of GroupManagement"
         assert isinstance(edenData, EdenData), "edenData must be type of EdenData"
         assert isinstance(communication, Communication), "communication must be type of Communication"
+        assert isinstance(contract, str), "contract must be type of str"
         assert isinstance(electCurr,  (ElectCurrTable, type(None))), "electCurr must be type of ElectCurrTable or None"
         assert isinstance(modeDemo, ModeDemo) or modeDemo is None, "modeDemo must be type of ModeDemo or None"
         try:
@@ -107,6 +110,7 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
                 totalParticipants=participantsManagement.getMembersFromDBTotal(election=election),
                 newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
                 duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
+                contract=contract,
                 increaseFactor=pre_created_groups_increase_factor_registration_state,
                 createChiefDelegateGroup=False)
 
@@ -138,8 +142,17 @@ class CurrentElectionStateHandlerRegistratrionV1(CurrentElectionStateHandler):
                                                                            electCurr=electCurr,
                                                                            modeDemo=modeDemo)
 
-            # group managament - only when there is no election in progress
-            #TODO here
+
+
+            # after election additional actions
+            afterElectionAdditionalActions: AfterElectionAdditionalActions = AfterElectionAdditionalActions(
+                election=election, edenData=edenData, database=database, communication=communication, modeDemo=modeDemo)
+
+
+            afterElectionAdditionalActions.do(election=election,
+                                              telegramBotName=telegram_bot_name,
+                                              telegramUserBotName=telegram_user_bot_name,
+                                              electCurr=electCurr)
 
         except Exception as e:
             LOG.exception("Exception thrown when called CurrentElectionStateHandlerRegistratrionV1.customActions; "
@@ -169,12 +182,14 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
         return self.data["election_schedule_version"]
 
     def customActions(self, election: Election, database: Database, groupManagement: GroupManagement,
+                      contract: str,
                       edenData: EdenData,
                       communication: Communication,
                       modeDemo: ModeDemo = None):
         assert isinstance(election, Election), "election is not an instance of Election"
         assert isinstance(database, Database), "database is not an instance of Database"
         assert isinstance(groupManagement, GroupManagement), "groupManagement is not an instance of GroupManagement"
+        assert isinstance(contract, str), "contract is not an instance of str"
         assert isinstance(edenData, EdenData), "edenData is not an instance of EdenData"
         assert isinstance(communication, Communication), "communication is not an instance of Communication"
         assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be type of ModeDemo or None"
@@ -199,6 +214,7 @@ class CurrentElectionStateHandlerSeedingV1(CurrentElectionStateHandler):
                 newRoomsInIteration=pre_created_groups_created_groups_in_one_round,
                 duration=timedelta(minutes=pre_created_groups_how_often_creating_in_min),
                 increaseFactor=pre_created_groups_increase_factor_seeding_state,
+                contract=contract,
                 createChiefDelegateGroup=True,
             )
 
@@ -289,6 +305,7 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                       groupManagement: GroupManagement,
                       database: Database,
                       edenData: EdenData,
+                      contract: str,
                       communication: Communication,
                       modeDemo: ModeDemo = None):
         try:
@@ -296,6 +313,7 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
             assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
             assert isinstance(database, Database), "database must be a Database object"
             assert isinstance(edenData, EdenData), "edenData must be a EdenData object"
+            assert isinstance(contract, str), "contract must be a str"
             assert isinstance(communication, Communication), "communication must be a Communication object"
             assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_ACTIVE")
@@ -331,6 +349,7 @@ class CurrentElectionStateHandlerActive(CurrentElectionStateHandler):
                                    round=self.getRound(),
                                    numParticipants=self.getConfigNumParticipants(),
                                    numGroups=self.getConfigNumGroups(),
+                                   contract=contract,
                                    isLastRound=False,
                                    height=modeDemo.currentBlockHeight if modeDemo is not None else None)
 
@@ -382,10 +401,13 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
     def getSeedEndTime(self):
         return self.data["seed"]["end_time"]
 
-    def customActions(self, election: Election, groupManagement: GroupManagement, modeDemo: ModeDemo = None):
+    def customActions(self, election: Election, groupManagement: GroupManagement,
+                      contract: str,
+                      modeDemo: ModeDemo = None):
         try:
             assert isinstance(election, Election), "election is not an instance of Election"
             assert isinstance(groupManagement, GroupManagement), "groupManagement must be a GroupManagement object"
+            assert isinstance(contract, str), "contract must be a str"
             assert isinstance(modeDemo, (ModeDemo, type(None))), "modeDemo must be a ModeDemo object or None"
             LOG.debug("Custom actions for CURRENT_ELECTION_STATE_FINAL")
 
@@ -394,6 +416,7 @@ class CurrentElectionStateHandlerFinal(CurrentElectionStateHandler):
                                    numParticipants=4,
                                    numGroups=1,
                                    isLastRound=True,
+                                   contract=contract,
                                    height=modeDemo.currentBlockHeight if modeDemo is not None else None)
 
 

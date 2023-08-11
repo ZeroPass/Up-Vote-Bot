@@ -247,7 +247,7 @@ class ReminderManagement:
                                   " ..."
                                   )
 
-                        if reminder.dateTimeBefore < executionTime < reminder.dateTimeBefore + timedelta(
+                        if reminder.dateTimeBefore <= executionTime <= reminder.dateTimeBefore + timedelta(
                                 minutes=time_span_for_notification):
                             LOG.info("... send reminder to election id: " + str(reminder.electionID) +
                                      " and dateTimeBefore: " + str(reminder.dateTimeBefore))
@@ -332,7 +332,7 @@ class ReminderManagement:
         int, ReminderGroup, str]:
         """Get the nearest date time"""
         try:
-            LOG.info("Get nearest date time")
+            #LOG.info("Get nearest date time")
             nearest = min(alerts, key=lambda x: abs(x[0] - minutes))
             return nearest
         except Exception as e:
@@ -354,8 +354,8 @@ class ReminderManagement:
             nearestDatetimeToElectionInMinutes: tuple[int, ReminderGroup, str] = \
                 self.theNearestDateTime(alert_message_time_election_is_coming, minutesToElectionInMinutes)
             nearestDateTimeText = nearestDatetimeToElectionInMinutes[2]
-            LOG.debug("Nearest datetime to election: " + str(nearestDatetimeToElectionInMinutes) +
-                      " minutes with text '" + nearestDateTimeText + "'")
+            #LOG.debug("Nearest datetime to election: " + str(nearestDatetimeToElectionInMinutes) +
+            #          " minutes with text '" + nearestDateTimeText + "'")
 
             if member.participationStatus and \
                     (nearestDatetimeToElectionInMinutes[1] == ReminderGroup.BOTH or
@@ -417,7 +417,7 @@ class ReminderManagement:
             for room in rooms:
                 try:
                     # prepare and sent message to the group
-                    text: str = gctm.timeIsAlmostUpGroup(timeLeftInMinutes=closestReminderConst[0],
+                    text: str = gctm.timeIsAlmostUpGroup(timeLeftInMinutes=closestReminderConst[0]-1, # -1 because it is increased because of lag
                                                          round=reminderRound,
                                                          extendedRoom=room,
                                                          )
@@ -498,7 +498,7 @@ class ReminderManagement:
             #
 
             # prepare and send notification to the user
-            text: str = gctm.timeIsAlmostUpPrivate(timeLeftInMinutes=closestReminderConst[0],
+            text: str = gctm.timeIsAlmostUpPrivate(timeLeftInMinutes=closestReminderConst[0]-1, # -1 because it is increased because of lag
                                                    round=reminder.round,
                                                    voteFor=member.voteFor)
 
@@ -515,7 +515,7 @@ class ReminderManagement:
                                                               inlineReplyMarkup=replyMarkup)
 
 
-                # Save the recod to the database
+                # Save the record to the database
                 response = self.database.createOrUpdateReminderSentRecord(reminder=reminder,
                                                                accountName=member.accountName,
                                                                sendStatus=ReminderSendStatus.SEND if sendResponse is True
@@ -567,7 +567,7 @@ class ReminderManagement:
                                                         reminder=reminder,
                                                         currentTime=self.datetime)
             if text is None or len(text) < 1:
-                LOG.info("Text is empty, skip sending")
+                LOG.debug("Text is empty, skip sending")
                 return False
             replyMarkup: InlineKeyboardMarkup = InlineKeyboardMarkup(
                 [

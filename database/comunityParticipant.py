@@ -100,6 +100,18 @@ class CommunityParticipant(Participant):
                    sbt=None,
                    customMember=customMember)
 
+    @classmethod
+    def fromParticipantOnly(cls, participant: Participant):
+        assert isinstance(participant, Participant), "participant must be type of Participant"
+        return cls(accountName=participant.accountName,
+                   roomID=participant.roomID,
+                   participationStatus=participant.participationStatus,
+                   telegramID=participant.telegramID,
+                   nftTemplateID=participant.nftTemplateID,
+                   participantName=participant.participantName,
+                   sbt=None,
+                   customMember=None)
+
     def isSameAndHigherSBTround(self, other):
         # if round in SBT is higher than in other, return True
         assert isinstance(other, CommunityParticipant), "other must be type of CommunityParticipant"

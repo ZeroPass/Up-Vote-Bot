@@ -3,11 +3,14 @@ import time
 
 import datetime as datetime
 
+from networkx import contracted_edge
+
 from chain import EdenData
 from chain.dfuse import *
 from chain.electionStateObjects import EdenBotMode, CurrentElectionStateHandlerRegistratrionV1, \
     CurrentElectionStateHandlerSeedingV1, CurrentElectionStateHandlerInitVotersV1, CurrentElectionStateHandlerActive, \
     CurrentElectionStateHandlerFinal, CurrentElectionStateHandler
+from chain.memberState import MemberState
 from chain.stateElectionState import ElectCurrTable
 from community import CommunityList, CommunityListState, CommunityGroup
 from constants import dfuse_api_key, telegram_api_id, telegram_api_hash, telegram_bot_token, CurrentElectionState, \
@@ -92,6 +95,7 @@ class EdenBot:
                                           botUsername=telegram_bot_name)
 
             LOG.debug("Creating community group management object ...")
+
 
             #while True:
             #    time.sleep(2)
@@ -266,6 +270,28 @@ class EdenBot:
             LOG.exception("Exception in getElectionState. Description: " + str(e))
             return None
 
+    """def getMemberState(self) -> MemberState:
+        # get member table from chain
+        try:
+            edenData: Response = self.edenData.getMemberState(height=self.modeDemo.currentBlockHeight if \
+                self.modeDemo is not None else None)
+
+            if isinstance(edenData, ResponseError):
+                raise EdenBotException("Error when called eden.getMemberState; Description: " + edenData.error)
+            if isinstance(edenData.data, ResponseError):
+                raise EdenBotException("Error when called eden.getMemberState; Description: " + edenData.data.error)
+
+            receivedData = edenData.data
+            memberState: MemberState = MemberState(receivedData)
+
+            if memberState.type != "member_v1":
+                raise EdenBotException("Unknown member state type: " + str(electCurrTable.type))
+
+            return memberState
+        except Exception as e:
+            LOG.exception("Exception in getElectionState. Description: " + str(e))
+            return None"""
+
     def groupMaintenance(self, contactAccount: str, communityGroupID: int, electionCurrState: ElectCurrTable):
         assert isinstance(contactAccount, str), "contactAccount is not a string"
         assert isinstance(communityGroupID, int), "communityGroupID is not an integer"
@@ -364,11 +390,13 @@ class EdenBot:
                                                                groupManagement=self.groupManagement,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
+                                                               contract=contract,
                                                                modeDemo=self.modeDemo)
             elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_SEEDING_V1:
                 self.currentElectionStateHandler.customActions(election=election,
                                                                database=database,
                                                                groupManagement=self.groupManagement,
+                                                               contract=contract,
                                                                edenData=self.edenData,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
@@ -379,11 +407,13 @@ class EdenBot:
                                                                groupManagement=self.groupManagement,
                                                                database=database,
                                                                edenData=self.edenData,
+                                                               contract=contract,
                                                                communication=self.communication,
                                                                modeDemo=self.modeDemo)
             elif currentElectionState == CurrentElectionState.CURRENT_ELECTION_STATE_FINAL:
                 self.currentElectionStateHandler.customActions(election=election,
                                                                groupManagement=self.groupManagement,
+                                                               contract=contract,
                                                                modeDemo=self.modeDemo)
             else:
                 raise EdenBotException("Unknown current election state: " + str(receivedData[0]))
@@ -449,6 +479,25 @@ def main():
 
     edenData: EdenData = EdenData(dfuseConnection=dfuseConnection)
 
+    # testing
+
+    #data:
+    # CD of october 2022 elections: chrisbedenos, jesse.gem,  marketing.gm, riekicordon1, xavieredenia
+    # change these CDs telegram to your own - to check if the process (all round) is working
+
+    # first round has 20 groups, second 5, third 1
+    # make sure that all groups are not created on time - to test if group is created live
+    # check if election number(continius) is correct, also check the year (in test mode will be current year,
+    #                                                                           not election year)
+    # final group should be created in last 24 hours
+    # check if user is added to the group and if it has admin rights
+    #   if user is not added automatically, add it manually and check if it gets admin rights
+    # start and finish group call - check if group gets messages by bot
+    # 5 and 10 minutes notifications should be sent to group and private
+    # when round is over there should be an message if group call is still running
+    # user bot should be removed from group after round is over (not bot, just user bot!)
+    # one day after election bot and user bot should be removed from CD group
+
     startEndDatetimeList = [
         #(datetime(2022, 6, 7, 11, 52), datetime(2022, 6, 7, 11, 53)),  # just to add old election
         #(datetime(2022, 10, 7, 11, 52), datetime(2022, 10, 7, 11, 59)),  # add user
@@ -462,10 +511,12 @@ def main():
         #(datetime(2022, 10, 8, 13, 59), datetime(2022, 10, 8, 14, 3)),  # round 1 finished, start round 2
         #(datetime(2022, 10, 8, 14, 51), datetime(2022, 10, 8, 14, 58)),  # notification  10 and 5 min left
         #(datetime(2022, 10, 8, 14, 59), datetime(2022, 10, 8, 15, 3)),  # round 2 finished, start final round
-        (datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
-        (datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
-        (datetime(2022, 10, 21, 13, 0), datetime(2022, 10, 21, 13, 1)),  # one day before video deadline
+        #(datetime(2022, 10, 9, 12, 59), datetime(2022, 10, 9, 13, 2)),  # one day after election ended
 
+        #(datetime(2022, 10, 15, 13, 0), datetime(2022, 10, 15, 13, 1)),  # one week before video deadline
+        #(datetime(2022, 10, 20, 13, 0), datetime(2022, 10, 20, 13, 1)),  # two days before video deadline
+        #(datetime(2022, 10, 21, 13, 0), datetime(2022, 10, 21, 13, 1)),  # one day before video deadline
+        (datetime(2022, 10, 23, 13, 0), datetime(2022, 10, 23, 13, 1)),  # 15 days after election remove bot from groups
         #elections 6
         #(datetime(2023, 4, 8, 13, 5), datetime(2023, 4, 8, 13, 6)),  # round 1
         #(datetime(2023, 4, 8, 17, 15), datetime(2023, 4, 8, 17, 18)),  # after elections
@@ -475,7 +526,7 @@ def main():
     #modeDemo = ModeDemo(startAndEndDatetime=startEndDatetimeList,
     #                    edenObj=edenData,
     #                    step=1  # 1.5 min
-    #                    )
+    #                   )
     # live!
     modeDemo = ModeDemo.live(edenObj=edenData,
                              stepBack=10)
@@ -491,8 +542,6 @@ def main():
     while True:
         time.sleep(1)
 
-    breakpoint = True
-
 
 def runPyrogramTestMode(comm: Communication):
     # database = Database()
@@ -506,15 +555,6 @@ def mainPyrogramTestMode():
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
 
-
-    nekije = 9
-
-    #comm.sendMessage(sessionType=SessionType.BOT,
-    #                 chatId="",
-    #                 text="test")
-
-    # comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="te423423st")
-    # comm.sendMessage(chatId='-1001776498331', sessionType=SessionType.BOT, text="test")
     pyogram = Process(target=runPyrogramTestMode, args=(comm,))
     pyogram.start()
 
@@ -529,68 +569,6 @@ def mainPyrogramTestMode():
 
 
 def main1():
-    #######################
-    cp1 = CommunityParticipant(accountName="accountName",
-                               roomID=0,
-                               participationStatus=False,
-                               telegramID="telegramID",
-                               nftTemplateID=-1,
-                               participantName="participantName",
-                               sbt=SBT(round=0, received=datetime.now()),
-                               customMember=CustomMember(userId='0',
-                                                         memberStatus=MemberStatus.MEMBER,
-                                                         isBot=True,
-                                                         tag="tag",
-                                                         username="userName",
-                                                         adminRights=AdminRights(isAdmin=False))
-                               )
-    cp2 = CommunityParticipant(accountName="accountName2",
-                               roomID=0,
-                               participationStatus=False,
-                               telegramID="telegramID",
-                               nftTemplateID=-1,
-                               participantName="participantName",
-                               sbt=SBT(round=0, received=datetime.now()),
-                               customMember=CustomMember(userId='0',
-                                                         memberStatus=MemberStatus.MEMBER,
-                                                         isBot=True,
-                                                         tag="tag",
-                                                         username="userName",
-                                                         adminRights=AdminRights(isAdmin=False))
-                               )
-    cp3admin = CommunityParticipant(accountName="accountName3",
-                               roomID=0,
-                               participationStatus=False,
-                               telegramID="telegramID",
-                               nftTemplateID=-1,
-                               participantName="participantName",
-                               sbt=SBT(round=0, received=datetime.now()),
-                               customMember=CustomMember(userId='0',
-                                                         memberStatus=MemberStatus.MEMBER,
-                                                         isBot=True,
-                                                         tag="tag",
-                                                         username="userName",
-                                                         adminRights=AdminRights(isAdmin=True),
-                                                         promotedBy=Promotion(userId='0',username="kva")
-                                                         )
-                               )
-
-    cp3nonAdmin = CommunityParticipant(accountName="accountName3",
-                               roomID=0,
-                               participationStatus=False,
-                               telegramID="telegramID",
-                               nftTemplateID=-1,
-                               participantName="participantName",
-                               sbt=SBT(round=0, received=datetime.now()),
-                               customMember=CustomMember(userId='0',
-                                                         memberStatus=MemberStatus.MEMBER,
-                                                         isBot=True,
-                                                         tag="tag",
-                                                         username="userName",
-                                                         adminRights=AdminRights(isAdmin=False))
-                               )
-
-
 
     database = Database()
     election: Election = Election(electionID=10,
@@ -600,49 +578,25 @@ def main1():
                                   contract=eden_account
                                   )
 
-
-
     comm = Communication(database=database)
     comm.startComm(apiId=telegram_api_id, apiHash=telegram_api_hash, botToken=telegram_bot_token)
 
 
-    #LOG.debug(str(comeon))
-    #while True:
-    #    time.sleep(1)
-
-    je2to = comm.getMembersInGroup(sessionType=SessionType.BOT, chatId=-1001936614825)
-
-    inviteLink = comm.getGeneralChatLink(sessionType=SessionType.BOT, chatId=-1001936614825)
-    for item in je2to:
-        if item.userId == '50613956':
-            ejga = comm.promoteSpecificMember(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId,
-                                       adminRights=AdminRights(isAdmin=False))
-
-
-            ejgb = comm.setAdministratorTitle(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId,
-                                              title="1234567890123456")
-            kva = 7
-            #comm.removeUserFromGroup(sessionType=SessionType.BOT, chatId=-1001936614825, userId=item.userId)
-
-
-    neki = comm.getInvitationLink(sessionType=SessionType.BOT, chatId=-1001936614825)
-
-    nekije = 9
-    #for i in range(0, 4):
-    #    for j in range(0, 25):
-    #        kva = Process(target=comm.sendMessage,
-    #                name="Pyrogram event handler",
-    #                args=(SessionType.BOT, "", "A:" + str(i) + " " + str(j))
-    #                )
-    #        kva.start()
-            #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="B:" + str(i) + " " + str(j))
-            #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="C:" + str(i) + " " + str(j))
-        #comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="test")
-        #time.sleep(1)
+    for i in range(0, 4):
+        for j in range(0, 25):
+            kva = Process(target=comm.sendMessage,
+                    name="Pyrogram event handler",
+                    args=(SessionType.BOT, "", "A:" + str(i) + " " + str(j))
+                    )
+            kva.start()
+            comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="B:" + str(i) + " " + str(j))
+            comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="C:" + str(i) + " " + str(j))
+        comm.sendMessage(chatId="", sessionType=SessionType.BOT, text="test")
+        time.sleep(1)
 
     #neki = await comm.isVideoCallRunning(sessionType=SessionType.BOT, chatId=)
     #task = asyncio.get_event_loop().run_until_complete(comm.isVideoCallRunning(sessionType=SessionType.BOT,
-    #                                                                           chatId=-1001888934788))
+    #                                                                           chatId=-1))
     #kva =- 8
 
     while True:

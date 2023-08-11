@@ -1,9 +1,9 @@
 from datetime import datetime
 
 class SBT:
-    def __init__(self, round: int, received: datetime):
+    def __init__(self, round: int, received: datetime = None):
         assert isinstance(round, int), "round must be int"
-        assert isinstance(received, datetime), "received must be datetime"
+        assert isinstance(received, (datetime, type(None))), "received must be datetime or None"
         self.round = round
         self.received = received
 

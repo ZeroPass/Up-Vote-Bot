@@ -5,7 +5,7 @@ from constants import telegram_bot_name
 from database.comunityParticipant import CommunityParticipant
 from database.participant import Participant
 from log import Log
-from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS
+from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS, MemberStatus
 
 LOG = Log(className="CommunityList")
 class CommunityListException(Exception):
@@ -51,7 +51,7 @@ class CommunityList:
         try:
             LOG.debug("Getting users that are not in group but should be")
             if len(self.inducted) == 0:
-                raise CommunityListException("CommunityList.usersThatAreNotInGroupButShouldBe; Inducted accounts are not set")
+                LOG.debug("CommunityList.usersThatAreNotInGroupButShouldBe; No inducted accounts")
 
             if self.isStateSet(state=CommunityListState.CURRENT) is False or \
                     self.isStateSet(state=CommunityListState.GOAL) is False:
@@ -99,7 +99,7 @@ class CommunityList:
         try:
             LOG.debug("Getting users that are in group but should not be")
             if len(self.inducted) == 0:
-                raise CommunityListException("CommunityList.usersThatAreInGroupButShouldNotBe; Inducted accounts are not set")
+                LOG.debug("CommunityList.usersThatAreInGroupButShouldNotBe; No inducted accounts")
 
             if self.isStateSet(state=CommunityListState.CURRENT) is False or \
                     self.isStateSet(state=CommunityListState.GOAL) is False:
@@ -166,8 +166,7 @@ class CommunityList:
                     # current user is not admin, so we can skip him
                     continue
                 if currentU.customMember is not None and currentU.customMember.adminRights.isAdmin is True:
-                   #(currentU.customMember.tag is not None and currentU.customMember.tag != "" ):
-                    #another check because of redability - if promoted by other admin, we can skip him
+                    #another check because of readability - if promoted by other admin, we can skip him
                     if currentU.customMember.promotedBy is not None and \
                         str(currentU.customMember.promotedBy.username).lower() != str(REMOVE_AT_SIGN_IF_EXISTS(telegram_bot_name)).lower():
                         LOG.debug("User " + currentU.accountName + " is admin but promoted by " +
@@ -217,6 +216,11 @@ class CommunityList:
                                   ") has promoted by " + str(currentUser.customMember.promotedBy.username) +
                                   " Tag: " + (currentUser.customMember.tag if currentUser.customMember.tag is not None else "None") +
                                   " Do not change it")
+                        continue
+
+                    #do not edit tag of owner
+                    if currentUser.customMember.memberStatus == MemberStatus.OWNER:
+                        LOG.debug("User " + currentUser.accountName + " is owner. Do not change it")
                         continue
 
                     if goalU.customMember.tag != currentUser.customMember.tag:

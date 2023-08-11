@@ -5,12 +5,16 @@ from typing import Union
 import pyrogram.raw.functions.updates
 from pyrogram.enums import ChatMembersFilter, ChatMemberStatus
 from pyrogram.errors import FloodWait, PeerIdInvalid, ChatAdminRequired
-from pyrogram.handlers import MessageHandler, RawUpdateHandler
-from pyrogram.raw.types import UpdatesTooLong
+from pyrogram.handlers import MessageHandler, RawUpdateHandler, InlineQueryHandler, CallbackQueryHandler, \
+    ChosenInlineResultHandler
+from pyrogram.raw.types import UpdatesTooLong, UpdateBotCallbackQuery, UpdateBotInlineSend
 from pyrogram.types import Chat, InlineKeyboardMarkup, ChatPrivileges, InlineKeyboardButton, BotCommand, Message, \
-    ChatPreview
+    ChatPreview, InlineQuery, CallbackQuery, ChosenInlineResult
+from pyrogram.utils import pack_inline_message_id
 
 from chain.dfuse import Response, ResponseError
+from constants.rawActionWeb import RawActionWeb
+#from chain.electionStateObjects import CurrentElectionStateHandlerActive
 from database.comunityParticipant import CommunityParticipant
 from transmissionCustom import REMOVE_AT_SIGN_IF_EXISTS, MemberStatus, PARSE_TG_NAME, ADD_AT_SIGN_IF_NOT_EXISTS
 from constants.parameters import *
@@ -113,6 +117,7 @@ class Communication:
             self.sessionBot.set_bot_commands([
                 BotCommand("start", "Register with the bot"),
                 BotCommand("status", "Check if the Up Vote Bot is running"),
+                BotCommand("vote", "Create link to vote for a participant(only when election is running)"),
                 BotCommand("donate", "Support the development of Up Vote Bot features"),
                 BotCommand("chatid", "Get current chat id (admin + (super)group only)"),
                 BotCommand("check", "Check if user is known to bot (use with parameter <account name> or <telegram id>) (private chat only)"),
@@ -164,6 +169,20 @@ class Communication:
             )
 
             self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseVote,
+                               filters=filters.command(commands=["vote"]) & filters.private), group=2
+            )
+
+            self.sessionBotThread.add_handler(
+                CallbackQueryHandler(callback=self.inlineQueryVote), group=2
+            )
+
+            """self.sessionBotThread.add_handler(
+                ChosenInlineResultHandler(callback=self.inlineQueryVote1),
+            group=2)"""
+
+
+            self.sessionBotThread.add_handler(
                 MessageHandler(callback=self.commandResponseGetChatID,
                                filters=filters.command(commands=["chatID"]) & filters.group), group=2
             )
@@ -205,6 +224,7 @@ class Communication:
             self.sessionBotThread.add_handler(
                 RawUpdateHandler(callback=self.rawUpdateHandler), group=1)
 
+
             # self.sessionBotThread.add_handler(
             #    MessageHandler(callback=self.commandResponseAdmin,
             #                   filters=filters.command(commands=["admin"])), group=1
@@ -216,6 +236,7 @@ class Communication:
 
         except Exception as e:
             LOG.exception("Communication.startSessionAsync exception: " + str(e))
+
 
     def addKnownUserAndUpdateLocal(self, botName: str, chatID: int):
         assert isinstance(botName, str), "BotName should be str"
@@ -362,8 +383,6 @@ class Communication:
                     ) -> bool:
         # warning:
         # when sessionType is SessionType.USER you cannot send message with inline keyboard
-        LOG.info("Send message to: " + str(chatId) + " with text: " + text
-                 + " and scheduleDate: " + str(scheduleDate) if scheduleDate is not None else "<now>")
         try:
             assert isinstance(sessionType, SessionType), "SessionType should be SessionType"
             assert isinstance(chatId, (str, int)), "ChatId should be str or int"
@@ -375,13 +394,16 @@ class Communication:
                    (sessionType is SessionType.USER and inlineReplyMarkup is None), \
                 "when SessionType is USER there is no option to send inlineReplyMarkup!"
 
+            scheduleText: str = str(scheduleDate) if scheduleDate is not None else "<now>"
+            LOG.info("Send message to: " + str(chatId) + " with text: " + text
+                     + " and scheduleDate: " + scheduleText)
+
             if sessionType == SessionType.BOT:
                 if isinstance(chatId, type(None)) or \
                         self.knownUserData.getKnownUsersOptimizedOnlyBoolean(botName=telegram_bot_name,
                                                                              telegramID=str(chatId)) is False:
                     LOG.error("User/group " + str(chatId) + " is not known to the bot" + telegram_bot_name + "!")
                     return False
-
                 response = self.sessionBot.send_message(chat_id=chatId,
                                                         text=text,
                                                         schedule_date=scheduleDate,
@@ -815,7 +837,7 @@ class Communication:
                     promotion: Promotion = Promotion(userId=str(promotedBy.id), username=promotedBy.username) if \
                         promotedBy is not None else None
                     memberStatus: MemberStatus = MemberStatus.ADMINISTRATOR if member.status \
-                                                                               is pyrogram.enums.ChatMemberStatus.OWNER else MemberStatus.OWNER
+                                                                               is pyrogram.enums.ChatMemberStatus.ADMINISTRATOR else MemberStatus.OWNER
                 else:
                     LOG.debug("Member is not admin in group: " + str(chatId))
                     adminRights = AdminRights(isAdmin=False)
@@ -1410,7 +1432,7 @@ class Communication:
 
     async def commandResponseDonate(self, client: Client, message):
         try:
-            LOG.success("Response on command 'info' from user: " + str(message.chat.username) if not None else "None")
+            LOG.success("Response on command 'donate' from user: " + str(message.chat.username) if not None else "None")
             chatid = message.chat.id
             LOG.success(".. in chat: " + str(chatid))
 
@@ -1431,6 +1453,150 @@ class Communication:
                                       )
         except Exception as e:
             LOG.exception("Exception (in commandResponseDonate): " + str(e))
+
+    def inlineQueryVote(self, client: Client, callback_query):
+        try:
+            LOG.success("Inline query button pressed")
+            # data should be: <vote>_<voter>_<round>
+            data: list[str] = callback_query.data.split("_")
+            if len(data) != 3:
+                LOG.error("Data is not correct")
+
+            candidate: str = data[0]
+            voter: str = data[1]
+            round: str = int(data[2])
+            chatID = callback_query.message.chat.id
+            messageID = callback_query.message.id
+
+            client.edit_message_text(
+                chat_id=chatID,
+                message_id=messageID,
+                text="Click below to vote for **" + candidate + "** on bloks.io - round " + str(round + 1) +
+                     "("+ str(round) +").",
+                reply_markup=InlineKeyboardMarkup([[
+                                                InlineKeyboardButton(text="Vote on bloks.io",
+                                                                     url=RawActionWeb().electVote(
+                                                                         candidate=candidate,
+                                                                         voter = voter,
+                                                                         round=round
+                                                                         )
+                                                                     )]])
+            )
+
+        except Exception as e:
+            LOG.exception("Exception (in inlineQueryVote): " + str(e))
+
+    def getCurrentParticipant(self, election: Election, telegramID: str, round: int) -> Participant:
+        assert isinstance(election, Election), "election is not a Election"
+        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(round, int), "round is not a int"
+        try:
+            LOG.debug("Get member")
+
+            participant: Participant = self.database.getMemberByTelegramIDAndRound(election=election,
+                                                                                   telegramID=telegramID,
+                                                                                   round=round)
+            return participant
+        except Exception as e:
+            LOG.exception("Exception (in getMember): " + str(e))
+            return None
+    def getGroupParticipants(self, election: Election, telegramID: str, round: int) -> list[Participant]:
+        assert isinstance(election, Election), "election is not a Election"
+        assert isinstance(telegramID, str), "telegramID is not a string"
+        assert isinstance(round, int), "round is not a int"
+        try:
+            LOG.debug("Get group participants")
+
+            participants: list[Participant] = self.database.getMembersFromGroup(election=election,
+                                                                                telegramID=telegramID,
+                                                                                round=round)
+            return participants
+        except Exception as e:
+            LOG.exception("Exception (in getGroupParticipants): " + str(e))
+            raise CommunicationException("Exception (in getGroupParticipants): " + str(e))
+
+
+    async def commandResponseVote(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on command 'vote' from user: " + str(message.chat.username) if not None else "None")
+            chatid = message.chat.id
+            userID = message.from_user.username if message.from_user.username is not None else str(message.from_user.id)
+            contract: str = eden_account
+            LOG.success(".. in chat: " + str(chatid))
+            demo: bool = False
+            if demo:
+                userID = telegram_admin_ultimate_rights_id[0]
+
+            # before election: 319271246
+            # round 1: 319277246
+            # round 2: 319279246 - not participate
+            edenData: Response = self.edenData.getCurrentElectionState(height= None)
+                #(height=self.modeDemo.currentBlockHeight
+            #if self.modeDemo is not None else None)
+            if isinstance(edenData, ResponseError):
+                raise CommunicationException(
+                    "CommandResponseVote; Error when called eden.getCurrentElectionState; "
+                    "Description: " + edenData.error)
+            if isinstance(edenData.data, ResponseError):
+                raise CommunicationException(
+                    "commandResponseVote: Error when called eden.commandResponseVote; "
+                    "Description: " + edenData.data.error)
+
+            receivedData = edenData.data
+            electionState = receivedData[0]
+            data = receivedData[1]
+
+            if electionState != "current_election_state_active":
+                LOG.error("Command 'vote' is only available when election is running.")
+                await client.send_message(chat_id=chatid,
+                                          text="Command 'vote' is only available when election is running.")
+                return None
+
+            LOG.debug("Command 'vote' is available.")
+            round: int = data["round"]
+
+            #get running elections
+            election: Election = self.database.getActiveElection(contract=contract)
+            if election is None:
+                LOG.error("Election not found in database")
+                await client.send_message(chat_id=chatid,
+                                          text="Something went wrong, please try again later.")
+                return None
+
+
+            #check if user is known to bot and if participate in current round
+            currentParticipant: Participant = self.getCurrentParticipant(election=election,
+                                                                         telegramID=userID,
+                                                                         round=round)
+            if currentParticipant is None:
+                LOG.error("Participant is not participating in current round")
+                await client.send_message(chat_id=chatid,
+                                          text="Election is running but you are not participating in the current round.")
+                return None
+
+            participants: list[Participant] = self.getGroupParticipants(election=election,
+                                                                        telegramID=userID,
+                                                                        round=round)
+            if participants is None or len(participants) < 1:
+                LOG.error("Participants not found in database")
+                return None
+
+            inlineKeyboard: list[list[InlineKeyboardButton]] = []
+            for participant in participants:
+                inlineKeyboard.append([InlineKeyboardButton(text=participant.accountName + " (" + str(participant.telegramID) + ")",
+                                                            callback_data=participant.accountName + "_" +
+                                                                          currentParticipant.accountName + "_" +
+                                                                          str(round))])
+
+
+            await client.send_message(chat_id=chatid,
+                                      text="Select the account you want to vote for:",
+                                      reply_markup=InlineKeyboardMarkup(
+                                          inline_keyboard=inlineKeyboard
+                                      )
+                                      )
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseVote): " + str(e))
 
     async def commandResponseGetChatID(self, client: Client, message: Message):
         try:

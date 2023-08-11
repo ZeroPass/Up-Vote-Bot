@@ -949,8 +949,7 @@ class Database(metaclass=Singleton):
 
     def getRoomElectionFilteredByRoundAndIndexWithoutPredisposed(self, election: Election,
                                                                  round: int,
-                                                                 index: int) \
-            -> Room:
+                                                                 index: int) -> Room:
         assert isinstance(election, Election), "election must be type of Election"
         assert isinstance(round, int), "round must be type of int"
         assert isinstance(index, int), "index must be type of int"
@@ -1243,6 +1242,35 @@ class Database(metaclass=Singleton):
             LOG.exception(message="Problem occurred when getting dummy election: " + str(e))
             return None
 
+    def getActiveElection(self, contract: str) -> Election:
+        assert isinstance(contract, str), "contract is not a str"
+        try:
+            session = self.createCsesion()
+            LOG.debug("Getting active election ... for contract: " + contract)
+
+            # get election
+            electionFromDB = (
+                session.query(Election)
+                .join(ElectionStatus, ElectionStatus.electionStatusID == Election.status)
+                .order_by(Election.date.desc())
+                .filter(
+                    Election.contract == contract,
+                    ElectionStatus.status == CurrentElectionState.CURRENT_ELECTION_STATE_ACTIVE.value)
+                .first()
+            )
+
+            if electionFromDB is None:
+                raise DatabaseException("Election not found")
+            else:
+                LOG.debug("Election found.")
+                toReturn = electionFromDB
+                self.removeCcession(session=session)
+                return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred in function getLastElection: " + str(e))
+            return None
+
     def getLastElection(self, contract: str) -> Election:
         assert isinstance(contract, str), "contract is not a str"
         try:
@@ -1474,6 +1502,78 @@ class Database(metaclass=Singleton):
                 .all()
 
             toReturn = result if len(result) > 0 else None
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred when getting members: " + str(e))
+            return None
+
+    def getMemberByTelegramIDAndRound(self, election: Election, telegramID: str, round: int) -> Participant:
+        assert isinstance(election, Election), "election is not of type Election"
+        assert isinstance(telegramID, str), "telegramID is not of type str"
+        assert isinstance(round, int), "round is not of type int"
+        try:
+            session = self.createCsesion()
+            if telegramID[0] == "@":
+                telegramIDwithAfna = telegramID
+                telegramID = telegramID[1:]
+            else:
+                telegramIDwithAfna = "@" + telegramID
+                telegramID = telegramID
+
+            participant: Participant = session.query(Participant) \
+                .join(Room, Room.roomID == Participant.roomID) \
+                .join(Election, Election.electionID == Room.electionID) \
+                .filter(Election.electionID == election.electionID,
+                        Room.round == round,
+                        or_(func.lower(Participant.telegramID) == telegramIDwithAfna.lower(),
+                            func.lower(Participant.telegramID) == telegramID.lower()
+                            )) \
+                .first()
+
+            toReturn = participant if participant is not None else None
+            self.removeCcession(session=session)
+            return toReturn
+        except Exception as e:
+            self.removeCcession(session=session)
+            LOG.exception(message="Problem occurred (in getMemberByTelegramIDAndRound) " + str(e))
+            return None
+
+
+    def getMembersFromGroup(self, election: Election, telegramID: str, round: int) -> list[Participant]:
+        assert isinstance(election, Election), "election is not of type Election"
+        assert isinstance(telegramID, str), "telegramID is not of type str"
+        assert isinstance(round, int), "round is not of type int"
+        try:
+            session = self.createCsesion()
+
+
+            if telegramID[0] == "@":
+                telegramIDwithAfna = telegramID
+                telegramID = telegramID[1:]
+            else:
+                telegramIDwithAfna = "@" + telegramID
+                telegramID = telegramID
+
+            participant: Participant = session.query(Participant) \
+                .join(Room, Room.roomID == Participant.roomID) \
+                .join(Election, Election.electionID == Room.electionID) \
+                .filter(Election.electionID == election.electionID,
+                        Room.round == round,
+                        or_(func.lower(Participant.telegramID) == telegramIDwithAfna.lower(),
+                            func.lower(Participant.telegramID) == telegramID.lower()
+                            )) \
+                .first()
+
+            if participant is None:
+                self.removeCcession(session=session)
+                return None
+
+            participants: list[Participant] = session.query(Participant).filter(
+                        Participant.roomID == participant.roomID).all()
+
+            toReturn = participants if len(participants) > 0 else None
             self.removeCcession(session=session)
             return toReturn
         except Exception as e:

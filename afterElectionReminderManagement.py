@@ -33,6 +33,7 @@ class AfterElectionReminderManagementException(Exception):
 LOG = Log(className="AfterElectionReminderManagement")
 
 
+
 class AfterElectionReminderManagement:
 
     def __init__(self, database: Database, edenData: EdenData, communication: Communication,
@@ -142,7 +143,7 @@ class AfterElectionReminderManagement:
         int, ReminderGroup, str]:
         """Get the nearest date time"""
         try:
-            LOG.info("Get nearest date time")
+            #LOG.info("Get nearest date time")
             nearest = min(alerts, key=lambda x: abs(x[0] - minutes))
             return nearest
         except Exception as e:
@@ -350,7 +351,7 @@ class AfterElectionReminderManagement:
                           "elect.Curr table. Do not send any reminders")
                 return
 
-            #get last election if exsists in database
+            #get last election if exists in database
             previousElection: Election = self.database.getElectionByDate(contract=currentElection.contract,
                                                                          date=electCurr.getLastElectionTime())
 
