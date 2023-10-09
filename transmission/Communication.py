@@ -173,6 +173,14 @@ class Communication:
                                filters=filters.command(commands=["vote"]) & filters.private), group=2
             )
 
+
+            self.sessionBotThread.add_handler(
+                MessageHandler(callback=self.commandResponseOnlyPrivate,
+                               filters=filters.command(commands=["vote", "status", "donate", "chatID",
+                                                        "unknown_users", "not_active_sbt_users", "check"])
+                                       & (filters.channel | filters.group)), group=2
+            )
+
             self.sessionBotThread.add_handler(
                 CallbackQueryHandler(callback=self.inlineQueryVote), group=2
             )
@@ -1515,6 +1523,17 @@ class Communication:
             LOG.exception("Exception (in getGroupParticipants): " + str(e))
             raise CommunicationException("Exception (in getGroupParticipants): " + str(e))
 
+    async def commandResponseOnlyPrivate(self, client: Client, message: Message):
+        try:
+            LOG.success("Response on (private chat only) command from user: " + str(message.chat.username) if not None else "None")
+            chatid = message.chat.id
+            LOG.success(".. in chat: " + str(chatid))
+
+            await client.send_message(chat_id=chatid,
+                                      text="The command only works in private chat with the bot.")
+
+        except Exception as e:
+            LOG.exception("Exception (in commandResponseOnlyPrivate): " + str(e))
 
     async def commandResponseVote(self, client: Client, message: Message):
         try:
