@@ -2197,7 +2197,7 @@ class Communication:
             if participantsGoalState is None:
                 raise Exception("There was an error when getting participants with NFT")
 
-            toSend: str = "Users that should be (but not yet) in community group (they have SBT), :\n"
+            toSend: str = "Users that should be (but not yet) in community group (they have SBT):\n"
 
             await client.send_message(chat_id=chatID,
                                 reply_to_message_id=messageThreadID,
