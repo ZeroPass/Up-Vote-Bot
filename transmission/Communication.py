@@ -1549,6 +1549,10 @@ class Communication:
             # before election: 319271246
             # round 1: 319277246
             # round 2: 319279246 - not participate
+
+            # updating eden data dfuse API key on this thread - not optimal
+            self.edenData.setDfuseTokenOnThread(database=self.database)
+
             edenData: Response = self.edenData.getCurrentElectionState(height= None)
                 #(height=self.modeDemo.currentBlockHeight
             #if self.modeDemo is not None else None)
@@ -1762,7 +1766,7 @@ class Communication:
 
     async def commandResponseCheck(self, client: Client, message: Message):
         try:
-            LOG.success("Response on command 'getChatID' from user: " + str(message.chat.username) if not None else "None")
+            LOG.success("Response on command 'check' from user: " + str(message.chat.username) if not None else "None")
             chatID = message.chat.id
             userID = message.from_user.id
 
@@ -1963,6 +1967,10 @@ class Communication:
                     LOG.success("Message sent")
                 else:
                     LOG.error("Message not sent")
+            else:
+                await client.send_message(chat_id=chatID,
+                                          reply_to_message_id=messageThreadID,
+                                          text="<empty>")
 
         except Exception as e:
             LOG.exception("Exception (in commandResponseCheckParticipants): " + str(e))
@@ -2173,6 +2181,9 @@ class Communication:
                 messageThreadID = message.reply_to_top_message_id
             else:
                 messageThreadID = message.reply_to_message_id
+
+            # updating eden data dfuse API key on this thread - not optimal
+            self.edenData.setDfuseTokenOnThread(database=self.database)
 
             RANGE_IN_DAYS = 31 * 9
             executionTime = datetime.now() - timedelta(hours=6)

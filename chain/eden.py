@@ -268,6 +268,19 @@ class EdenData:
             LOG.exception(str(e))
             return ResponseError("Exception thrown when called updateDfuseApiKey; Description: " + str(e))
 
+    def setDfuseTokenOnThread(self, database: Database):
+        try:
+            assert isinstance(database, Database), "database is not of type Database"
+            LOG.debug("Set dfuse token on thread")
+            if database.checkIfTokenExists(name="dfuse"):
+                LOG.debug("Dfuse token exists, copy it")
+                self.dfuseConnection.dfuseToken = database.getToken(name="dfuse");
+            else:
+                LOG.error("Dfuse token does not exist, do nothing")
+        except Exception as e:
+            LOG.exception(str(e))
+            return ResponseError("Exception thrown when called setDfuseTokenOnThread; Description: " + str(e))
+
     def getGivenSBT(self, contractAccount: str, startTime: datetime, endTime: datetime) -> Response:
         assert isinstance(contractAccount, str), "contractAccount is not of type str"
         assert isinstance(startTime, datetime), "startTime is not of type datetime"
